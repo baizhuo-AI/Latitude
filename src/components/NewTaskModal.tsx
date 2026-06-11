@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { X, Plus } from "lucide-react";
 import { useTodoStore, newTodoId, type Priority, type Todo } from "../lib/store";
+import { useFieldStore } from "../lib/fieldStore";
 import { cn } from "../lib/utils";
 import { DatePicker } from "./DatePicker";
 import {
@@ -57,8 +58,10 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
   const [estTime, setEstTime] = useState("");
   const [schedStart, setSchedStart] = useState("");
   const [schedEnd, setSchedEnd] = useState("");
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string | string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const fieldDefs = useFieldStore((s) => s.fields);
 
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +87,7 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
       setEstTime(initial?.estTime ?? "");
       setSchedStart(sStart);
       setSchedEnd(sEnd);
+      setCustomFieldValues(initial?.customFields ?? {});
       setError(null);
       setSubmitting(false);
       const id = setTimeout(() => titleRef.current?.focus(), 100);
@@ -148,7 +152,7 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
       const now = new Date();
       const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       if (isEditing && initial) {
-        // 编辑模式：保留 id / createdAt / status / 标记位，覆盖其它可编辑字段
+        const cf = Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined;
         await updateTodo({
           ...initial,
           title: trimmedTitle,
@@ -157,9 +161,11 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
           priority,
           tags,
           estTime: estTime.trim() || undefined,
-          scheduledTime
+          scheduledTime,
+          customFields: cf,
         });
       } else {
+        const cf = Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined;
         await addTodo({
           id: newTodoId(),
           title: trimmedTitle,
@@ -171,7 +177,8 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
           scheduledTime,
           scheduledDate: todayKey,
           status: "todo",
-          createdAt: now.toISOString()
+          createdAt: now.toISOString(),
+          customFields: cf,
         });
       }
       onClose();
@@ -386,6 +393,89 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
                   )}
                 </div>
               </Field>
+
+              {/* 自定义字段 */}
+              {fieldDefs.length > 0 && (
+                <>
+                  <div className="border-t border-zinc-200 dark:border-zinc-700 pt-4">
+                    {fieldDefs.map((fd) => (
+                      <div key={fd.id} className="mb-3 last:mb-0">
+                        <Field label={fd.name}>
+                          {fd.type === "single_select" ? (
+                            <select
+                              value={(customFieldValues[fd.id] as string) ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setCustomFieldValues((prev) => {
+                                  const next = { ...prev };
+                                  if (v) next[fd.id] = v;
+                                  else delete next[fd.id];
+                                  return next;
+                                });
+                              }}
+                              className={inputCls}
+                            >
+                              <option value="">—</option>
+                              {fd.options.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950">
+                              {((customFieldValues[fd.id] as string[]) ?? []).map((optId) => {
+                                const opt = fd.options.find((o) => o.id === optId);
+                                if (!opt) return null;
+                                return (
+                                  <span
+                                    key={optId}
+                                    className="inline-flex items-center gap-1 text-xs text-white px-1.5 py-0.5 rounded-full"
+                                    style={{ backgroundColor: opt.color }}
+                                  >
+                                    {opt.label}
+                                    <button
+                                      type="button"
+                                      onClick={() => setCustomFieldValues((prev) => {
+                                        const arr = ((prev[fd.id] as string[]) ?? []).filter((v) => v !== optId);
+                                        const next = { ...prev };
+                                        if (arr.length > 0) next[fd.id] = arr;
+                                        else delete next[fd.id];
+                                        return next;
+                                      })}
+                                      className="hover:text-white/70"
+                                    >
+                                      <X className="w-2.5 h-2.5" />
+                                    </button>
+                                  </span>
+                                );
+                              })}
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (!v) return;
+                                  setCustomFieldValues((prev) => {
+                                    const arr = (prev[fd.id] as string[]) ?? [];
+                                    if (arr.includes(v)) return prev;
+                                    return { ...prev, [fd.id]: [...arr, v] };
+                                  });
+                                }}
+                                className="bg-transparent outline-none text-xs text-zinc-500 cursor-pointer"
+                              >
+                                <option value="">+</option>
+                                {fd.options
+                                  .filter((o) => !((customFieldValues[fd.id] as string[]) ?? []).includes(o.id))
+                                  .map((opt) => (
+                                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                  ))}
+                              </select>
+                            </div>
+                          )}
+                        </Field>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* 操作 */}

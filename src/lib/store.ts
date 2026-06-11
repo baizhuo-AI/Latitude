@@ -42,14 +42,12 @@ export interface Todo {
   tags: string[];
   estTime?: string;
   status: TodoStatus;
-  /** 时段:"09:30-11:00",决定周视图卡片位置 */
   scheduledTime?: string;
-  /** 任务归属日期:"YYYY-MM-DD",决定月/周视图日列。
-   *  缺省时 fallback 到 createdAt 的日期(老数据兜底)。 */
   scheduledDate?: string;
   createdAt: string;
   isPushBackSuggestion?: boolean;
   isProcrastinated?: boolean;
+  customFields?: Record<string, string | string[]>;
 }
 
 /**

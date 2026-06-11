@@ -7,6 +7,7 @@ import { useTodoStore } from "./lib/store";
 import { useGoalsStore } from "./lib/goalsStore";
 import { useActivityStore } from "./lib/activityStore";
 import { useCalendarEventsStore } from "./lib/calendarEventsStore";
+import { useFieldStore } from "./lib/fieldStore";
 import { onSync, type SyncTopic } from "./lib/syncBus";
 import { setupOnlineReplay } from "./lib/calendarSync";
 import { startReminderScheduler } from "./lib/reminder";
@@ -41,7 +42,7 @@ export default function App() {
 function useDataSync(topics: SyncTopic[]) {
   useEffect(() => {
     const hydrators: Partial<Record<SyncTopic, () => void>> = {
-      todos: () => void useTodoStore.getState().hydrate(),
+      todos: () => { void useTodoStore.getState().hydrate(); void useFieldStore.getState().hydrate(); },
       goals: () => void useGoalsStore.getState().hydrate(),
       activities: () => void useActivityStore.getState().hydrate(),
       calendar_events: () => void useCalendarEventsStore.getState().hydrate()

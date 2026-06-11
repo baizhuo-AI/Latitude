@@ -83,8 +83,8 @@
     },
     "addTask": "New",
     "addTaskHint": "New task (N)",
-    "viewList": "List",
-    "viewKanban": "Kanban",
+    "viewFlat": "Flat",
+    "viewGrouped": "Grouped",
     "columns": {
       "title": "Title",
       "deadline": "Deadline",
@@ -94,7 +94,51 @@
     "noDeadline": "None",
     "empty": "No tasks. ⌘K to AI-parse, or N to add manually.",
     "doneSection": "Done ({{count}})",
-    "clearDone": "Clear"
+    "clearDone": "Clear",
+    "status": {
+      "todo": "To Do",
+      "doing": "In Progress",
+      "done": "Done",
+      "dropped": "Dropped"
+    },
+    "grouping": {
+      "title": "Group by",
+      "addLevel": "Add grouping",
+      "fieldPriority": "Priority",
+      "fieldStatus": "Status",
+      "fieldTags": "Tags",
+      "fieldDeadline": "Deadline",
+      "sortAsc": "A→Z",
+      "sortDesc": "Z→A",
+      "unset": "Unset",
+      "deadlineBuckets": {
+        "overdue": "Overdue",
+        "today": "Today",
+        "tomorrow": "Tomorrow",
+        "thisWeek": "This week",
+        "nextWeek": "Next week",
+        "later": "Later",
+        "unset": "No deadline"
+      }
+    }
+  },
+  "customFields": {
+    "title": "Custom Fields",
+    "description": "Create single-select or multi-select fields for grouping and filtering.",
+    "addField": "New field",
+    "editField": "Edit field",
+    "fieldName": "Field name",
+    "fieldNamePlaceholder": "e.g. Owner, Module",
+    "fieldType": "Type",
+    "singleSelect": "Single select",
+    "multiSelect": "Multi select",
+    "options": "Options",
+    "addOption": "Add option",
+    "optionPlaceholder": "Option name",
+    "save": "Save",
+    "deleteField": "Delete field",
+    "deleteFieldConfirm": "Deleting \"{{name}}\" will clear this field from all tasks. Confirm?",
+    "empty": "No custom fields yet. Click above to create one."
   },
   "newTask": {
     "title": "New task",

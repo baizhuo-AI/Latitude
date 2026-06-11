@@ -14,7 +14,8 @@ import {
   Bell,
   Plug,
   CalendarClock,
-  Command
+  Command,
+  ListFilter
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -34,6 +35,7 @@ import { toast } from "../lib/toast";
 import { dbUsageSummary } from "../lib/db";
 import { useCalendarEventsStore } from "../lib/calendarEventsStore";
 import { feishuSyncNow } from "../lib/calendarSync";
+import { CustomFieldsManager } from "../components/CustomFieldsManager";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -159,6 +161,15 @@ export function SettingsPage() {
             description="把飞书/Lark 的日程同步进 Daybreak 日历。用你自己企业的「自建应用」凭证，零后端、密钥只存本机系统钥匙串。"
           >
             <FeishuConnectSection />
+          </Section>
+
+          {/* 自定义字段 */}
+          <Section
+            icon={<ListFilter className="w-4 h-4" />}
+            title={t("customFields.title")}
+            description={t("customFields.description")}
+          >
+            <CustomFieldsManager />
           </Section>
 
           {/* 用量 */}

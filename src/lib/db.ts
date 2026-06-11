@@ -104,6 +104,15 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_activity_created_at ON activity_log(created_at);
 
+CREATE TABLE IF NOT EXISTS field_definitions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS calendar_events (
   id                    TEXT PRIMARY KEY,
   region                TEXT NOT NULL,
@@ -221,6 +230,13 @@ async function migrate(db: Database): Promise<void> {
     await db.execute("ALTER TABLE messages ADD COLUMN reasoning_content TEXT");
     console.info("[db] migrated: added reasoning_content column");
   }
+  // V5: todos 加 custom_fields（自定义字段值，JSON 格式）
+  if (!todoCols.has("custom_fields")) {
+    await db.execute(
+      "ALTER TABLE todos ADD COLUMN custom_fields TEXT NOT NULL DEFAULT '{}'"
+    );
+    console.info("[db] migrated: added todos.custom_fields column");
+  }
   // V4: calendar_events 加 freshness（乱序守卫用的可比新鲜度，与 etag 字符串列分离：
   // etag 留给 Phase 4 冲突检测，freshness 专做增量乱序的"谁更新"比较）
   const calCols = await getColumns(db, "calendar_events");
@@ -288,11 +304,19 @@ interface TodoRow {
   scheduled_date: string | null;
   is_pushback: number;
   is_procrastinated: number;
+  custom_fields: string;
   created_at: string;
   updated_at: string;
 }
 
 function rowToTodo(row: TodoRow): Todo {
+  let customFields: Record<string, string | string[]> | undefined;
+  try {
+    const parsed = JSON.parse(row.custom_fields ?? "{}");
+    if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+      customFields = parsed;
+    }
+  } catch { /* ignore */ }
   return {
     id: row.id,
     title: row.title,
@@ -306,7 +330,8 @@ function rowToTodo(row: TodoRow): Todo {
     scheduledDate: row.scheduled_date ?? undefined,
     isPushBackSuggestion: row.is_pushback === 1,
     isProcrastinated: row.is_procrastinated === 1,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    customFields,
   };
 }
 
@@ -336,8 +361,8 @@ export async function dbInsertTodo(todo: Todo): Promise<void> {
     `INSERT INTO todos
       (id, title, reason, deadline, priority, tags, est_time, status,
        scheduled_time, scheduled_date, is_pushback, is_procrastinated,
-       created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       custom_fields, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
     [
       todo.id,
       todo.title,
@@ -351,6 +376,7 @@ export async function dbInsertTodo(todo: Todo): Promise<void> {
       todo.scheduledDate ?? null,
       todo.isPushBackSuggestion ? 1 : 0,
       todo.isProcrastinated ? 1 : 0,
+      JSON.stringify(todo.customFields ?? {}),
       todo.createdAt ?? now,
       now
     ]
@@ -380,15 +406,14 @@ export async function dbUpdateTodoSchedule(
   );
 }
 
-/** 编辑：全字段覆盖（除 id / created_at）。updated_at 自动设为现在。 */
 export async function dbUpdateTodo(todo: Todo): Promise<void> {
   const db = await getDb();
   await db.execute(
     `UPDATE todos SET
       title = $1, reason = $2, deadline = $3, priority = $4, tags = $5,
       est_time = $6, status = $7, scheduled_time = $8, scheduled_date = $9,
-      is_pushback = $10, is_procrastinated = $11, updated_at = $12
-     WHERE id = $13`,
+      is_pushback = $10, is_procrastinated = $11, custom_fields = $12, updated_at = $13
+     WHERE id = $14`,
     [
       todo.title,
       todo.reason ?? null,
@@ -401,6 +426,7 @@ export async function dbUpdateTodo(todo: Todo): Promise<void> {
       todo.scheduledDate ?? null,
       todo.isPushBackSuggestion ? 1 : 0,
       todo.isProcrastinated ? 1 : 0,
+      JSON.stringify(todo.customFields ?? {}),
       new Date().toISOString(),
       todo.id
     ]
@@ -424,6 +450,120 @@ export async function dbSeedIfEmpty(seeds: Todo[]): Promise<void> {
   if (count > 0) return;
   for (const t of seeds) {
     await dbInsertTodo(t);
+  }
+}
+
+/* ---------- Field Definitions ---------- */
+
+export interface FieldDefinitionRow {
+  id: string;
+  name: string;
+  type: string;
+  options: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface FieldDefinition {
+  id: string;
+  name: string;
+  type: "single_select" | "multi_select";
+  options: { id: string; label: string; color: string }[];
+  sortOrder: number;
+  createdAt: string;
+}
+
+function rowToField(row: FieldDefinitionRow): FieldDefinition {
+  let options: FieldDefinition["options"] = [];
+  try {
+    options = JSON.parse(row.options);
+  } catch { /* ignore */ }
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type as FieldDefinition["type"],
+    options,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+  };
+}
+
+export async function dbListFields(): Promise<FieldDefinition[]> {
+  const db = await getDb();
+  const rows = await db.select<FieldDefinitionRow[]>(
+    "SELECT * FROM field_definitions ORDER BY sort_order ASC, created_at ASC"
+  );
+  return rows.map(rowToField);
+}
+
+export async function dbInsertField(field: FieldDefinition): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO field_definitions (id, name, type, options, sort_order, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
+      field.id,
+      field.name,
+      field.type,
+      JSON.stringify(field.options),
+      field.sortOrder,
+      field.createdAt,
+    ]
+  );
+}
+
+export async function dbUpdateField(field: FieldDefinition): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE field_definitions SET name=$1, type=$2, options=$3, sort_order=$4 WHERE id=$5`,
+    [field.name, field.type, JSON.stringify(field.options), field.sortOrder, field.id]
+  );
+}
+
+export async function dbDeleteField(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM field_definitions WHERE id = $1", [id]);
+}
+
+export async function dbClearFieldFromTodos(fieldId: string): Promise<void> {
+  const db = await getDb();
+  const rows = await db.select<{ id: string; custom_fields: string }[]>(
+    "SELECT id, custom_fields FROM todos WHERE custom_fields LIKE $1",
+    [`%${fieldId}%`]
+  );
+  for (const row of rows) {
+    try {
+      const cf = JSON.parse(row.custom_fields);
+      delete cf[fieldId];
+      await db.execute(
+        "UPDATE todos SET custom_fields = $1, updated_at = $2 WHERE id = $3",
+        [JSON.stringify(cf), new Date().toISOString(), row.id]
+      );
+    } catch { /* ignore */ }
+  }
+}
+
+export async function dbClearOptionFromTodos(fieldId: string, optionId: string): Promise<void> {
+  const db = await getDb();
+  const rows = await db.select<{ id: string; custom_fields: string }[]>(
+    "SELECT id, custom_fields FROM todos WHERE custom_fields LIKE $1",
+    [`%${optionId}%`]
+  );
+  for (const row of rows) {
+    try {
+      const cf = JSON.parse(row.custom_fields);
+      const val = cf[fieldId];
+      if (val === optionId) {
+        delete cf[fieldId];
+      } else if (Array.isArray(val)) {
+        cf[fieldId] = val.filter((v: string) => v !== optionId);
+        if (cf[fieldId].length === 0) delete cf[fieldId];
+      }
+      await db.execute(
+        "UPDATE todos SET custom_fields = $1, updated_at = $2 WHERE id = $3",
+        [JSON.stringify(cf), new Date().toISOString(), row.id]
+      );
+    } catch { /* ignore */ }
   }
 }
 
