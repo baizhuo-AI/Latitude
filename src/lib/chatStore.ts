@@ -15,6 +15,7 @@ import { chatAgentCall, buildChatSystemPrompt } from "./llm";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "./settings";
+import { emitSync } from "./syncBus";
 import type { ChatMessage } from "./llm/types";
 
 /** id 生成器 */
@@ -183,6 +184,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       currentId: id,
       messagesByConv: { ...s.messagesByConv, [id]: [] }
     }));
+    emitSync("conversations");
     return id;
   },
 
@@ -197,6 +199,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         currentId: s.currentId === id ? null : s.currentId
       };
     });
+    emitSync("conversations");
   },
 
   renameConv: async (id, title) => {
@@ -206,6 +209,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         c.id === id ? { ...c, title } : c
       )
     }));
+    emitSync("conversations");
   },
 
   sendMessage: async (content) => {
@@ -336,6 +340,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         loading: false,
         abort: null
       }));
+      emitSync("conversations");
     }
   },
 

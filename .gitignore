@@ -4,6 +4,9 @@ coverage
 .DS_Store
 src-tauri/target
 
+# Superpowers skill 工具目录(brainstorm 工作区等),非项目代码
+.superpowers/
+
 # 环境变量(包含明文 API key,绝不进 git)
 .env
 .env.local

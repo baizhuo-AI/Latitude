@@ -64,7 +64,10 @@ enum Item {
 }
 
 pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> {
-    let mut cmd = Command::new("codex");
+    let bin = super::resolve_cli_bin("codex")
+        .unwrap_or_else(|| std::path::PathBuf::from("codex"));
+    let mut cmd = Command::new(&bin);
+    cmd.env("PATH", super::enhanced_path());
     cmd.arg("exec").arg("--json");
 
     // Codex resume 是子命令而非 flag：codex exec resume <sid> "prompt"

@@ -33,9 +33,22 @@ import { toast } from "../lib/toast";
  * 数据同步:订阅 BroadcastChannel 的 "todos" / "activities" / "reminder" topic。
  */
 
+type Scope = "today" | "week" | "all";
+
 function todayKeyOf(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** 本周一 ~ 本周日的 YYYY-MM-DD(字符串可直接按字典序比较) */
+function weekRange(): { weekStartKey: string; weekEndKey: string } {
+  const now = new Date();
+  const start = new Date(now);
+  const dow = (start.getDay() + 6) % 7; // 0 = 周一
+  start.setDate(start.getDate() - dow);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return { weekStartKey: dateKey(start), weekEndKey: dateKey(end) };
 }
 
 /** ISO → "14:30"(本地时区) */
@@ -50,7 +63,7 @@ function fmtTime(iso: string): string {
   }
 }
 
-export function FloatingApp() {
+export function TodoFloat() {
   const { t } = useTranslation();
   const todos = useTodoStore((s) => s.todos);
   const hydrate = useTodoStore((s) => s.hydrate);
@@ -66,6 +79,7 @@ export function FloatingApp() {
   const [activityValue, setActivityValue] = useState("");
   const [activitySubmitting, setActivitySubmitting] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [scope, setScope] = useState<Scope>("today");
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const activityInputRef = useRef<HTMLInputElement>(null);
@@ -100,18 +114,23 @@ export function FloatingApp() {
   }, []);
 
   const todayKey = todayKeyOf();
-  const activeToday = todos
-    .filter((t) => {
-      const k = t.scheduledDate ?? dateKey(new Date(t.createdAt));
-      return k === todayKey && t.status !== "done";
-    })
-    .sort(sortByScheduledTime);
+  const { weekStartKey, weekEndKey } = weekRange();
 
-  const total = todos.filter((t) => {
-    const k = t.scheduledDate ?? dateKey(new Date(t.createdAt));
-    return k === todayKey;
-  }).length;
-  const done = total - activeToday.length;
+  const keyOf = (t: Todo) => t.scheduledDate ?? dateKey(new Date(t.createdAt));
+  const inScope = (t: Todo) => {
+    const k = keyOf(t);
+    if (scope === "today") return k === todayKey;
+    if (scope === "week") return k >= weekStartKey && k <= weekEndKey;
+    return true; // 全部
+  };
+
+  // 排除 dropped(软删除):否则"全部"范围会把以前删掉的旧待办翻出来
+  const scoped = todos.filter((t) => t.status !== "dropped" && inScope(t));
+  const visible = scoped
+    .filter((t) => t.status !== "done")
+    .sort(sortByDateThenTime);
+  const total = scoped.length;
+  const done = scoped.filter((t) => t.status === "done").length;
 
   const todayActivities = activities.filter(
     (a) => dateKey(new Date(a.createdAt)) === todayKey
@@ -229,6 +248,26 @@ export function FloatingApp() {
             <Loader2 className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-accent" />
           )}
         </div>
+
+        {/* 范围切换:今日 / 本周 / 全部 */}
+        <div className="mt-2 flex rounded-lg bg-bg-muted p-0.5 text-[11px]">
+          {(["today", "week", "all"] as Scope[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              data-tauri-drag-region="false"
+              onClick={() => setScope(s)}
+              className={cn(
+                "flex-1 rounded-md py-1 font-medium transition-colors",
+                scope === s
+                  ? "bg-bg-elevated text-text shadow-sm"
+                  : "text-text-faint hover:text-text"
+              )}
+            >
+              {t(`floating.scope.${s}`)}
+            </button>
+          ))}
+        </div>
       </header>
 
       {/* 列表区(提醒记录态卡片在顶) */}
@@ -278,15 +317,17 @@ export function FloatingApp() {
         )}
 
         <div className="space-y-0.5 px-2.5 py-2.5">
-          {activeToday.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="px-3 py-12 text-center text-xs text-text-faint">
-              {t("floating.empty")}
+              {scope === "today" ? t("floating.empty") : t("floating.emptyScope")}
             </div>
           ) : (
-            activeToday.map((todo) => (
+            visible.map((todo) => (
               <TodoLine
                 key={todo.id}
                 todo={todo}
+                showDate={scope !== "today"}
+                dateLabel={fmtDateShort(keyOf(todo))}
                 onToggle={() => void toggleComplete(todo.id)}
                 onEdit={() => setEditingTodo(todo)}
               />
@@ -348,6 +389,19 @@ function sortByScheduledTime(a: Todo, b: Todo): number {
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
+/** 跨天范围(本周 / 全部)排序:先按日期,再按时段。 */
+function sortByDateThenTime(a: Todo, b: Todo): number {
+  const ka = a.scheduledDate ?? dateKey(new Date(a.createdAt));
+  const kb = b.scheduledDate ?? dateKey(new Date(b.createdAt));
+  if (ka !== kb) return ka < kb ? -1 : 1;
+  return sortByScheduledTime(a, b);
+}
+
+/** YYYY-MM-DD → "MM-DD"(跨天列表里给每条标个日期) */
+function fmtDateShort(key: string): string {
+  return key.length >= 10 ? key.slice(5) : key;
+}
+
 /**
  * 隐藏当前浮窗(hide 不是 close):close 会销毁窗口、释放 "floating" label,
  * 下次 openFloating 的 getByLabel 拿不到就走没测过的兜底新建路径。hide 只是藏起来,再 show 还是同一个。
@@ -366,11 +420,15 @@ async function hideSelf(): Promise<void> {
 function TodoLine({
   todo,
   onToggle,
-  onEdit
+  onEdit,
+  showDate,
+  dateLabel
 }: {
   todo: Todo;
   onToggle: () => void;
   onEdit: () => void;
+  showDate?: boolean;
+  dateLabel?: string;
 }) {
   return (
     <motion.div
@@ -388,11 +446,20 @@ function TodoLine({
         aria-label="complete"
       />
       <div className="min-w-0 flex-1">
-        {todo.scheduledTime && (
-          <span className="mb-0.5 inline-block rounded bg-accent/10 px-1 py-0.5 font-mono text-[10px] text-accent">
-            {todo.scheduledTime}
-          </span>
-        )}
+        {(showDate && dateLabel) || todo.scheduledTime ? (
+          <div className="mb-0.5 flex items-center gap-1">
+            {showDate && dateLabel && (
+              <span className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[10px] text-text-faint">
+                {dateLabel}
+              </span>
+            )}
+            {todo.scheduledTime && (
+              <span className="inline-block rounded bg-accent/10 px-1 py-0.5 font-mono text-[10px] text-accent">
+                {todo.scheduledTime}
+              </span>
+            )}
+          </div>
+        ) : null}
         <div className="text-xs leading-snug text-text line-clamp-2">
           {todo.title}
         </div>

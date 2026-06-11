@@ -6,16 +6,19 @@
     "briefing": "Briefing",
     "todos": "Todos",
     "calendar": "Calendar",
-    "reflect": "Reflect",
+    "history": "History",
     "chat": "Chat",
     "telos": "Telos",
     "settings": "Settings",
-    "openFloating": "Open floating panel"
+    "openChatBar": "Open chat bar",
+    "openTodo": "Open todo widget"
   },
   "floating": {
-    "title": "Daybreak · Today",
+    "title": "Daybreak · Tasks",
     "placeholder": "Jot something (Enter)",
     "empty": "No tasks today. Jot something above to start.",
+    "emptyScope": "Nothing active in this range.",
+    "scope": { "today": "Today", "week": "Week", "all": "All" },
     "progress": "{{done}}/{{total}} done",
     "added": "Added",
     "addedNoParse": "Added (AI didn't parse, used original)",
@@ -147,26 +150,10 @@
     "noScheduled": "Unscheduled",
     "unscheduledHeader": "Unscheduled ({{count}})",
     "unscheduledHint": "Drag onto the grid to schedule",
-    "monthEmpty": "No scheduled tasks this month"
-  },
-  "reflect": {
-    "title": "Reflect",
-    "comingSoon": "Reflection space coming soon.",
-    "subtitle": "Look back at today/this week and let AI distill a reflection",
-    "period": {
-      "day": "Today",
-      "week": "This week"
-    },
-    "generate": "Generate reflection",
-    "generating": "AI thinking…",
-    "current": "{{date}} reflection",
-    "empty": "No reflection for this period yet. Tap \"Generate reflection\" to let AI help.",
-    "history": "Past reflections",
-    "stats": {
-      "completed": "Completed",
-      "pending": "Pending",
-      "procrastinated": "Procrastinated"
-    }
+    "monthEmpty": "No scheduled tasks this month",
+    "allDay": "All day",
+    "readonly": "Read-only",
+    "source": "From: {{name}}"
   },
   "chat": {
     "title": "Chat",
@@ -181,7 +168,22 @@
     "emptyBody": "Today's todos, Telos goals and the current time are auto-attached. Ask things like \"can I push these two meetings to tomorrow\" or \"which should I tackle first\".",
     "deleteConv": "Delete conversation",
     "reasoning": "Reasoning",
-    "reasoningStreaming": "Thinking…"
+    "reasoningStreaming": "Thinking…",
+    "capturePlaceholder": "Quick add a todo (Enter)",
+    "pin": "Pin on top",
+    "unpin": "Unpin"
+  },
+  "chatbar": {
+    "title": "Chat",
+    "placeholder": "What can I help you with today?",
+    "empty": "Ask me anything about today, or jot a quick to-do.",
+    "collapse": "Collapse"
+  },
+  "history": {
+    "title": "Chat history",
+    "empty": "No conversations yet.",
+    "pick": "Pick a conversation on the left to view.",
+    "noMessages": "This conversation has no messages."
   },
   "telos": {
     "title": "Telos · Long-term goals",
@@ -215,6 +217,21 @@
   },
   "settings": {
     "title": "Settings",
+    "shortcuts": {
+      "title": "Shortcuts",
+      "description": "Set a global hotkey to show / hide the chat bar. Works system-wide, in any app.",
+      "toggleChatbar": "Show / hide chat bar",
+      "toggleTodo": "Show / hide todo panel",
+      "showWorkbench": "Bring up workbench",
+      "record": "Record",
+      "cancel": "Cancel",
+      "recording": "Press keys…",
+      "unset": "Not set",
+      "clear": "Clear",
+      "saved": "Shortcut saved",
+      "disabled": "Shortcut disabled",
+      "failed": "Failed to set (combo may be taken)"
+    },
     "reminder": {
       "title": "Reminders",
       "description": "Periodically nudge you to jot down what you just did, building a real log of where your time goes.",

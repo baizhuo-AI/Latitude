@@ -1,125 +1,129 @@
 import { useEffect, useState } from "react";
-import { HashRouter, Route, Routes } from "react-router-dom";
-import { Sidebar } from "./components/Sidebar";
-import { TopBar } from "./components/TopBar";
-import { BriefingPage } from "./pages/BriefingPage";
-import { TodosPage } from "./pages/TodosPage";
-import { CalendarPage } from "./pages/CalendarPage";
-import { ReflectPage } from "./pages/ReflectPage";
-import { ChatPage } from "./pages/ChatPage";
-import { TelosPage } from "./pages/TelosPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { FloatingApp } from "./pages/FloatingApp";
+import { BoardShell } from "./components/BoardShell";
+import { ChatBar } from "./components/ChatBar";
+import { Launcher } from "./components/Launcher";
+import { TodoFloat } from "./pages/TodoFloat";
 import { useTodoStore } from "./lib/store";
 import { useGoalsStore } from "./lib/goalsStore";
 import { useActivityStore } from "./lib/activityStore";
-import { emitSync, onSync, type SyncTopic } from "./lib/syncBus";
+import { useCalendarEventsStore } from "./lib/calendarEventsStore";
+import { onSync, type SyncTopic } from "./lib/syncBus";
+import { setupOnlineReplay } from "./lib/calendarSync";
 import { startReminderScheduler } from "./lib/reminder";
+import { windowRole } from "./lib/windowLayout";
+import { useSettingsStore } from "./lib/settings";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "./components/Toaster";
 
-const FLOATING_HASH = "#/__floating__";
-
 /**
- * App 主壳:根据 URL hash 决定渲染主 App 还是浮窗。
+ * App 主壳:按「窗口角色」分发三种窗口。
  *
- *  - 默认 hash 为空或主路由 → 主 App(Sidebar + TopBar + 6 个 tab)
- *  - hash === FLOATING_HASH → 浮窗(260×420,常驻置顶)
+ *  - main    → 工作台主窗:今日/待办/日历/目标/设置 + 应用级单例副作用(提醒/在线回放/全量同步)
+ *  - chatbar → 对话悬浮条:Hermes 式细长输入条,回车在条上方就地展开
+ *  - todo    → todo 悬浮窗:今日待办 + 速记 + 间歇提醒落点
  *
- * 两个 Tauri 窗口共用同一份代码,通过 hash 切换入口。
- * 共享:SQLite db(同文件)+ BroadcastChannel 跨窗口同步。
+ * 三个 Tauri 窗口共用同一份代码,通过 URL hash 区分入口(沿用原浮窗的同源多窗方案,test-safe)。
+ * 共享:SQLite db(同文件)+ Tauri Event 跨窗口同步(syncBus / daybreak://data-changed)。
  */
 export default function App() {
-  const [isFloating, setIsFloating] = useState(
-    () => typeof window !== "undefined" && window.location.hash === FLOATING_HASH
-  );
-
-  // 不太可能但保险:hash 变化时切换
-  useEffect(() => {
-    const handler = () => setIsFloating(window.location.hash === FLOATING_HASH);
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
-  }, []);
-
-  if (isFloating) {
-    return (
-      <ErrorBoundary>
-        <ConfirmDialogProvider>
-          <FloatingApp />
-          <Toaster />
-        </ConfirmDialogProvider>
-      </ErrorBoundary>
-    );
-  }
-
-  return <MainApp />;
+  const [role] = useState(() => windowRole());
+  if (role === "chatbar") return <ChatBarWindow />;
+  if (role === "todo") return <TodoWindow />;
+  if (role === "launcher") return <Launcher />;
+  return <MainWindow />;
 }
 
-function MainApp() {
-  const hydrate = useTodoStore((s) => s.hydrate);
-
+/**
+ * 按需把若干数据域 hydrate 进本窗口,并订阅跨窗同步(前端 syncBus + 后端 daybreak://data-changed)。
+ * 单例副作用(提醒/在线回放)不在这里,见各窗口自身。
+ */
+function useDataSync(topics: SyncTopic[]) {
   useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
-
-  // 监听 MCP 后端写操作发来的刷新事件：刷新本窗口对应 store，并经 BroadcastChannel 通知浮窗
-  useEffect(() => {
+    const hydrators: Partial<Record<SyncTopic, () => void>> = {
+      todos: () => void useTodoStore.getState().hydrate(),
+      goals: () => void useGoalsStore.getState().hydrate(),
+      activities: () => void useActivityStore.getState().hydrate(),
+      calendar_events: () => void useCalendarEventsStore.getState().hydrate()
+    };
+    topics.forEach((tp) => hydrators[tp]?.());
+    const offs = topics.map((tp) => onSync(tp, () => hydrators[tp]?.()));
     let unlisten: (() => void) | undefined;
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
       unlisten = await listen<string>("daybreak://data-changed", (e) => {
-        const topic = e.payload as SyncTopic;
-        if (topic === "todos") void useTodoStore.getState().hydrate();
-        else if (topic === "goals") void useGoalsStore.getState().hydrate();
-        else if (topic === "activities") void useActivityStore.getState().hydrate();
-        emitSync(topic);
+        const tp = e.payload as SyncTopic;
+        if (topics.includes(tp)) hydrators[tp]?.();
       });
     })();
-    return () => unlisten?.();
-  }, []);
-
-  // 监听其它窗口（浮窗等）发来的前端同步广播：收到就重新 hydrate 对应 store。
-  // 之前缺这一段，导致浮窗加任务后主窗待办页不刷新（同步是单向的）。
-  useEffect(() => {
-    const offTodos = onSync("todos", () => void useTodoStore.getState().hydrate());
-    const offGoals = onSync("goals", () => void useGoalsStore.getState().hydrate());
-    const offActs = onSync("activities", () => void useActivityStore.getState().hydrate());
     return () => {
-      offTodos();
-      offGoals();
-      offActs();
+      offs.forEach((o) => o());
+      unlisten?.();
     };
+    // topics 在各调用点是字面量常量,仅需挂载时绑定一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
 
-  // 间歇式时间日志:提醒调度只在主窗口起一份(浮窗走 FloatingApp 分支,不会到这里),避免重复提醒
+/** 工作台主窗:承载现有视图 + 应用级单例副作用(只在此窗起一份,避免悬浮窗重复)。 */
+function MainWindow() {
+  useDataSync(["todos", "goals", "activities", "calendar_events"]);
+
+  // 离线期间入队的本地日历变更:联网恢复时自动 flush 回写飞书。
+  useEffect(() => setupOnlineReplay(), []);
+
+  // 间歇式时间日志:提醒调度只在工作台主窗起一份(悬浮窗不起)。
   useEffect(() => {
     const stop = startReminderScheduler();
     return stop;
   }, []);
 
+  // 全局快捷键:启动时按设置里保存的 accelerator 注册一次(用户改时由设置页重新注册)。
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const sc = useSettingsStore.getState().shortcuts;
+        await invoke("set_global_shortcuts", {
+          chatbar: sc.toggleChatbar,
+          todo: sc.toggleTodo,
+          workbench: sc.showWorkbench
+        });
+      } catch (e) {
+        console.error("[App] register global shortcut failed:", e);
+      }
+    })();
+  }, []);
+
   return (
     <ErrorBoundary>
       <ConfirmDialogProvider>
-        <HashRouter>
-          <div className="flex h-screen overflow-hidden bg-bg text-text">
-            <Sidebar />
-            <div className="flex-1 flex flex-col min-w-0">
-              <TopBar />
-              <main className="flex-1 overflow-y-auto scrollbar-thin">
-                <Routes>
-                  <Route path="/" element={<BriefingPage />} />
-                  <Route path="/todos" element={<TodosPage />} />
-                  <Route path="/calendar" element={<CalendarPage />} />
-                  <Route path="/reflect" element={<ReflectPage />} />
-                  <Route path="/chat" element={<ChatPage />} />
-                  <Route path="/telos" element={<TelosPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                </Routes>
-              </main>
-            </div>
-          </div>
-        </HashRouter>
+        <BoardShell />
+        <Toaster />
+      </ConfirmDialogProvider>
+    </ErrorBoundary>
+  );
+}
+
+/** 对话悬浮条窗口:对话上下文(buildChatSystemPrompt)要 todos + goals,这里 hydrate 并随同步刷新。 */
+function ChatBarWindow() {
+  useDataSync(["todos", "goals"]);
+  return (
+    <ErrorBoundary>
+      <ConfirmDialogProvider>
+        <ChatBar />
+        <Toaster />
+      </ConfirmDialogProvider>
+    </ErrorBoundary>
+  );
+}
+
+/** todo 悬浮窗:TodoFloat 自己管 todos/activities 的 hydrate 与同步(含 reminder 落点),这里只包壳。 */
+function TodoWindow() {
+  return (
+    <ErrorBoundary>
+      <ConfirmDialogProvider>
+        <TodoFloat />
         <Toaster />
       </ConfirmDialogProvider>
     </ErrorBoundary>

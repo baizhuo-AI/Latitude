@@ -22,6 +22,19 @@ export type ProviderName = "deepseek" | "anthropic" | "openai" | "mock";
 /** 内置对话用哪个后端：DeepSeek API 直连 / 三家本地 CLI 各自走用户订阅或 API key */
 export type ChatBackend = "deepseek-api" | "claude-cli" | "codex-cli" | "kiro-cli";
 
+/** 飞书 / Lark 区域（国内 vs 国际，两套独立平台、两套凭证）。 */
+export type FeishuRegion = "feishu" | "lark";
+
+/**
+ * 飞书偏好——故意只存「选了哪个区域」这种非敏感偏好。
+ * app_secret / token / 连接状态绝不进 localStorage（落实 settings.ts 顶部那条 TODO），
+ * 真实状态每次现拉 Rust 的 feishu_status。
+ */
+export interface FeishuPrefs {
+  /** 当前选中的区域；null = 还没选过 */
+  activeRegion: FeishuRegion | null;
+}
+
 interface ProviderConfig {
   apiKey?: string;
   baseUrl?: string;
@@ -46,6 +59,13 @@ export interface ReminderConfig {
   pausedUntil?: number;
 }
 
+export interface ShortcutsConfig {
+  /** 全局快捷键 accelerator(形如 "Alt+Space" / "Super+Shift+KeyK";空串 = 禁用) */
+  toggleChatbar: string;
+  toggleTodo: string;
+  showWorkbench: string;
+}
+
 export interface SettingsState {
   lang: Lang;
   llmProvider: ProviderName;
@@ -57,6 +77,8 @@ export interface SettingsState {
   /** 内置对话用哪个后端：默认 DeepSeek API；三家 CLI 走用户本地订阅/API key */
   chatBackend: ChatBackend;
   reminder: ReminderConfig;
+  shortcuts: ShortcutsConfig;
+  feishu: FeishuPrefs;
 }
 
 const STORAGE_KEY = "daybreak.settings";
@@ -93,7 +115,9 @@ function defaults(): SettingsState {
       channel: "both",
       workStart: 9,
       workEnd: 22
-    }
+    },
+    shortcuts: { toggleChatbar: "Alt+Space", toggleTodo: "", showWorkbench: "" },
+    feishu: { activeRegion: null }
   };
 }
 
@@ -123,7 +147,13 @@ function readStored(): SettingsState {
         openai: { ...def.providers.openai, ...(parsed.providers?.openai ?? {}) }
       },
       chatBackend: validChatBackend(parsed.chatBackend) ? parsed.chatBackend : def.chatBackend,
-      reminder: { ...def.reminder, ...(parsed.reminder ?? {}) }
+      reminder: { ...def.reminder, ...(parsed.reminder ?? {}) },
+      shortcuts: { ...def.shortcuts, ...(parsed.shortcuts ?? {}) },
+      feishu: {
+        activeRegion: validFeishuRegion(parsed.feishu?.activeRegion)
+          ? parsed.feishu!.activeRegion!
+          : def.feishu.activeRegion
+      }
     };
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
@@ -139,6 +169,10 @@ function validChatBackend(v: unknown): v is ChatBackend {
   return v === "deepseek-api" || v === "claude-cli" || v === "codex-cli" || v === "kiro-cli";
 }
 
+function validFeishuRegion(v: unknown): v is FeishuRegion {
+  return v === "feishu" || v === "lark";
+}
+
 function persist(state: SettingsState) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -152,7 +186,9 @@ interface SettingsStore extends SettingsState {
   setProvider: (p: ProviderName) => void;
   setProviderConfig: (p: Exclude<ProviderName, "mock">, cfg: ProviderConfig) => void;
   setReminder: (patch: Partial<ReminderConfig>) => void;
+  setShortcut: (patch: Partial<ShortcutsConfig>) => void;
   setChatBackend: (b: ChatBackend) => void;
+  setFeishuRegion: (r: FeishuRegion | null) => void;
   reset: () => void;
 }
 
@@ -181,9 +217,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ reminder });
     persist({ ...get(), reminder });
   },
+  setShortcut: (patch) => {
+    const shortcuts = { ...get().shortcuts, ...patch };
+    set({ shortcuts });
+    persist({ ...get(), shortcuts });
+  },
   setChatBackend: (chatBackend) => {
     set({ chatBackend });
     persist({ ...get(), chatBackend });
+  },
+  setFeishuRegion: (region) => {
+    const feishu = { ...get().feishu, activeRegion: region };
+    set({ feishu });
+    persist({ ...get(), feishu });
   },
   reset: () => {
     const d = defaults();

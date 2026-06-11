@@ -5,7 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Loader2
+  Loader2,
+  Lock
 } from "lucide-react";
 import {
   DndContext,
@@ -19,12 +20,21 @@ import {
   type DragStartEvent
 } from "@dnd-kit/core";
 import { useTodoStore, type Todo, type Priority } from "../lib/store";
+import {
+  useCalendarEventsStore,
+  type CalendarEvent
+} from "../lib/calendarEventsStore";
+import { enqueueEventEdit } from "../lib/calendarQueue";
+import { flushQueue } from "../lib/calendarSync";
+import { dbUpdateCalendarEventSchedule } from "../lib/db";
+import EventDetailModal from "../components/EventDetailModal";
 import { generateTodayPlan } from "../lib/llm";
 import { toast } from "../lib/toast";
 import {
   addDays,
   addMonths,
   dateKey,
+  dedupeEventsByDate,
   formatHM,
   isSameDay,
   monthLabel,
@@ -51,11 +61,18 @@ import { cn } from "../lib/utils";
  *  - 跨工作时段 8-22 时会 clamp 到边界
  *
  * AI 排今日:把当天未完成且非 push-back 的 todos 送 LLM,重新排 scheduledTime。
+ *
+ * 飞书/Lark 同步事件(P2-5):只读叠加渲染,不混 todos。
+ *  - 来源 useCalendarEventsStore(真相源 SQLite,本组件 mount 时 hydrate)。
+ *  - eventsByDate 按 scheduledDate 分组 + dedupeEventsByDate 去重(去软删/重复实例)。
+ *  - 月视图:在 todo 圆点后叠加 event 圆点(蓝色,区别于优先级色)。
+ *  - 周视图:全天事件(isAllDay)聚到该列顶部 all-day 行;定时事件按 scheduledTime 放时段。
+ *  - 卡片只读不可拖(双向是 Phase 4):isWritable=false 灰虚线+锁,true 蓝实线。
  */
 
 type ViewMode = "month" | "week";
 
-const HOUR_HEIGHT = 56;
+const HOUR_HEIGHT = 64;
 const DAY_START_HOUR = 0;
 const DAY_END_HOUR = 24;
 const VIEW_HEIGHT = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_HEIGHT;
@@ -69,10 +86,21 @@ export function CalendarPage() {
   const todos = useTodoStore((s) => s.todos);
   const applySchedules = useTodoStore((s) => s.applySchedules);
 
+  // 飞书/Lark 同步事件(只读)。真相源是 SQLite,本页 mount 时拉一次;
+  // 跨窗口写改后 store 自己经 emitSync 重 hydrate,这里订阅 events 即可拿到最新。
+  const calendarEvents = useCalendarEventsStore((s) => s.events);
+  const eventsLoaded = useCalendarEventsStore((s) => s.loaded);
+  const hydrateEvents = useCalendarEventsStore((s) => s.hydrate);
+  useEffect(() => {
+    if (!eventsLoaded) void hydrateEvents();
+  }, [eventsLoaded, hydrateEvents]);
+
   const [view, setView] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [aiBusy, setAiBusy] = useState(false);
   const [draggingTodo, setDraggingTodo] = useState<Todo | null>(null);
+  // 点击事件卡弹出的详情(null=不显示);看全文用,纯只读 peek。
+  const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -88,6 +116,22 @@ export function CalendarPage() {
     }
     return map;
   }, [todos]);
+
+  // 同步事件按 scheduledDate 分组,每天内 dedupeEventsByDate 去重(去软删/重复实例)。
+  // 没有 scheduledDate 的事件(理论上归一后都有,防御性兜底)直接丢弃,绝不混进 todos 的 unscheduled。
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const ev of calendarEvents) {
+      if (!ev.scheduledDate) continue;
+      const list = map.get(ev.scheduledDate) ?? [];
+      list.push(ev);
+      map.set(ev.scheduledDate, list);
+    }
+    for (const [key, list] of map) {
+      map.set(key, dedupeEventsByDate(list));
+    }
+    return map;
+  }, [calendarEvents]);
 
   function navPrev() {
     setAnchor(view === "month" ? addMonths(anchor, -1) : addDays(anchor, -7));
@@ -136,19 +180,28 @@ export function CalendarPage() {
     const overId = e.over?.id;
     if (!overId) return;
 
+    // overId 形如 "day-2026-05-11"
+    const m = String(overId).match(/^day-(\d{4}-\d{2}-\d{2})$/);
+    if (!m) return;
+    const targetDateKey = m[1];
     const activeIdRaw = String(e.active.id);
+    const deltaY = e.delta.y;
+
+    // 分流①:飞书/Lark 事件(draggable id 带 "event-" 前缀)→ 回写路径。
+    // 必须在 todo 分流之前拦截:事件 id 与 todo id 命名空间不同,绝不能让拖事件误走
+    // todo 的 applySchedules(那会去改一个不存在的 todo / 或撞 id)。
+    if (activeIdRaw.startsWith("event-")) {
+      void handleEventDrop(activeIdRaw.slice("event-".length), targetDateKey, deltaY);
+      return;
+    }
+
+    // 分流②:todo(原逻辑,零改动)。
     const isUnscheduled = activeIdRaw.startsWith("unscheduled-");
     const todoId = activeIdRaw.replace(/^unscheduled-/, "");
     const todo = todos.find((t) => t.id === todoId);
     if (!todo) return;
 
-    // overId 形如 "day-2026-05-11"
-    const m = String(overId).match(/^day-(\d{4}-\d{2}-\d{2})$/);
-    if (!m) return;
-    const targetDateKey = m[1];
-
     // 计算时段
-    const deltaY = e.delta.y;
     const orig = parseScheduledTime(todo.scheduledTime);
     let newStartMin: number;
     let durationMin: number;
@@ -183,6 +236,51 @@ export function CalendarPage() {
         scheduledDate: targetDateKey
       }
     ]);
+  }
+
+  /**
+   * 拖拽改时段一个**可写**的飞书/Lark 事件:乐观更新本地 → 入队 → flush 回写飞书(P4-3)。
+   * 只读事件(isWritable=false)与全天事件不走这里。冲突由 Rust 写回时检测(远端为准 + 留草稿),
+   * 这里收到 conflicted>0 即提示用户;无论成败最后都以库为准 hydrate。
+   */
+  async function handleEventDrop(evId: string, targetDateKey: string, deltaY: number) {
+    const ev = calendarEvents.find((x) => x.id === evId);
+    if (!ev || !ev.isWritable) return;
+    const orig = parseScheduledTime(ev.scheduledTime);
+    if (!orig) return; // 全天/无时段事件首版不支持拖拽改时段
+    let newStartMin = snapMinutes(
+      orig.startMin + Math.round((deltaY / HOUR_HEIGHT) * 60),
+      15
+    );
+    const durationMin = orig.endMin - orig.startMin;
+    const minStart = DAY_START_HOUR * 60;
+    const maxEnd = DAY_END_HOUR * 60;
+    if (newStartMin < minStart) newStartMin = minStart;
+    if (newStartMin + durationMin > maxEnd) {
+      newStartMin = Math.max(minStart, maxEnd - durationMin);
+    }
+    const newTime = `${formatHM(newStartMin)}-${formatHM(newStartMin + durationMin)}`;
+    if (newTime === ev.scheduledTime && targetDateKey === ev.scheduledDate) return; // 没动
+
+    const updated: CalendarEvent = {
+      ...ev,
+      scheduledDate: targetDateKey,
+      scheduledTime: newTime
+    };
+    try {
+      await dbUpdateCalendarEventSchedule(ev.id, targetDateKey, newTime);
+      await hydrateEvents();
+      await enqueueEventEdit(updated, "update");
+      const res = await flushQueue();
+      if (res.conflicted > 0) {
+        toast.error("飞书上这个日程也被改过:已以飞书版为准,你的改动保留为草稿待处理");
+      }
+    } catch (err) {
+      console.error("[calendar] 事件改时段回写失败:", err);
+      toast.error("回写飞书失败,改动已排队,联网后自动重试");
+    } finally {
+      await hydrateEvents();
+    }
   }
 
   return (
@@ -274,6 +372,7 @@ export function CalendarPage() {
               <MonthView
                 anchor={anchor}
                 todosByDate={todosByDate}
+                eventsByDate={eventsByDate}
                 onDayClick={(d) => {
                   setAnchor(d);
                   setView("week");
@@ -299,7 +398,9 @@ export function CalendarPage() {
                 <WeekView
                   anchor={anchor}
                   todosByDate={todosByDate}
+                  eventsByDate={eventsByDate}
                   weekdayLabels={getWeekdayLabels(t)}
+                  onOpenDetail={setDetailEvent}
                 />
                 <DragOverlay dropAnimation={null}>
                   {draggingTodo ? (
@@ -323,6 +424,11 @@ export function CalendarPage() {
           )}
         </AnimatePresence>
       </div>
+
+      <EventDetailModal
+        event={detailEvent}
+        onClose={() => setDetailEvent(null)}
+      />
     </div>
   );
 }
@@ -359,11 +465,13 @@ function ViewTab({
 function MonthView({
   anchor,
   todosByDate,
+  eventsByDate,
   onDayClick,
   weekdayLabels
 }: {
   anchor: Date;
   todosByDate: Map<string, Todo[]>;
+  eventsByDate: Map<string, CalendarEvent[]>;
   onDayClick: (d: Date) => void;
   weekdayLabels: string[];
 }) {
@@ -391,6 +499,7 @@ function MonthView({
           const inMonth = d.getMonth() === currentMonth;
           const isToday = isSameDay(d, today);
           const tasks = todosByDate.get(dateKey(d)) ?? [];
+          const events = eventsByDate.get(dateKey(d)) ?? [];
           return (
             <button
               key={d.toISOString()}
@@ -416,8 +525,9 @@ function MonthView({
               >
                 {d.getDate()}
               </span>
-              {tasks.length > 0 && (
+              {(tasks.length > 0 || events.length > 0) && (
                 <div className="flex flex-wrap gap-0.5 max-h-12 overflow-hidden">
+                  {/* todo 圆点(优先级配色) */}
                   {tasks.slice(0, 4).map((todo) => (
                     <span
                       key={todo.id}
@@ -429,9 +539,17 @@ function MonthView({
                       title={todo.title}
                     />
                   ))}
-                  {tasks.length > 4 && (
+                  {/* 事件圆点(蓝色,与优先级色区分) */}
+                  {events.slice(0, 4).map((ev) => (
+                    <span
+                      key={ev.id}
+                      className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400"
+                      title={ev.title}
+                    />
+                  ))}
+                  {tasks.length + events.length > 8 && (
                     <span className="text-[10px] text-zinc-400 leading-none">
-                      +{tasks.length - 4}
+                      +{tasks.length + events.length - 8}
                     </span>
                   )}
                 </div>
@@ -449,11 +567,15 @@ function MonthView({
 function WeekView({
   anchor,
   todosByDate,
-  weekdayLabels
+  eventsByDate,
+  weekdayLabels,
+  onOpenDetail
 }: {
   anchor: Date;
   todosByDate: Map<string, Todo[]>;
+  eventsByDate: Map<string, CalendarEvent[]>;
   weekdayLabels: string[];
+  onOpenDetail: (ev: CalendarEvent) => void;
 }) {
   const days = useMemo(() => weekDays(anchor), [anchor]);
   const today = startOfDay(new Date());
@@ -547,6 +669,7 @@ function WeekView({
           {/* 7 列日(各自为 droppable) */}
           {days.map((d) => {
             const list = todosByDate.get(dateKey(d)) ?? [];
+            const events = eventsByDate.get(dateKey(d)) ?? [];
             const isToday = isSameDay(d, today);
             return (
               <DayColumn
@@ -554,7 +677,9 @@ function WeekView({
                 date={d}
                 isToday={isToday}
                 tasks={list}
+                events={events}
                 nowMin={isToday ? nowMin : null}
+                onOpenDetail={onOpenDetail}
               />
             );
           })}
@@ -570,15 +695,25 @@ function DayColumn({
   date,
   isToday,
   tasks,
-  nowMin
+  events,
+  nowMin,
+  onOpenDetail
 }: {
   date: Date;
   isToday: boolean;
   tasks: Todo[];
+  /** 该列的同步事件(已去重);全天聚顶部 all-day 行,定时按时段 */
+  events: CalendarEvent[];
   /** 仅"今天那列"传非 null:用于画当前时刻红色横线 */
   nowMin: number | null;
+  /** 点击事件卡 → 弹详情(透传给 CalendarEventBlock) */
+  onOpenDetail: (ev: CalendarEvent) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dateKey(date)}` });
+
+  // 全天 / 定时分流:全天判定走 isAllDay 字段(不靠 parseScheduledTime 失败,见 P2-5 风险 6)
+  const allDayEvents = events.filter((e) => e.isAllDay);
+  const timedEvents = events.filter((e) => !e.isAllDay);
 
   return (
     <div
@@ -609,14 +744,27 @@ function DayColumn({
           </div>
         </div>
       )}
-      {/* 任务卡片 */}
+      {/* 全天事件行:聚到该列顶部,竖向叠放(z-20 压在时段卡之上避免被首小时定时卡盖住) */}
+      {allDayEvents.length > 0 && (
+        <div className="absolute left-0.5 right-0.5 top-0.5 z-20 flex flex-col gap-0.5">
+          {allDayEvents.map((ev) => (
+            <CalendarEventBlock
+              key={ev.id}
+              event={ev}
+              variant="allDay"
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </div>
+      )}
+      {/* 任务卡片(todo,可拖) */}
       {tasks.map((todo) => {
         const range = parseScheduledTime(todo.scheduledTime);
         if (!range) return null;
         const startOffsetMin = range.startMin - DAY_START_HOUR * 60;
         const durationMin = range.endMin - range.startMin;
         const top = (startOffsetMin / 60) * HOUR_HEIGHT;
-        const height = Math.max(24, (durationMin / 60) * HOUR_HEIGHT);
+        const height = Math.max(28, (durationMin / 60) * HOUR_HEIGHT);
         if (top + height < 0 || top > VIEW_HEIGHT) return null;
         return (
           <DraggableTaskBlock
@@ -625,6 +773,27 @@ function DayColumn({
             range={range}
             top={top}
             height={height}
+          />
+        );
+      })}
+      {/* 定时事件卡片(飞书/Lark,只读不可拖) */}
+      {timedEvents.map((ev) => {
+        const range = parseScheduledTime(ev.scheduledTime);
+        if (!range) return null;
+        const startOffsetMin = range.startMin - DAY_START_HOUR * 60;
+        const durationMin = range.endMin - range.startMin;
+        const top = (startOffsetMin / 60) * HOUR_HEIGHT;
+        const height = Math.max(28, (durationMin / 60) * HOUR_HEIGHT);
+        if (top + height < 0 || top > VIEW_HEIGHT) return null;
+        return (
+          <CalendarEventBlock
+            key={ev.id}
+            event={ev}
+            variant="timed"
+            range={range}
+            top={top}
+            height={height}
+            onOpenDetail={onOpenDetail}
           />
         );
       })}
@@ -662,24 +831,186 @@ function DraggableTaskBlock({
       {...listeners}
       {...attributes}
       className={cn(
-        "rounded-md p-1.5 overflow-hidden cursor-grab active:cursor-grabbing transition-shadow",
+        "rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing transition-shadow",
         priorityCardCls(todo.priority),
         isDone && "opacity-50",
         "hover:shadow-md"
       )}
-      title={todo.title}
+      title={`${todo.title} · ${formatHM(range.startMin)}–${formatHM(range.endMin)}`}
     >
-      <div className="text-[10px] font-mono opacity-80">
-        {formatHM(range.startMin)} – {formatHM(range.endMin)}
-      </div>
+      {height < 50 ? (
+        /* 矮块(≤45min):标题优先单行 + 行内开始时间,绝不让时间把标题挤出裁切区 */
+        <div className="flex items-baseline gap-1 overflow-hidden">
+          <span
+            className={cn(
+              "flex-1 min-w-0 truncate text-[11px] font-medium leading-tight",
+              isDone && "line-through"
+            )}
+          >
+            {todo.title}
+          </span>
+          <span className="flex-shrink-0 text-[9px] font-mono opacity-70 whitespace-nowrap">
+            {formatHM(range.startMin)}
+          </span>
+        </div>
+      ) : (
+        <>
+          <div
+            className={cn(
+              "text-xs font-medium leading-tight line-clamp-2",
+              isDone && "line-through"
+            )}
+          >
+            {todo.title}
+          </div>
+          <div className="mt-0.5 text-[10px] font-mono opacity-70 whitespace-nowrap">
+            {formatHM(range.startMin)} – {formatHM(range.endMin)}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 飞书/Lark 同步事件卡(只读,不接 useDraggable —— 本相位不让拖,双向是 Phase 4)。
+ *
+ * 两种形态:
+ *  - variant="allDay":全天事件,极简 chip,由父级的 all-day 行做定位(本组件不自带 top/height)。
+ *  - variant="timed":定时事件,绝对定位的时段块(仿 DraggableTaskBlock 布局,但去掉拖拽)。
+ * 可写区分:isWritable=false → 灰色虚线边框 + 锁图标;true → 蓝色实线边框。
+ */
+function CalendarEventBlock({
+  event,
+  variant,
+  range,
+  top,
+  height,
+  onOpenDetail
+}: {
+  event: CalendarEvent;
+  variant: "allDay" | "timed";
+  range?: { startMin: number; endMin: number };
+  top?: number;
+  height?: number;
+  /** 点击卡片 → 弹详情看全文 */
+  onOpenDetail?: (ev: CalendarEvent) => void;
+}) {
+  const { t } = useTranslation();
+  const locked = !event.isWritable;
+  const isDraft = event.localDraft;
+  // 可写、非草稿的定时事件才可拖拽改时段(回写飞书);全天/只读/冲突草稿不可拖。
+  // useDraggable 必须无条件调用(hooks 规则),用 disabled 关掉不可拖的情形。
+  const canDrag = variant === "timed" && !locked && !isDraft;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `event-${event.id}`,
+    disabled: !canDrag
+  });
+  // 区分「点击看详情」与「拖拽改时段」:记下按下位置,松开时位移 >4px(与 dnd-kit 激活阈值一致)
+  // 视为拖拽、不弹详情;否则当点击 → 弹详情。
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  // 来源标签 + 锁的 title 提示(hover 看全)
+  const sourceLabel = event.calendarName
+    ? t("calendar.source", { name: event.calendarName })
+    : null;
+  const titleAttr = [
+    event.title,
+    sourceLabel,
+    locked ? t("calendar.readonly") : null
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (variant === "allDay") {
+    return (
       <div
+        onClick={() => onOpenDetail?.(event)}
         className={cn(
-          "text-xs font-medium leading-tight mt-0.5 line-clamp-2",
-          isDone && "line-through"
+          "rounded px-1 py-0.5 flex items-center gap-1 overflow-hidden cursor-pointer",
+          eventCardCls(locked)
         )}
+        title={titleAttr}
       >
-        {todo.title}
+        {locked && <Lock className="w-2.5 h-2.5 flex-shrink-0 opacity-70" />}
+        <span className="text-[10px] font-medium leading-tight truncate">
+          {event.title || t("calendar.allDay")}
+        </span>
       </div>
+    );
+  }
+
+  // timed
+  return (
+    <div
+      ref={canDrag ? setNodeRef : undefined}
+      style={{
+        top,
+        height,
+        left: 4,
+        right: 4,
+        position: "absolute",
+        opacity: isDragging ? 0.3 : 1
+      }}
+      {...(canDrag ? listeners : {})}
+      {...(canDrag ? attributes : {})}
+      onPointerDownCapture={(e) => {
+        downPos.current = { x: e.clientX, y: e.clientY };
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        const d = downPos.current;
+        if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return; // 拖拽,不弹详情
+        onOpenDetail?.(event);
+      }}
+      className={cn(
+        "rounded-md px-1.5 py-1 overflow-hidden hover:shadow-md transition-shadow",
+        canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+        isDraft
+          ? "border border-amber-400 dark:border-amber-500/70 bg-amber-50 dark:bg-amber-500/10 text-amber-900 dark:text-amber-200"
+          : eventCardCls(locked)
+      )}
+      title={titleAttr}
+    >
+      {isDraft && (height ?? 0) >= 50 && (
+        <div className="text-[9px] font-semibold text-amber-700 dark:text-amber-300 leading-none mb-0.5">
+          ⚠ 冲突·草稿
+        </div>
+      )}
+      {(height ?? 0) < 50 ? (
+        /* 矮块(≤45min):标题优先单行 + 行内开始时间(+锁),时间不折行、不抢标题位置 */
+        <div className="flex items-baseline gap-1 overflow-hidden">
+          {locked && (
+            <Lock className="w-2.5 h-2.5 flex-shrink-0 self-center opacity-70" />
+          )}
+          <span className="flex-1 min-w-0 truncate text-[11px] font-medium leading-tight">
+            {event.title}
+          </span>
+          {range && (
+            <span className="flex-shrink-0 text-[9px] font-mono opacity-60 whitespace-nowrap">
+              {formatHM(range.startMin)}
+            </span>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-start gap-1">
+            {locked && <Lock className="w-2.5 h-2.5 flex-shrink-0 mt-0.5" />}
+            <span className="min-w-0 line-clamp-2 text-xs font-medium leading-tight">
+              {event.title}
+            </span>
+          </div>
+          {range && (
+            <div className="mt-0.5 text-[10px] font-mono opacity-70 whitespace-nowrap">
+              {formatHM(range.startMin)} – {formatHM(range.endMin)}
+            </div>
+          )}
+          {sourceLabel && (height ?? 0) >= 76 && (
+            <div className="mt-0.5 text-[9px] leading-tight opacity-70 truncate">
+              {sourceLabel}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -775,6 +1106,18 @@ function priorityCardCls(p: Priority): string {
     default:
       return "bg-indigo-50 text-indigo-900 border-l-2 border-indigo-500 dark:bg-indigo-950/30 dark:text-indigo-200 dark:border-indigo-400";
   }
+}
+
+/**
+ * 同步事件卡配色(与 todo 优先级卡区分:用蓝/灰系,整圈边框而非左侧色条)。
+ *  - locked(不可写):灰色虚线边框,弱化态,提示"只读"。
+ *  - 可写:蓝色实线边框(Phase 4 才放开拖拽编辑)。
+ */
+function eventCardCls(locked: boolean): string {
+  if (locked) {
+    return "border border-dashed border-zinc-300 bg-zinc-50 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800/40 dark:text-zinc-300";
+  }
+  return "border border-solid border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-200";
 }
 
 function getWeekdayLabels(

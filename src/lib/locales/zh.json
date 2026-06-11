@@ -6,16 +6,19 @@
     "briefing": "早安",
     "todos": "待办",
     "calendar": "日历",
-    "reflect": "反思",
+    "history": "对话记录",
     "chat": "AI 对话",
     "telos": "Telos",
     "settings": "设置",
-    "openFloating": "打开浮窗"
+    "openChatBar": "打开对话条",
+    "openTodo": "打开 todo 悬浮窗"
   },
   "floating": {
-    "title": "Daybreak · 今日",
+    "title": "Daybreak · 待办",
     "placeholder": "记一笔(回车提交)",
     "empty": "今天没有待办,试试在上面记一笔",
+    "emptyScope": "这个范围没有未完成的待办",
+    "scope": { "today": "今日", "week": "本周", "all": "全部" },
     "progress": "完成 {{done}}/{{total}}",
     "added": "已添加",
     "addedNoParse": "已添加(AI 未生效,用了原文)",
@@ -147,26 +150,10 @@
     "noScheduled": "未排期",
     "unscheduledHeader": "未排期({{count}})",
     "unscheduledHint": "拖到左侧时间格安排时段",
-    "monthEmpty": "本月暂无排期任务"
-  },
-  "reflect": {
-    "title": "反思",
-    "comingSoon": "反思页开发中。",
-    "subtitle": "回看今天/本周的完成情况,让 AI 帮你提炼一段反思",
-    "period": {
-      "day": "今日",
-      "week": "本周"
-    },
-    "generate": "生成反思",
-    "generating": "AI 思考中…",
-    "current": "{{date}} 反思",
-    "empty": "还没有这个周期的反思。点击「生成反思」让 AI 帮你梳理。",
-    "history": "历史反思",
-    "stats": {
-      "completed": "已完成",
-      "pending": "未完成",
-      "procrastinated": "拖延"
-    }
+    "monthEmpty": "本月暂无排期任务",
+    "allDay": "全天",
+    "readonly": "只读",
+    "source": "来源:{{name}}"
   },
   "chat": {
     "title": "AI 对话",
@@ -181,7 +168,22 @@
     "emptyBody": "今日待办、Telos 目标和当前时间都会自动作为上下文。问「我下午这两个会能挪到明天吗」「今天应该先做哪个」都行。",
     "deleteConv": "删除对话",
     "reasoning": "思考过程",
-    "reasoningStreaming": "思考中…"
+    "reasoningStreaming": "思考中…",
+    "capturePlaceholder": "随手记个待办(回车)",
+    "pin": "置顶",
+    "unpin": "取消置顶"
+  },
+  "chatbar": {
+    "title": "对话",
+    "placeholder": "今天想做点什么?",
+    "empty": "问我今天的安排,或随手记个待办。",
+    "collapse": "收起"
+  },
+  "history": {
+    "title": "对话记录",
+    "empty": "还没有对话。",
+    "pick": "在左侧选一段对话查看。",
+    "noMessages": "这段对话还没有消息。"
   },
   "telos": {
     "title": "Telos · 长期目标",
@@ -215,6 +217,21 @@
   },
   "settings": {
     "title": "设置",
+    "shortcuts": {
+      "title": "快捷键",
+      "description": "设置一个全局快捷键来开 / 收对话条,系统级生效(任意 App 前台都能触发)。",
+      "toggleChatbar": "开 / 收对话条",
+      "toggleTodo": "开 / 收待办",
+      "showWorkbench": "唤起工作台",
+      "record": "录制",
+      "cancel": "取消",
+      "recording": "按下组合键…",
+      "unset": "未设置",
+      "clear": "清除",
+      "saved": "快捷键已保存",
+      "disabled": "已禁用快捷键",
+      "failed": "设置失败(组合键可能被占用)"
+    },
     "reminder": {
       "title": "定时提醒",
       "description": "每隔一段时间提醒你记一句「刚才在做什么」,积累真实的时间去向。",
@@ -224,7 +241,7 @@
       "interval": "提醒间隔",
       "minutes": "分钟",
       "channel": "提醒方式",
-      "channelFloating": "浮窗",
+      "channelFloating": "悬浮窗",
       "channelNotification": "系统通知",
       "channelBoth": "两者",
       "workHours": "工作时段(小时)",

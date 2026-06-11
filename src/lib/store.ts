@@ -157,13 +157,16 @@ export const useTodoStore = create<TodoStore>((set, get) => ({
 
   hydrate: async () => {
     try {
-      await dbSeedIfEmpty(SEED_TODOS);
+      // 注意：不再调用 dbSeedIfEmpty。
+      // 之前每次 hydrate 都跑 seed-if-empty，导致"用户删光所有任务后，
+      // emitSync 触发 hydrate 看到表空就把 SEED 又塞回来"的 bug。
+      // 现在删了就是删了，空就是空。SEED_TODOS 保留供未来的"重置示例"按钮复用。
       const todos = await dbListTodos();
       set({ todos, loaded: true });
     } catch (err) {
       console.error("[store] hydrate failed:", err);
-      // 兜底:即使 db 出错也别让 UI 一直空白
-      set({ todos: SEED_TODOS, loaded: true });
+      // 兜底：db 出错时显示空，而不是强塞 SEED（避免上面那个回填 bug）
+      set({ todos: [], loaded: true });
     }
   },
 

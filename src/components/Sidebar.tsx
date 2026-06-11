@@ -5,19 +5,19 @@ import {
   Sun,
   ListTodo,
   CalendarDays,
-  Lightbulb,
   MessageSquare,
   Target,
   Settings,
-  PanelTopOpen
+  PanelTopOpen,
+  History
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useTodoStore } from "../lib/store";
-import { toast } from "../lib/toast";
+import { openChatBar, openTodoFloat } from "../lib/windowLayout";
 
 /**
  * 主导航
- * 6 个路由:Briefing(早安) / Todos / Calendar / Reflect / Chat / Telos
+ * 路由:Briefing(早安) / Todos / Calendar / Chat / Telos
  *
  * 颜色 class 一律 light 默认 + dark: 前缀,用 Tailwind darkMode: "class" 切换。
  */
@@ -25,10 +25,12 @@ const NAV_ITEMS = [
   { href: "/", icon: Sun, key: "briefing" },
   { href: "/todos", icon: ListTodo, key: "todos" },
   { href: "/calendar", icon: CalendarDays, key: "calendar" },
-  { href: "/reflect", icon: Lightbulb, key: "reflect" },
-  { href: "/chat", icon: MessageSquare, key: "chat" },
+  { href: "/history", icon: History, key: "history" },
   { href: "/telos", icon: Target, key: "telos" }
 ] as const;
+
+const NAV_BTN_CLASS =
+  "w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100";
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -85,19 +87,25 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* 底部:浮窗 + Settings + 完成度 */}
+      {/* 底部:悬浮窗入口 + Settings + 完成度 */}
       <div className="px-3 pb-4 mt-auto space-y-1">
         <button
           type="button"
-          onClick={() => void openFloating()}
-          title={t("nav.openFloating")}
-          className={cn(
-            "w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
-          )}
+          onClick={() => void openChatBar()}
+          title={t("nav.openChatBar")}
+          className={NAV_BTN_CLASS}
+        >
+          <MessageSquare className="w-4 h-4 stroke-[2px]" />
+          <span className="font-medium">{t("nav.openChatBar")}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void openTodoFloat()}
+          title={t("nav.openTodo")}
+          className={NAV_BTN_CLASS}
         >
           <PanelTopOpen className="w-4 h-4 stroke-[2px]" />
-          <span className="font-medium">{t("nav.openFloating")}</span>
+          <span className="font-medium">{t("nav.openTodo")}</span>
         </button>
         <NavLink
           to="/settings"
@@ -125,42 +133,6 @@ export function Sidebar() {
       </div>
     </aside>
   );
-}
-
-/**
- * 打开浮窗:从 tauri.conf.json 预声明的 label="floating" 那个隐藏窗口拉出来
- */
-async function openFloating(): Promise<void> {
-  try {
-    // 动态 import 避免在浏览器环境(无 Tauri runtime)报错
-    const mod = await import("@tauri-apps/api/webviewWindow");
-    const win = await mod.WebviewWindow.getByLabel("floating");
-    if (win) {
-      await win.show();
-      await win.setFocus();
-      return;
-    }
-    // 兜底:如果预声明窗口没找到(罕见,通常意味着浮窗被 close 而非 hide,
-    // label 已释放)。参数对齐 tauri.conf.json 里 floating 窗口的声明,
-    // 避免出现一个跟预声明状态不一致(尺寸/置顶/阴影/任务栏行为)的"第二种浮窗"。
-    new mod.WebviewWindow("floating", {
-      url: "/index.html#/__floating__",
-      width: 260,
-      height: 420,
-      minWidth: 240,
-      minHeight: 360,
-      resizable: true,
-      decorations: false,
-      alwaysOnTop: true,
-      skipTaskbar: false,
-      transparent: false,
-      shadow: true,
-      title: "Daybreak"
-    });
-  } catch (err) {
-    console.error("[Sidebar] open floating failed:", err);
-    toast.error("打开浮窗失败,详情见 console");
-  }
 }
 
 /** 今天 YYYY-MM-DD(本地时区) */

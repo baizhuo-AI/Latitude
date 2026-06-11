@@ -1,12 +1,13 @@
 import { useSettingsStore, type ReminderConfig } from "./settings";
 import { emitSync } from "./syncBus";
+import { openTodoFloat } from "./windowLayout";
 import i18n from "./i18n";
 
 /**
  * 间歇式时间日志 — 提醒调度
  *
- * ⚠️ 只在主窗口启动(浮窗不启动),否则主窗口 + 浮窗各跑一个定时器会重复提醒。
- *    挂载点见 src/App.tsx 的 MainApp(浮窗走 FloatingApp 分支,不会调到这里)。
+ * ⚠️ 只在工作台窗(label "main")启动(对话窗不启动),否则两窗各跑一个定时器会重复提醒。
+ *    挂载点见 src/App.tsx 的 MainWindow。
  *
  * 机制:每分钟 tick,满足全部条件才触发:
  *   - reminder.enabled
@@ -14,8 +15,8 @@ import i18n from "./i18n";
  *   - 未暂停(Date.now() >= pausedUntil)
  *   - 距上次提醒 >= intervalMin
  * 触发动作:
- *   - channel 含 "floating":show 浮窗 + emitSync("reminder") 让浮窗进记录态
- *   - channel 含 "notification":发 macOS 系统通知(M3 接入 plugin-notification)
+ *   - channel 含 "floating":弹出/聚焦 todo 悬浮窗 + emitSync("reminder") 让它浮现"记一句刚才在做什么"
+ *   - channel 含 "notification":额外发 macOS 系统通知(plugin-notification)
  *
  * lastFired 存 localStorage,重启 app 不会立刻又弹。
  */
@@ -30,19 +31,6 @@ function getLastFired(): number {
 
 function setLastFired(ts: number): void {
   localStorage.setItem(LAST_FIRED_KEY, String(ts));
-}
-
-async function showFloating(): Promise<void> {
-  try {
-    const mod = await import("@tauri-apps/api/webviewWindow");
-    const win = await mod.WebviewWindow.getByLabel("floating");
-    if (win) {
-      await win.show();
-      await win.setFocus();
-    }
-  } catch (err) {
-    console.error("[reminder] show floating failed:", err);
-  }
 }
 
 /**
@@ -67,12 +55,10 @@ async function sendSystemNotification(): Promise<void> {
   }
 }
 
-async function fireReminder(): Promise<void> {
+function fireReminder(): void {
   const { channel } = useSettingsStore.getState().reminder;
-  if (channel === "floating" || channel === "both") {
-    await showFloating();
-  }
-  // 通知浮窗进入"记录刚才"输入态(浮窗隐藏时也一直在监听 BroadcastChannel)
+  // channel 含 "floating":弹出/聚焦 todo 悬浮窗(TodoFloat 监听 "reminder" 浮现"记一句"输入)
+  if (channel === "floating" || channel === "both") void openTodoFloat();
   emitSync("reminder");
   if (channel === "notification" || channel === "both") {
     void sendSystemNotification();
@@ -104,7 +90,7 @@ function tick(): void {
   const now = new Date();
   if (!shouldFireReminder(reminder, now, now.getTime(), getLastFired())) return;
   setLastFired(now.getTime());
-  void fireReminder();
+  fireReminder();
 }
 
 /**

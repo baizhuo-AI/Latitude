@@ -1,13 +1,14 @@
 //! MCP server 启动逻辑 + 鉴权 + 工具定义。
 //!
 //! 工具集中在一个 `#[tool_router]` impl 块里注册（rmcp 机制这样最稳）。
-//! 覆盖 4 个数据域：todos / goals / reflections / activity_log，共 12 个工具。
+//! 覆盖 3 个数据域：todos / goals / activity_log。
 //!
 //! 鉴权：所有请求需带 `Authorization: Bearer <token>`，否则 401。
 //! 刷新：写操作后调用 notify 回调（Tauri 端转成事件通知前端刷新；命令行测试传空回调）。
 
 use crate::mcp::db;
-use chrono::{Local, Utc};
+use crate::util::{gen_id, now_iso};
+use chrono::Local;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
@@ -22,24 +23,13 @@ use serde::Deserialize;
 use sqlx::{Row, SqlitePool};
 use std::path::PathBuf;
 use std::sync::Arc;
-use uuid::Uuid;
 
-/// 写操作后的刷新通知回调。参数是变更的数据域（todos/goals/reflections/activities）。
+/// 写操作后的刷新通知回调。参数是变更的数据域（todos/goals/activities）。
 /// 用回调而非直接依赖 tauri::AppHandle，是为了让命令行 smoke 测试也能复用 start()。
 pub type Notifier = Arc<dyn Fn(&str) + Send + Sync>;
 
 /* ===================== 通用 helper ===================== */
-
-/// ISO 时间戳，与前端 new Date().toISOString() 对齐（带毫秒 + Z）。
-fn now_iso() -> String {
-    Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
-}
-
-/// 生成主键，格式 `<prefix><毫秒>_<4位随机>`，与前端 newTodoId 风格一致。
-fn gen_id(prefix: &str) -> String {
-    let u = Uuid::new_v4().simple().to_string();
-    format!("{}{}_{}", prefix, Utc::now().timestamp_millis(), &u[..4])
-}
+// now_iso / gen_id 已提到 crate::util 共享（feishu 仓储层也用），见文件头 use。
 
 fn ok_json(v: serde_json::Value) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::success(vec![Content::text(
@@ -154,26 +144,6 @@ struct SetGoalStatusRequest {
     id: String,
     #[schemars(description = "新状态：active / achieved / abandoned")]
     status: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ListReflectionsRequest {
-    #[schemars(description = "周期：day（日复盘）/ week（周复盘）")]
-    period: String,
-    #[schemars(description = "最多返回多少条，默认 20")]
-    limit: Option<i64>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct UpsertReflectionRequest {
-    #[schemars(description = "日期，日复盘用 YYYY-MM-DD，周复盘用 YYYY-Www（如 2026-W19）")]
-    date: String,
-    #[schemars(description = "周期：day / week")]
-    period: String,
-    #[schemars(description = "复盘正文")]
-    content: String,
-    #[schemars(description = "心情标签，可选")]
-    mood_tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -390,70 +360,6 @@ impl DaybreakMcp {
         ok_json(serde_json::json!({ "updated": true, "id": req.id, "status": req.status }))
     }
 
-    #[tool(description = "列出复盘记录。period 取值：day（日）/ week（周）")]
-    async fn list_reflections(
-        &self,
-        Parameters(req): Parameters<ListReflectionsRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        let limit = req.limit.unwrap_or(20).clamp(1, 200);
-        let rows = sqlx::query(
-            "SELECT id, date, period, content, mood_tags FROM reflections \
-             WHERE period = ?1 ORDER BY date DESC LIMIT ?2",
-        )
-        .bind(&req.period)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(db_err)?;
-        let items: Vec<_> = rows
-            .iter()
-            .map(|r| {
-                let mood_raw = r.get::<String, _>("mood_tags");
-                let mood: serde_json::Value =
-                    serde_json::from_str(&mood_raw).unwrap_or_else(|_| serde_json::json!([]));
-                serde_json::json!({
-                    "id": r.get::<String, _>("id"),
-                    "date": r.get::<String, _>("date"),
-                    "period": r.get::<String, _>("period"),
-                    "content": r.get::<String, _>("content"),
-                    "mood_tags": mood,
-                })
-            })
-            .collect();
-        ok_json(serde_json::json!({ "count": items.len(), "reflections": items }))
-    }
-
-    #[tool(description = "新增或覆盖某天/某周的复盘（同 date+period 只保留最新一条）")]
-    async fn upsert_reflection(
-        &self,
-        Parameters(req): Parameters<UpsertReflectionRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        let mood_json = serde_json::to_string(&req.mood_tags.unwrap_or_default())
-            .unwrap_or_else(|_| "[]".to_string());
-        sqlx::query("DELETE FROM reflections WHERE date = ?1 AND period = ?2")
-            .bind(&req.date)
-            .bind(&req.period)
-            .execute(&self.pool)
-            .await
-            .map_err(db_err)?;
-        let id = gen_id("r");
-        sqlx::query(
-            "INSERT INTO reflections (id, date, period, content, mood_tags, created_at) \
-             VALUES (?1,?2,?3,?4,?5,?6)",
-        )
-        .bind(&id)
-        .bind(&req.date)
-        .bind(&req.period)
-        .bind(&req.content)
-        .bind(&mood_json)
-        .bind(now_iso())
-        .execute(&self.pool)
-        .await
-        .map_err(db_err)?;
-        (self.notify)("reflections");
-        ok_json(serde_json::json!({ "saved": { "id": id, "date": req.date, "period": req.period } }))
-    }
-
     #[tool(description = "列出最近的时间日志（间歇式记录你在做什么）")]
     async fn list_activities(
         &self,
@@ -584,7 +490,7 @@ impl ServerHandler for DaybreakMcp {
                 icons: None,
             },
             instructions: Some(
-                "Daybreak 本地 MCP：管理你的任务、目标、复盘、时间日志".to_string(),
+                "Daybreak 本地 MCP：管理你的任务、目标、时间日志".to_string(),
             ),
         }
     }

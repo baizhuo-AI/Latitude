@@ -13,18 +13,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 # 防双开:第二次启动时把焦点切回已有窗口,避免两个进程同时写 SQLite 触发 BUSY
 tauri-plugin-single-instance = { version = "2", features = [] }
 # 间歇式时间日志的提醒走系统通知
 tauri-plugin-notification = "2"
+# 全局快捷键:Alt+Space 开/收对话条（在 Rust 端注册,见 lib.rs）
+tauri-plugin-global-shortcut = "2"
 
 # === 内嵌 MCP server（对外暴露 Claude Code / 其他 MCP 客户端访问 Daybreak 数据）===
 # rmcp: 官方 Rust MCP SDK；axum: HTTP 层。两者跑在 Tauri 进程内的 tokio 后台任务里。
 rmcp = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "macros", "process", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "macros", "process", "io-util", "time"] }
 # 关键决策：MCP server 复用与 tauri-plugin-sql 相同的 sqlx（而非 rusqlite），
 # 避免两个 SQLite native 库（libsqlite3-sys）重复链接冲突；async 也契合 MCP 工具的 async handler。
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
@@ -36,3 +38,24 @@ rand = "0.8"
 # 写操作的时间戳（created_at/updated_at，ISO 格式与前端 toISOString 对齐）和 id 生成
 chrono = { version = "0.4", features = ["clock"] }
 uuid = { version = "1", features = ["v4"] }
+
+# === 飞书/Lark 日历同步 ===
+# 出站 HTTP：调飞书开放接口（OAuth 换 token、拉日历/日程）。
+# 关键决策：用 rustls 而非默认 native-tls —— 不依赖系统 OpenSSL，macOS 打包更干净；
+# default-features=false 避免把默认 TLS 也拉进来。
+# 注意：reqwest 0.13 的 TLS feature 与 0.12 不同——没有 "rustls-tls"，
+# 用 "rustls"（自带 aws-lc-rs crypto provider）+ "webpki-roots"（内置 CA 根，不读系统证书库）。
+# 版本对齐 rmcp 已间接锁定的 0.13.3。
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots", "gzip"] }
+# OS 钥匙串：飞书 app_secret 与 access/refresh token 存系统 Keychain，不落明文。
+# 关键决策：keyring 3.x 的 macOS 后端 feature 是 apple-native（2.x 时叫 platform-macos）。
+keyring = { version = "3", features = ["apple-native"] }
+# PKCE：code_challenge = base64url-nopad(sha256(code_verifier))
+sha2 = "0.10"
+base64 = "0.22"
+# 拼授权 URL / 回调解析
+url = "2.5"
+# 时区归一（Phase 2 用）：定时日程的 UTC 时间戳按事件 IANA 时区折算本地
+chrono-tz = "0.10"
+# OAuth 时从 Rust 侧拉起系统浏览器（绕开 Tauri opener 插件与 capability 配置）
+open = "5"

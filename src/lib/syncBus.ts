@@ -18,9 +18,10 @@ export type SyncTopic =
   | "todos"
   | "goals"
   | "conversations"
-  | "reflections"
   | "activities"
-  | "reminder";
+  | "reminder"
+  | "calendar_events"
+  | "layout";
 
 interface SyncPayload {
   topic: SyncTopic;

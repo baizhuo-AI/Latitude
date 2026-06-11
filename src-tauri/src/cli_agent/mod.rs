@@ -71,15 +71,63 @@ impl CliKind {
     }
 }
 
-/// 检测某家 CLI 是否在 PATH。前端在设置 UI 上显示「已检测 / 未装」用。
+/// 扩展 PATH 字符串：macOS GUI app 启动时只读 /etc/paths 那套很短的默认 PATH，
+/// 不读用户 .zshrc / .bashrc 里加的 npm global / nvm / cargo / ~/.local/bin 等。
+/// 把常见 CLI 安装位置补回来，作为子进程的 PATH，避免 CLI 内部再 spawn 其它命令也撞同坑。
+pub fn enhanced_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let extras = [
+        format!("{home}/.local/bin"),
+        format!("{home}/.npm-global/bin"),
+        format!("{home}/.cargo/bin"),
+        format!("{home}/.fnm/aliases/default/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+    ];
+    let current = std::env::var("PATH").unwrap_or_default();
+    if current.is_empty() {
+        extras.join(":")
+    } else {
+        format!("{}:{}", extras.join(":"), current)
+    }
+}
+
+/// 在扩展的目录里查找指定二进制，返回绝对路径。
+///
+/// 为什么不直接 `Command::new("claude")`：Rust 的 Command 用**父进程**的 PATH 查找，
+/// macOS GUI app 父 PATH 不含 ~/.local/bin 等，找不到。这里手动遍历扩展目录拿到绝对路径。
+pub fn resolve_cli_bin(name: &str) -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dirs = [
+        format!("{home}/.local/bin"),
+        format!("{home}/.npm-global/bin"),
+        format!("{home}/.cargo/bin"),
+        format!("{home}/.fnm/aliases/default/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+    ];
+    for d in &dirs {
+        let p = std::path::PathBuf::from(d).join(name);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    // 再用系统 PATH 兜底（万一用户装到非标准位置）
+    if let Ok(path) = std::env::var("PATH") {
+        for d in path.split(':') {
+            let p = std::path::PathBuf::from(d).join(name);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// 检测某家 CLI 是否能找到。不 spawn `which`（父进程 PATH 缺路径会假阴性），
+/// 直接在扩展过的目录里查文件。
 pub async fn detect(kind: CliKind) -> bool {
-    let bin = if cfg!(windows) { "where" } else { "which" };
-    tokio::process::Command::new(bin)
-        .arg(kind.bin())
-        .output()
-        .await
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+    resolve_cli_bin(kind.bin()).is_some()
 }
 
 /// 前端调：spawn 一个 CLI agent 跑一轮对话。

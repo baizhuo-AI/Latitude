@@ -18,7 +18,10 @@ use tokio::process::Command;
 use tokio::sync::mpsc::Sender;
 
 pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> {
-    let mut cmd = Command::new("kiro-cli");
+    let bin = super::resolve_cli_bin("kiro-cli")
+        .unwrap_or_else(|| std::path::PathBuf::from("kiro-cli"));
+    let mut cmd = Command::new(&bin);
+    cmd.env("PATH", super::enhanced_path());
     cmd.arg("chat")
         .arg("--no-interactive")
         .arg("--trust-all-tools");

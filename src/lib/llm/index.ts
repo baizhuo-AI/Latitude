@@ -286,48 +286,6 @@ function recordUsage(
   }).catch((err) => console.warn("[LLM] usage insert failed:", err));
 }
 
-/* ---------- 反思生成 ---------- */
-
-const REFLECT_SYSTEM = `你是 Daybreak 的反思助手。
-
-用户会给你一段他今天/本周的任务统计(完成的、未完成的、拖延的)。请用中文写一段 120-180 字的反思,包含三部分:
-
-1. 「值得肯定」:具体指出做得好的地方
-2. 「值得反思」:指出趋势性问题(如某类任务总拖延、安排过满等)
-3. 「下一步建议」:给一两条具体可执行的小建议
-
-口气平和、不说教,像一个观察细致的朋友。`;
-
-interface ReflectInput {
-  /** day / week */
-  period: "day" | "week";
-  /** "2026-05-11" 或 "2026-W19" */
-  label: string;
-  completed: Array<{ title: string; estTime?: string }>;
-  pending: Array<{ title: string; estTime?: string }>;
-  procrastinated: Array<{ title: string; days: number }>;
-  goals: Array<{ period: string; title: string }>;
-}
-
-export async function generateReflection(input: ReflectInput): Promise<string> {
-  const provider = getProvider();
-  const userMsg = JSON.stringify(input, null, 2);
-
-  if (provider.name === "mock") {
-    return `(mock 反思) ${input.period === "day" ? "今天" : "本周"}你完成了 ${input.completed.length} 项任务,有 ${input.pending.length} 项未完成,${input.procrastinated.length} 项被拖延。配置 LLM key 后这里会是真的反思内容。`;
-  }
-
-  const result = await provider.chat(
-    [
-      { role: "system", content: REFLECT_SYSTEM + telosContextSection() },
-      { role: "user", content: userMsg }
-    ],
-    { temperature: 0.6, maxTokens: 500 }
-  );
-  recordUsage(provider, result.usage, "reflect");
-  return result.content.trim();
-}
-
 /* ---------- Chat 高层 API ---------- */
 
 import type { ChatMessage, ChatResult, StreamHandlers } from "./types";
@@ -403,10 +361,11 @@ export async function chatStreamCall(
 
 const TOOL_SYSTEM_HINT = `
 
-你能调用工具来帮用户管理任务、目标、复盘、时间日志（增删改查、排期、标记完成等）。
+你能调用工具来帮用户管理任务、目标、复盘、时间日志、日历事件（增删改查、排期、标记完成等）。
 - 用户意图涉及这些操作时，直接调用相应工具完成，再用简洁中文说明结果。
 - 查询类需求也走工具拿最新数据，不要凭空编造。
-- 删除任务/目标是可恢复的（标记放弃），放心执行。`;
+- 删除任务/目标是可恢复的（标记放弃），放心执行。
+- 对话中用户已经提供的条件（时间、对象、范围等），后续轮次直接沿用，不要重复追问已知信息。`;
 
 /**
  * 带 function calling 的 agent 对话（非流式）。

@@ -5,16 +5,15 @@
  * 执行直接复用前端已有的 db.ts / store 函数（不绕后端 MCP），执行后刷新对应 store，
  * 这样在对话里改的数据，TodosPage / Briefing / 浮窗等界面会实时更新。
  *
- * 工具集与后端 MCP 对齐（同样 16 个），保证"应用内对话"和"外部 Claude Code"能力一致。
+ * 工具集与后端 MCP 对齐，保证"应用内对话"和"外部 Claude Code"能力一致。
  */
 
 import {
   dbListTodos,
   dbUpdateTodoStatus,
   dbUpdateTodoSchedule,
-  dbListReflections,
-  dbUpsertReflection,
   dbListActivities,
+  dbListCalendarEvents,
 } from "./db";
 import { useTodoStore, newTodoId, type Todo, type Priority, type TodoStatus } from "./store";
 import { useGoalsStore, newGoalId, type Goal } from "./goalsStore";
@@ -35,10 +34,6 @@ export interface ChatTool {
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function reflectionId(): string {
-  return `r${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
 function str(v: unknown): string | undefined {
@@ -337,51 +332,6 @@ export const CHAT_TOOLS: ChatTool[] = [
     },
   },
   {
-    name: "list_reflections",
-    description: "列出复盘记录。period：day（日）/ week（周）",
-    parameters: {
-      type: "object",
-      properties: {
-        period: { type: "string", description: "day / week" },
-        limit: { type: "number", description: "默认 20" },
-      },
-      required: ["period"],
-    },
-    execute: async (a) => {
-      const period = str(a.period);
-      if (period !== "day" && period !== "week") return JSON.stringify({ error: "period 须为 day 或 week" });
-      const limit = typeof a.limit === "number" ? a.limit : 20;
-      const rows = await dbListReflections(period, limit);
-      const items = rows.map((r) => ({ id: r.id, date: r.date, period: r.period, content: r.content, moodTags: r.moodTags }));
-      return JSON.stringify({ count: items.length, reflections: items });
-    },
-  },
-  {
-    name: "upsert_reflection",
-    description: "新增或覆盖某天/某周的复盘（同 date+period 只保留最新一条）",
-    parameters: {
-      type: "object",
-      properties: {
-        date: { type: "string", description: "日复盘 YYYY-MM-DD，周复盘 YYYY-Www" },
-        period: { type: "string", description: "day / week" },
-        content: { type: "string" },
-        mood_tags: { type: "array", items: { type: "string" }, description: "心情标签，可选" },
-      },
-      required: ["date", "period", "content"],
-    },
-    execute: async (a) => {
-      const date = str(a.date);
-      const period = str(a.period);
-      const content = str(a.content);
-      if (!date || (period !== "day" && period !== "week") || !content)
-        return JSON.stringify({ error: "date / period(day|week) / content 必填" });
-      const moodTags = Array.isArray(a.mood_tags) ? (a.mood_tags as unknown[]).filter((x): x is string => typeof x === "string") : [];
-      await dbUpsertReflection({ id: reflectionId(), date, period, content, moodTags, createdAt: new Date().toISOString() });
-      emitSync("reflections");
-      return JSON.stringify({ saved: { date, period } });
-    },
-  },
-  {
     name: "list_activities",
     description: "列出最近的时间日志",
     parameters: { type: "object", properties: { limit: { type: "number", description: "默认 100" } } },
@@ -400,6 +350,84 @@ export const CHAT_TOOLS: ChatTool[] = [
       if (!content) return JSON.stringify({ error: "content 必填" });
       await useActivityStore.getState().addActivity(content); // 内含 db 写入 + emitSync
       return JSON.stringify({ logged: { content } });
+    },
+  },
+  {
+    name: "list_calendar_events",
+    description: "查询日历事件。可按单日或日期范围查，不传日期默认查今天",
+    parameters: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "单日 YYYY-MM-DD（与 start_date/end_date 互斥）" },
+        start_date: { type: "string", description: "范围起始 YYYY-MM-DD（含）" },
+        end_date: { type: "string", description: "范围结束 YYYY-MM-DD（含）" },
+        calendar_id: { type: "string", description: "只看某个日历（留空返回所有日历）" },
+        limit: { type: "number", description: "最多返回多少条，默认 30" },
+      },
+    },
+    execute: async (a) => {
+      const all = await dbListCalendarEvents(
+        a.calendar_id ? { calendarId: String(a.calendar_id) } : {}
+      );
+      const date = str(a.date);
+      const startDate = str(a.start_date);
+      const endDate = str(a.end_date);
+      let filtered = all;
+      if (date) {
+        filtered = all.filter((e) => e.scheduledDate === date);
+      } else if (startDate || endDate) {
+        filtered = all.filter((e) => {
+          const d = e.scheduledDate ?? "";
+          return (!startDate || d >= startDate) && (!endDate || d <= endDate);
+        });
+      } else {
+        const today = todayKey();
+        filtered = all.filter((e) => e.scheduledDate === today);
+      }
+      const limit = typeof a.limit === "number" ? a.limit : 30;
+      const items = filtered.slice(0, limit).map((e) => ({
+        title: e.title,
+        date: e.scheduledDate,
+        time: e.scheduledTime,
+        location: e.location,
+        calendar: e.calendarName,
+        allDay: e.isAllDay,
+        description: e.description?.slice(0, 100),
+      }));
+      return JSON.stringify({ count: items.length, events: items });
+    },
+  },
+  {
+    name: "search_calendar_events",
+    description: "按关键词搜索日历事件（标题或描述包含关键词）",
+    parameters: {
+      type: "object",
+      properties: {
+        keyword: { type: "string", description: "搜索关键词（必填）" },
+        limit: { type: "number", description: "最多返回多少条，默认 10" },
+      },
+      required: ["keyword"],
+    },
+    execute: async (a) => {
+      const keyword = str(a.keyword);
+      if (!keyword) return JSON.stringify({ error: "keyword 必填" });
+      const all = await dbListCalendarEvents();
+      const kw = keyword.toLowerCase();
+      const matched = all.filter(
+        (e) =>
+          e.title.toLowerCase().includes(kw) ||
+          (e.description ?? "").toLowerCase().includes(kw)
+      );
+      const limit = typeof a.limit === "number" ? a.limit : 10;
+      const items = matched.slice(0, limit).map((e) => ({
+        title: e.title,
+        date: e.scheduledDate,
+        time: e.scheduledTime,
+        location: e.location,
+        calendar: e.calendarName,
+        allDay: e.isAllDay,
+      }));
+      return JSON.stringify({ count: items.length, events: items });
     },
   },
 ];

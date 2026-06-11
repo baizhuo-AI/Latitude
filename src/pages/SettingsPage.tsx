@@ -12,21 +12,28 @@ import {
   Upload,
   Trash2,
   Bell,
-  Plug
+  Plug,
+  CalendarClock,
+  Command
 } from "lucide-react";
 import {
   useSettingsStore,
   type Lang,
   type ProviderName,
-  type ChatBackend
+  type ChatBackend,
+  type FeishuRegion,
+  type ShortcutsConfig
 } from "../lib/settings";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useThemeStore, type ThemeMode } from "../lib/theme";
 import { cn } from "../lib/utils";
 import { useConfirm } from "../components/ConfirmDialog";
 import { deleteAllTodos, downloadExport, importFromJson } from "../lib/dataIO";
 import { toast } from "../lib/toast";
 import { dbUsageSummary } from "../lib/db";
+import { useCalendarEventsStore } from "../lib/calendarEventsStore";
+import { feishuSyncNow } from "../lib/calendarSync";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -94,6 +101,15 @@ export function SettingsPage() {
             <ReminderSettings />
           </Section>
 
+          {/* 快捷键 */}
+          <Section
+            icon={<Command className="w-4 h-4" />}
+            title={t("settings.shortcuts.title")}
+            description={t("settings.shortcuts.description")}
+          >
+            <ShortcutsSettings />
+          </Section>
+
           {/* LLM */}
           <Section
             icon={<KeyRound className="w-4 h-4" />}
@@ -134,6 +150,15 @@ export function SettingsPage() {
             description="让 Claude Code 等 AI 通过 MCP 直接读写你的任务、目标、复盘和时间日志。"
           >
             <McpAccessSection />
+          </Section>
+
+          {/* 连接飞书 / Lark 日历 */}
+          <Section
+            icon={<CalendarClock className="w-4 h-4" />}
+            title="连接飞书 / Lark 日历"
+            description="把飞书/Lark 的日程同步进 Daybreak 日历。用你自己企业的「自建应用」凭证，零后端、密钥只存本机系统钥匙串。"
+          >
+            <FeishuConnectSection />
           </Section>
 
           {/* 用量 */}
@@ -375,6 +400,373 @@ function McpAccessSection() {
       <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
         端口 {info.port}，仅本机可连，需保持 Daybreak 运行。密钥已自动生成并保存。
       </p>
+    </div>
+  );
+}
+
+/* ---------- 连接飞书 / Lark 日历 ---------- */
+
+/** 回调地址：必须与 Rust 端 callback.rs 的 CALLBACK_PORT 一致，且逐字填进飞书后台。 */
+const FEISHU_REDIRECT_URI = "http://127.0.0.1:42801/feishu/callback";
+
+/** 与 Rust feishu_status 返回结构对齐（serde 字段名为 snake_case）。 */
+interface FeishuRegionStatus {
+  has_app_id: boolean;
+  has_secret: boolean;
+  connected: boolean;
+  token_expires_at: number | null;
+  last_error: string | null;
+}
+interface FeishuStatusInfo {
+  active_region: FeishuRegion | null;
+  feishu: FeishuRegionStatus;
+  lark: FeishuRegionStatus;
+}
+interface FeishuAuthEvent {
+  phase: "waiting_browser" | "exchanging" | "success" | "error";
+  region: FeishuRegion;
+  message: string | null;
+}
+
+const feishuInputCls = cn(
+  "w-72 px-3 py-1.5 rounded-lg text-sm outline-none transition-colors font-mono",
+  "bg-zinc-50 dark:bg-zinc-950",
+  "border border-zinc-200 dark:border-zinc-700",
+  "focus:border-indigo-500",
+  "text-zinc-900 dark:text-zinc-100",
+  "placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+);
+
+function fmtExpiry(unixSec: number): string {
+  return new Date(unixSec * 1000).toLocaleString();
+}
+
+/** 同步状态行的聚合产物:把当前 region 下各日历的游标行揉成一句话该显示什么。 */
+interface FeishuSyncDisplay {
+  /** 任一日历处于 syncing(同步进行中)。 */
+  syncing: boolean;
+  /** 当前 region 下最近一次成功同步时间(ISO);取各日历 lastSyncedAt 的最大值。 */
+  lastSyncedAt: string | null;
+  /** 当前 region 下任一日历的 last_error(取第一条非空);无则 null。 */
+  lastError: string | null;
+}
+
+/**
+ * 把某 region 下的同步游标行聚合成展示态。
+ * 规则:syncing 只要有一条在同步就算同步中;lastSyncedAt 取最大(最近);
+ * lastError 取第一条非空(单日历失败的细节,设置页只露一条即可)。
+ */
+function aggregateSyncDisplay(
+  states: { calendarId: string; lastSyncedAt?: string; status: string; lastError?: string }[]
+): FeishuSyncDisplay {
+  let syncing = false;
+  let lastSyncedAt: string | null = null;
+  let lastError: string | null = null;
+  for (const s of states) {
+    if (s.status === "syncing") syncing = true;
+    if (s.lastSyncedAt && (!lastSyncedAt || s.lastSyncedAt > lastSyncedAt)) {
+      lastSyncedAt = s.lastSyncedAt;
+    }
+    if (!lastError && s.lastError) lastError = s.lastError;
+  }
+  return { syncing, lastSyncedAt, lastError };
+}
+
+/** ISO 时间 → 本地可读串(同步状态行用,格式跟 fmtExpiry 一致)。 */
+function fmtSyncedAt(iso: string): string {
+  return new Date(iso).toLocaleString();
+}
+
+function FeishuConnectSection() {
+  const activeRegionPref = useSettingsStore((s) => s.feishu.activeRegion);
+  const setFeishuRegion = useSettingsStore((s) => s.setFeishuRegion);
+
+  const [region, setRegion] = useState<FeishuRegion>(activeRegionPref ?? "feishu");
+  const [status, setStatus] = useState<FeishuStatusInfo | null>(null);
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // 同步状态展示从 calendarEventsStore 的 syncStates 读(真相源是 SQLite 的 sync_state 表)。
+  // 首屏拉一次,之后手动同步完再 refreshSyncStates() 刷新;Rust 后台同步走 notify→hydrate 也会带上。
+  const syncStates = useCalendarEventsStore((s) => s.syncStates);
+  const hydrate = useCalendarEventsStore((s) => s.hydrate);
+  const refreshSyncStates = useCalendarEventsStore((s) => s.refreshSyncStates);
+  const [syncing, setSyncing] = useState(false); // 「立即同步」按钮 pending 态(本组件本地,不混引擎内部状态)
+  const [syncSummary, setSyncSummary] = useState<string | null>(null); // 上一轮手动同步的摘要文案
+  const [syncErr, setSyncErr] = useState<string | null>(null); // 手动同步失败文案(与凭证/授权的 err 分开)
+
+  async function refresh() {
+    try {
+      setStatus(await invoke<FeishuStatusInfo>("feishu_status"));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+    // 同步状态首屏拉一次:Settings 页可能是冷启动直接打开,store 还没 hydrate 过,
+    // 没有 syncStates 会让状态行一直显示「尚未同步」。只刷游标行(不动 events,轻)。
+    void refreshSyncStates();
+    // 监听 OAuth 进度事件（后台 spawn 的授权流程靠它推进度/结果）
+    const un = listen<FeishuAuthEvent>("feishu-auth-event", (ev) => {
+      const p = ev.payload;
+      setPhase(p.phase);
+      if (p.phase === "success") {
+        setErr(null);
+        setAppSecret("");
+        void refresh();
+        setTimeout(() => setPhase(null), 2500);
+      } else if (p.phase === "error") {
+        setErr(p.message ?? "授权失败");
+        setPhase(null);
+      }
+    });
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
+  const cur = status ? status[region] : null;
+  const busy = phase === "waiting_browser" || phase === "exchanging";
+  // 当前 region 下各日历游标行的聚合展示态(上次同步 / 同步中 / 出错)。
+  const syncDisplay = aggregateSyncDisplay(syncStates.filter((s) => s.region === region));
+
+  function chooseRegion(r: FeishuRegion) {
+    setRegion(r);
+    setFeishuRegion(r);
+    setErr(null);
+    setPhase(null);
+    // 切区域时清掉上一区域的手动同步摘要/错误,避免串台(状态行 syncDisplay 会按新 region 自动重算)。
+    setSyncSummary(null);
+    setSyncErr(null);
+  }
+
+  async function connect() {
+    setErr(null);
+    try {
+      // 填了新凭证就先存；没填则用已存的直接授权
+      if (appId.trim() && appSecret.trim()) {
+        await invoke("feishu_set_credentials", {
+          region,
+          appId: appId.trim(),
+          appSecret: appSecret.trim()
+        });
+      } else if (!cur?.has_app_id || !cur?.has_secret) {
+        setErr("请先填写 App ID 和 App Secret");
+        return;
+      }
+      setPhase("waiting_browser");
+      await invoke("feishu_start_auth", { region });
+    } catch (e) {
+      setErr(String(e));
+      setPhase(null);
+    }
+  }
+
+  async function disconnect() {
+    setErr(null);
+    try {
+      await invoke("feishu_disconnect", { region });
+      setAppId("");
+      setAppSecret("");
+      await refresh();
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function runSync() {
+    setSyncErr(null);
+    setSyncSummary(null);
+    setSyncing(true);
+    try {
+      const summary = await feishuSyncNow();
+      // 摘要按 region 汇总(后台引擎一轮可能同步飞书+Lark 两边,这里只把当前选中 region 的数字拎出来给用户看)。
+      const cur = summary.regions.find((r) => r.region === region);
+      if (cur?.error) {
+        // region 级失败:引擎跑了但整个 region 挂了(凭证失效等),当错误显示而非"成功"。
+        setSyncErr(cur.error);
+      } else if (cur) {
+        setSyncSummary(`新增 ${cur.upserted}、删除 ${cur.deleted}`);
+      } else {
+        // 当前 region 没在本轮结果里(通常是未连接 → 引擎跳过),给个温和提示。
+        setSyncSummary("本次未同步(当前区域未连接)");
+      }
+      // 不管摘要如何,同步副作用已落库,刷新内存:事件喂日历视图 + 游标行喂本状态行。
+      await hydrate();
+      await refreshSyncStates();
+    } catch (e) {
+      // 凭证缺失 / 引擎未起 / IPC 失败等:兜底显示文案,不崩。
+      setSyncErr(String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function copyRedirect() {
+    try {
+      await navigator.clipboard.writeText(FEISHU_REDIRECT_URI);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setErr("复制失败，请手动复制");
+    }
+  }
+
+  const phaseText: Record<string, string> = {
+    waiting_browser: "已打开浏览器，请在飞书页面点「同意授权」…",
+    exchanging: "正在换取 token…",
+    success: "✓ 连接成功"
+  };
+
+  return (
+    <div className="space-y-4">
+      <Field label="区域">
+        <SegmentControl<FeishuRegion>
+          value={region}
+          onChange={chooseRegion}
+          options={[
+            { value: "feishu", label: "飞书（国内）" },
+            { value: "lark", label: "Lark（国际）" }
+          ]}
+        />
+      </Field>
+
+      <div className="text-xs leading-relaxed">
+        {cur?.connected ? (
+          <span className="text-emerald-600 dark:text-emerald-400">
+            ✓ 已连接
+            {cur.token_expires_at ? ` · token 约 ${fmtExpiry(cur.token_expires_at)} 过期` : ""}
+          </span>
+        ) : cur?.has_app_id && cur?.has_secret ? (
+          <span className="text-amber-600 dark:text-amber-400">凭证已保存，待授权</span>
+        ) : (
+          <span className="text-zinc-500 dark:text-zinc-400">未配置</span>
+        )}
+        {cur?.last_error && !cur.connected && (
+          <span className="text-red-500 ml-2">· 上次错误：{cur.last_error}</span>
+        )}
+      </div>
+
+      {/* 同步状态 + 立即同步:仅已连接时显示(没连接谈不上同步) */}
+      {cur?.connected && (
+        <div className="rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs leading-relaxed min-w-0">
+              {syncDisplay.syncing ? (
+                <span className="text-indigo-600 dark:text-indigo-400">同步中…</span>
+              ) : syncDisplay.lastError ? (
+                <span className="text-red-500 break-all">
+                  出错：{syncDisplay.lastError}
+                </span>
+              ) : syncDisplay.lastSyncedAt ? (
+                <span className="text-zinc-500 dark:text-zinc-400">
+                  上次同步：{fmtSyncedAt(syncDisplay.lastSyncedAt)}
+                </span>
+              ) : (
+                <span className="text-zinc-500 dark:text-zinc-400">尚未同步</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => void runSync()}
+              disabled={syncing || syncDisplay.syncing}
+              className="flex-shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+            >
+              {syncing ? "同步中…" : "立即同步"}
+            </button>
+          </div>
+          {syncSummary && !syncErr && (
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+              ✓ 已同步 · {syncSummary}
+            </p>
+          )}
+          {syncErr && (
+            <p className="text-[11px] text-red-500 break-all">同步失败：{syncErr}</p>
+          )}
+        </div>
+      )}
+
+      <Field label="App ID">
+        <input
+          type="text"
+          value={appId}
+          onChange={(e) => setAppId(e.target.value)}
+          placeholder={cur?.has_app_id ? "已保存（如需更换请重填）" : "cli_xxxxxxxxxxxxxxxx"}
+          className={feishuInputCls}
+        />
+      </Field>
+      <Field label="App Secret">
+        <div className="relative">
+          <input
+            type={showSecret ? "text" : "password"}
+            value={appSecret}
+            onChange={(e) => setAppSecret(e.target.value)}
+            placeholder={cur?.has_secret ? "已保存（只写不回显）" : "应用密钥"}
+            className={cn(feishuInputCls, "pr-9")}
+          />
+          <button
+            type="button"
+            onClick={() => setShowSecret((v) => !v)}
+            aria-label={showSecret ? "hide" : "show"}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          >
+            {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </Field>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void connect()}
+          disabled={busy}
+          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+        >
+          {cur?.connected ? "重新授权" : "连接"}
+        </button>
+        {(cur?.connected || cur?.has_app_id) && (
+          <button
+            type="button"
+            onClick={() => void disconnect()}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+          >
+            断开
+          </button>
+        )}
+        {phase && (
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {phaseText[phase] ?? phase}
+          </span>
+        )}
+      </div>
+
+      {err && <p className="text-xs text-red-500">{err}</p>}
+
+      <div className="rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-3 space-y-1.5">
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+          在{region === "feishu" ? "飞书" : "Lark"}开放平台建「自建应用」，申请日历读写
+          scope（calendar:calendar + offline_access），并把下面这个回调地址
+          <strong>逐字</strong>填进应用的「重定向 URL」：
+        </p>
+        <div className="relative">
+          <code className="block text-xs font-mono bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md p-2 pr-14 break-all text-zinc-800 dark:text-zinc-200">
+            {FEISHU_REDIRECT_URI}
+          </code>
+          <button
+            type="button"
+            onClick={() => void copyRedirect()}
+            className="absolute right-1.5 top-1.5 px-2 py-0.5 text-[11px] font-medium rounded bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
+          >
+            {copied ? "已复制" : "复制"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -728,6 +1120,157 @@ function ReminderSettings() {
         </>
       )}
     </>
+  );
+}
+
+/* ---------- 全局快捷键 ---------- */
+
+/** 键盘事件 → Tauri accelerator(用 e.code 当主键名,与 Rust global-shortcut 的 Code 名一致)。 */
+function eventToAccelerator(e: KeyboardEvent): string | null {
+  const mods: string[] = [];
+  if (e.metaKey) mods.push("Super");
+  if (e.ctrlKey) mods.push("Control");
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+  const code = e.code;
+  // 纯修饰键:还没按主键,继续等
+  if (!code || /^(Meta|Control|Alt|Shift|OS)(Left|Right)?$/.test(code)) return null;
+  if (mods.length === 0) return null; // 至少一个修饰键,避免误触发全局键
+  return [...mods, code].join("+");
+}
+
+/** accelerator → 给人看的符号串("Alt+KeyK" → "⌥ K")。 */
+function prettyAccelerator(accel: string): string {
+  if (!accel) return "";
+  return accel
+    .split("+")
+    .map((part) => {
+      switch (part) {
+        case "Super":
+          return "⌘";
+        case "Control":
+          return "⌃";
+        case "Alt":
+          return "⌥";
+        case "Shift":
+          return "⇧";
+        case "ArrowUp":
+          return "↑";
+        case "ArrowDown":
+          return "↓";
+        case "ArrowLeft":
+          return "←";
+        case "ArrowRight":
+          return "→";
+        default:
+          if (part.startsWith("Key")) return part.slice(3);
+          if (part.startsWith("Digit")) return part.slice(5);
+          return part;
+      }
+    })
+    .join(" ");
+}
+
+function ShortcutRecorder({
+  value,
+  onChange
+}: {
+  value: string;
+  onChange: (accel: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [recording, setRecording] = useState(false);
+
+  useEffect(() => {
+    if (!recording) return;
+    function onKey(e: KeyboardEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
+      const accel = eventToAccelerator(e);
+      if (!accel) return; // 等一个「修饰键 + 主键」的有效组合
+      onChange(accel);
+      setRecording(false);
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording, onChange]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <kbd className="inline-flex min-w-[72px] justify-center px-2 py-1 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200">
+        {recording
+          ? t("settings.shortcuts.recording")
+          : value
+            ? prettyAccelerator(value)
+            : t("settings.shortcuts.unset")}
+      </kbd>
+      <button
+        type="button"
+        onClick={() => setRecording((v) => !v)}
+        className="px-2.5 py-1 rounded-md text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+      >
+        {recording ? t("settings.shortcuts.cancel") : t("settings.shortcuts.record")}
+      </button>
+      {value && !recording && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="px-2 py-1 rounded-md text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+        >
+          {t("settings.shortcuts.clear")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ShortcutsSettings() {
+  const { t } = useTranslation();
+  const shortcuts = useSettingsStore((s) => s.shortcuts);
+  const setShortcut = useSettingsStore((s) => s.setShortcut);
+
+  async function apply(patch: Partial<ShortcutsConfig>) {
+    setShortcut(patch);
+    const s = useSettingsStore.getState().shortcuts;
+    try {
+      await invoke("set_global_shortcuts", {
+        chatbar: s.toggleChatbar,
+        todo: s.toggleTodo,
+        workbench: s.showWorkbench
+      });
+      const anySet = s.toggleChatbar || s.toggleTodo || s.showWorkbench;
+      toast.success(anySet ? t("settings.shortcuts.saved") : t("settings.shortcuts.disabled"));
+    } catch (e) {
+      console.error("[Settings] set_global_shortcuts failed:", e);
+      toast.error(t("settings.shortcuts.failed"));
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Field label={t("settings.shortcuts.toggleChatbar")}>
+        <ShortcutRecorder
+          value={shortcuts.toggleChatbar}
+          onChange={(a) => void apply({ toggleChatbar: a })}
+        />
+      </Field>
+      <Field label={t("settings.shortcuts.toggleTodo")}>
+        <ShortcutRecorder
+          value={shortcuts.toggleTodo}
+          onChange={(a) => void apply({ toggleTodo: a })}
+        />
+      </Field>
+      <Field label={t("settings.shortcuts.showWorkbench")}>
+        <ShortcutRecorder
+          value={shortcuts.showWorkbench}
+          onChange={(a) => void apply({ showWorkbench: a })}
+        />
+      </Field>
+    </div>
   );
 }
 

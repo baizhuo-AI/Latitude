@@ -82,7 +82,10 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
     };
 
     // 2. 组装命令
-    let mut cmd = Command::new("claude");
+    let bin = super::resolve_cli_bin("claude")
+        .unwrap_or_else(|| std::path::PathBuf::from("claude"));
+    let mut cmd = Command::new(&bin);
+    cmd.env("PATH", super::enhanced_path());
     cmd.arg("-p")
         .arg(&req.prompt)
         .arg("--output-format")
