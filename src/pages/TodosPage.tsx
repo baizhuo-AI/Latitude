@@ -395,12 +395,19 @@ export function TodosPage() {
 /* ---------- Grid columns helper ---------- */
 
 function gridColsClass(extraCols: number, withAddBtn?: boolean): string {
-  const add = withAddBtn ? "_32px" : "";
+  if (withAddBtn) {
+    switch (extraCols) {
+      case 1: return "grid-cols-[1fr_120px_140px_80px_100px_32px]";
+      case 2: return "grid-cols-[1fr_120px_140px_80px_100px_100px_32px]";
+      case 3: return "grid-cols-[1fr_120px_140px_80px_100px_100px_100px_32px]";
+      default: return "grid-cols-[1fr_120px_140px_80px_32px]";
+    }
+  }
   switch (extraCols) {
-    case 1: return `grid-cols-[1fr_120px_140px_80px_100px${add}]`;
-    case 2: return `grid-cols-[1fr_120px_140px_80px_100px_100px${add}]`;
-    case 3: return `grid-cols-[1fr_120px_140px_80px_100px_100px_100px${add}]`;
-    default: return `grid-cols-[1fr_120px_140px_80px${add}]`;
+    case 1: return "grid-cols-[1fr_120px_140px_80px_100px]";
+    case 2: return "grid-cols-[1fr_120px_140px_80px_100px_100px]";
+    case 3: return "grid-cols-[1fr_120px_140px_80px_100px_100px_100px]";
+    default: return "grid-cols-[1fr_120px_140px_80px]";
   }
 }
 
