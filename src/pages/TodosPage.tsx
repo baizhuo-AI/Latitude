@@ -17,6 +17,7 @@ import {
   GripVertical,
   Trash2
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useTodoStore, type Todo, type Priority, type TodoStatus } from "../lib/store";
 import { useFieldStore } from "../lib/fieldStore";
 import type { FieldDefinition } from "../lib/db";
@@ -61,6 +62,7 @@ export function TodosPage() {
   const toggleComplete = useTodoStore((s) => s.toggleComplete);
   const removeTodo = useTodoStore((s) => s.removeTodo);
   const fieldDefs = useFieldStore((s) => s.fields);
+  const navigate = useNavigate();
 
   const [view, setView] = useState<ViewMode>(loadView);
   const [groupConfig, setGroupConfig] = useState<GroupLevel[]>(loadGroupConfig);
@@ -276,8 +278,8 @@ export function TodosPage() {
         <div className="max-w-4xl mx-auto">
           {/* 表头 */}
           <div className={cn(
-            "grid gap-4 mb-3 px-4 text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400 tracking-wider",
-            gridColsClass(visibleFieldDefs.length)
+            "grid gap-4 mb-3 px-4 text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400 tracking-wider items-center",
+            gridColsClass(visibleFieldDefs.length, true)
           )}>
             <div>{t("todos.columns.title")}</div>
             <div className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{t("todos.columns.deadline")}</div>
@@ -286,6 +288,14 @@ export function TodosPage() {
             {visibleFieldDefs.map((fd) => (
               <div key={fd.id} className="truncate text-indigo-500 dark:text-indigo-400">{fd.name}</div>
             ))}
+            <button
+              type="button"
+              onClick={() => navigate("/settings?scrollTo=custom-fields")}
+              title={t("todos.manageFields")}
+              className="w-6 h-6 flex items-center justify-center rounded-md text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {view === "grouped" && grouped ? (
@@ -384,12 +394,13 @@ export function TodosPage() {
 
 /* ---------- Grid columns helper ---------- */
 
-function gridColsClass(extraCols: number): string {
+function gridColsClass(extraCols: number, withAddBtn?: boolean): string {
+  const add = withAddBtn ? "_32px" : "";
   switch (extraCols) {
-    case 1: return "grid-cols-[1fr_120px_140px_80px_100px]";
-    case 2: return "grid-cols-[1fr_120px_140px_80px_100px_100px]";
-    case 3: return "grid-cols-[1fr_120px_140px_80px_100px_100px_100px]";
-    default: return "grid-cols-[1fr_120px_140px_80px]";
+    case 1: return `grid-cols-[1fr_120px_140px_80px_100px${add}]`;
+    case 2: return `grid-cols-[1fr_120px_140px_80px_100px_100px${add}]`;
+    case 3: return `grid-cols-[1fr_120px_140px_80px_100px_100px_100px${add}]`;
+    default: return `grid-cols-[1fr_120px_140px_80px${add}]`;
   }
 }
 

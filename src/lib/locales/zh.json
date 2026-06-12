@@ -92,6 +92,7 @@
       "estTime": "耗时"
     },
     "noDeadline": "未设置",
+    "manageFields": "管理自定义字段",
     "empty": "暂无待办,⌘K 让 AI 帮你解析,或按 N 手动新建",
     "doneSection": "已完成 {{count}}",
     "clearDone": "清空",
@@ -190,6 +191,10 @@
     "today": "今天",
     "aiPlanToday": "AI 排今日",
     "aiPlanning": "AI 思考中…",
+    "syncFeishu": "同步飞书",
+    "syncing": "同步中…",
+    "synced": "已同步 · 新增 {{up}} / 删除 {{del}}",
+    "syncFailed": "同步失败:{{msg}}",
     "weekdays": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
     "noScheduled": "未排期",
     "unscheduledHeader": "未排期({{count}})",

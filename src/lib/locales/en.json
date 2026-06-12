@@ -92,6 +92,7 @@
       "estTime": "Est."
     },
     "noDeadline": "None",
+    "manageFields": "Manage custom fields",
     "empty": "No tasks. ⌘K to AI-parse, or N to add manually.",
     "doneSection": "Done ({{count}})",
     "clearDone": "Clear",
@@ -190,6 +191,10 @@
     "today": "Today",
     "aiPlanToday": "AI plan today",
     "aiPlanning": "AI thinking…",
+    "syncFeishu": "Sync Feishu",
+    "syncing": "Syncing…",
+    "synced": "Synced · +{{up}} / -{{del}}",
+    "syncFailed": "Sync failed: {{msg}}",
     "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     "noScheduled": "Unscheduled",
     "unscheduledHeader": "Unscheduled ({{count}})",

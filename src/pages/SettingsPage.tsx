@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Eye,
@@ -52,6 +53,17 @@ export function SettingsPage() {
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
   const confirm = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useLayoutEffect(() => {
+    const target = searchParams.get("scrollTo");
+    if (target) {
+      requestAnimationFrame(() => {
+        document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   return (
     <div className="h-full flex flex-col">
@@ -164,6 +176,7 @@ export function SettingsPage() {
           </Section>
 
           {/* 自定义字段 */}
+          <div id="custom-fields">
           <Section
             icon={<ListFilter className="w-4 h-4" />}
             title={t("customFields.title")}
@@ -171,6 +184,7 @@ export function SettingsPage() {
           >
             <CustomFieldsManager />
           </Section>
+          </div>
 
           {/* 用量 */}
           <Section
