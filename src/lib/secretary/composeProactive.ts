@@ -50,6 +50,12 @@ export interface MorningBriefingCtx {
   yesterdayKey: string;
   /** 简报语言 */
   lang?: Lang;
+  /**
+   * 是否为"补发"场景(app 启动时发现今天错过了晨报)。
+   * 补发时对话标题 + proactive_log type 体现"补发"标记。
+   * 默认 false(正常晨报)。
+   */
+  isBackfill?: boolean;
 }
 
 /** createMorningBriefingJob 的配置项 */
@@ -99,6 +105,32 @@ Now compose a morning briefing for the user. Requirements:
 Output only the briefing text, no explanation.`,
 };
 
+/**
+ * 首日简报的 system prompt 后缀:在没有任何往日纪要时使用。
+ * 要求:自我介绍 + 引导用户填写"关于你" + 用今日数据撑起第一条简报。
+ */
+const FIRST_DAY_SYSTEM_SUFFIX: Record<Lang, string> = {
+  zh: `
+
+今天是你和用户**第一次见面**。你现在要发一条首日简报。要求:
+- 用你的人设腔调做自我介绍——说说你是谁、能帮用户做什么,一两句即可
+- 引导用户告诉你一些关于自己的信息(工作/目标/习惯等),让你以后能更好地服务
+- 如果今天已有任务安排,顺带提一句让用户有个概念
+- 全文 100-200 字,自然亲切,不要罗列条目
+- 语气像是第一天上班主动跟老板打招呼的得力助手
+只输出首日简报正文,不要解释。`,
+
+  en: `
+
+This is your **first day** working with the user. Compose a first-day briefing. Requirements:
+- Introduce yourself in your persona's voice — briefly say who you are and what you can help with
+- Invite the user to share a bit about themselves (work, goals, habits) so you can serve them better
+- If there are tasks scheduled today, briefly mention them
+- Keep it 100-200 words, warm and natural — no bullet lists
+- Tone: like a capable new assistant introducing themselves on day one
+Output only the first-day briefing text, no explanation.`,
+};
+
 // ─── id 生成 ──────────────────────────────────────────────────────────────────
 
 function newId(prefix: string): string {
@@ -109,29 +141,35 @@ function newId(prefix: string): string {
 
 /**
  * 把昨日纪要 + 今日任务拼成喂给 generateOnce 的用户消息。
+ *
+ * @param recentDigests 已取回的近期纪要(避免重复查询 DB)
+ * @param isFirstDay    首日模式:无任何历史纪要时省略昨日纪要区块
  */
 async function buildBriefingUserMessage(
   yesterdayKey: string,
   dateKey: string,
-  lang: Lang
+  lang: Lang,
+  recentDigests: Array<{ date: string; summary: string }>,
+  isFirstDay: boolean
 ): Promise<string> {
   const parts: string[] = [];
 
-  // 1. 昨日纪要(取近 2 条,用昨天的那条)
-  const digests = await dbGetRecentDigests(DIGEST_LOOKBACK);
-  const yesterdayDigest = digests.find((d) => d.date === yesterdayKey);
+  // 1. 昨日纪要(首日跳过此区块)
+  if (!isFirstDay) {
+    const yesterdayDigest = recentDigests.find((d) => d.date === yesterdayKey);
 
-  if (lang === "zh") {
-    if (yesterdayDigest) {
-      parts.push(`【昨日纪要】\n${yesterdayDigest.summary}`);
+    if (lang === "zh") {
+      if (yesterdayDigest) {
+        parts.push(`【昨日纪要】\n${yesterdayDigest.summary}`);
+      } else {
+        parts.push("【昨日纪要】\n无昨日纪要。");
+      }
     } else {
-      parts.push("【昨日纪要】\n无昨日纪要。");
-    }
-  } else {
-    if (yesterdayDigest) {
-      parts.push(`[Yesterday's Digest]\n${yesterdayDigest.summary}`);
-    } else {
-      parts.push("[Yesterday's Digest]\nNo digest available for yesterday.");
+      if (yesterdayDigest) {
+        parts.push(`[Yesterday's Digest]\n${yesterdayDigest.summary}`);
+      } else {
+        parts.push("[Yesterday's Digest]\nNo digest available for yesterday.");
+      }
     }
   }
 
@@ -151,7 +189,7 @@ async function buildBriefingUserMessage(
         parts.push(`- ${t.title} ${status}`);
       }
     } else {
-      parts.push("\n【今日任务】\n今天暂无安排。");
+      parts.push(isFirstDay ? "" : "\n【今日任务】\n今天暂无安排。");
     }
   } else {
     if (todos.length > 0) {
@@ -166,11 +204,11 @@ async function buildBriefingUserMessage(
         parts.push(`- ${t.title} ${status}`);
       }
     } else {
-      parts.push("\n[Today's Tasks]\nNo tasks scheduled today.");
+      parts.push(isFirstDay ? "" : "\n[Today's Tasks]\nNo tasks scheduled today.");
     }
   }
 
-  return parts.join("\n");
+  return parts.join("\n").trim();
 }
 
 // ─── 核心函数 ─────────────────────────────────────────────────────────────────
@@ -182,24 +220,37 @@ async function buildBriefingUserMessage(
  *   每次调用新建一个"今日简报 YYYY-MM-DD"对话,把简报作为第一条 assistant 消息插入。
  *   用户直接回复即进入正常 sendMessage 流程(简报只是这个对话的第一条 assistant 消息)。
  *
+ * 首日分支(Task 1.5):
+ *   若没有任何往日纪要,则走"首日/冷启动"提示词:自我介绍 + 引导填"关于你" + 今日数据。
+ *
+ * 补发分支(Task 1.5):
+ *   ctx.isBackfill=true 时,对话标题 + proactive_log type 带"补发"标记。
+ *
  * @returns convId 如果成功投递;undefined 如果 generateOnce 失败(C6 静默降级)
  */
 export async function composeMorningBriefing(
   ctx: MorningBriefingCtx
 ): Promise<string | undefined> {
-  const { dateKey, yesterdayKey } = ctx;
+  const { dateKey, yesterdayKey, isBackfill = false } = ctx;
   const s = useSettingsStore.getState();
   const lang: Lang = ctx.lang ?? s.lang ?? "zh";
   const persona = s.persona ?? { presetKey: "seniorAdvisor" as const };
 
-  // 1. 人设 prompt + 简报任务说明
+  // 1. 判断是否首日:取近 DIGEST_LOOKBACK 条纪要,全无则首日
+  const recentDigests = await dbGetRecentDigests(DIGEST_LOOKBACK);
+  const isFirstDay = recentDigests.length === 0;
+
+  // 2. 人设 prompt + 简报任务说明(首日用首日 suffix)
   const personaSection = composePersonaPrompt(persona, lang);
-  const systemPrompt = personaSection + BRIEFING_SYSTEM_SUFFIX[lang];
+  const systemSuffix = isFirstDay
+    ? FIRST_DAY_SYSTEM_SUFFIX[lang]
+    : BRIEFING_SYSTEM_SUFFIX[lang];
+  const systemPrompt = personaSection + systemSuffix;
 
-  // 2. 昨日纪要 + 今日任务
-  const userMessage = await buildBriefingUserMessage(yesterdayKey, dateKey, lang);
+  // 3. 昨日纪要 + 今日任务(首日跳过昨日纪要区块;传入已取回的 recentDigests 避免重复查询)
+  const userMessage = await buildBriefingUserMessage(yesterdayKey, dateKey, lang, recentDigests, isFirstDay);
 
-  // 3. 调 generateOnce 合成简报(C6:失败时静默)
+  // 4. 调 generateOnce 合成简报(C6:失败时静默)
   let briefingText: string;
   try {
     briefingText = await generateOnce(systemPrompt, [
@@ -211,10 +262,17 @@ export async function composeMorningBriefing(
     return undefined;
   }
 
-  // 4. 投递:新建"今日简报"对话 + 插入 assistant 消息
+  // 5. 投递:新建对话 + 插入 assistant 消息
+  //    补发时对话标题加"(补发)"标记
   const convId = newId("brief");
   const now = new Date().toISOString();
-  const title = lang === "zh" ? `晨间简报 ${dateKey}` : `Morning Briefing ${dateKey}`;
+  const baseTitle =
+    lang === "zh" ? `晨间简报 ${dateKey}` : `Morning Briefing ${dateKey}`;
+  const title = isBackfill
+    ? lang === "zh"
+      ? `${baseTitle}(补发)`
+      : `${baseTitle} (backfill)`
+    : baseTitle;
 
   const conv: ConversationRow = {
     id: convId,
@@ -235,7 +293,7 @@ export async function composeMorningBriefing(
   await dbInsertMessage(msg);
   await dbTouchConversation(convId).catch(() => undefined);
 
-  // 5. 更新当前窗口的 chatStore 内存态(让同窗口 UI 立即看到)
+  // 6. 更新当前窗口的 chatStore 内存态(让同窗口 UI 立即看到)
   try {
     const store = useChatStore.getState();
     // createConv 会走完整的 DB 流程(已经做过了),这里只更新 in-memory state
@@ -249,13 +307,15 @@ export async function composeMorningBriefing(
     // store 访问失败不影响持久化,忽略
   }
 
-  // 6. 发出跨窗口数据变更事件
+  // 7. 发出跨窗口数据变更事件
   emitSync("conversations");
 
-  // 7. 记录投递日志(Task 1.7):投递成功后打点,C6 失败路径在步骤 3 已提前 return,不会走到这里
+  // 8. 记录投递日志(Task 1.7):投递成功后打点,C6 失败路径在步骤 4 已提前 return,不会走到这里
+  //    补发时 type 体现"补发"标记
+  const proactiveType = isBackfill ? "morning_briefing_backfill" : "morning_briefing";
   const previewLen = 50;
   await dbLogProactiveSent({
-    type: "morning_briefing",
+    type: proactiveType,
     convId,
     contentPreview: briefingText.slice(0, previewLen),
   }).catch((err) => {
@@ -263,7 +323,8 @@ export async function composeMorningBriefing(
     console.warn("[MorningBriefing] 写 proactive_log 失败,忽略:", err);
   });
 
-  console.info(`[MorningBriefing] 晨间简报已投递: conv=${convId}, date=${dateKey}`);
+  const label = isFirstDay ? "首日简报" : isBackfill ? "补发简报" : "晨间简报";
+  console.info(`[MorningBriefing] ${label}已投递: conv=${convId}, date=${dateKey}`);
   return convId;
 }
 
