@@ -59,7 +59,7 @@ type GroupedActivities = { dateKey: string; items: ActivityRecord[] }[];
 function groupByDate(activities: ActivityRecord[]): GroupedActivities {
   const map = new Map<string, ActivityRecord[]>();
   for (const a of activities) {
-    const key = dateKeyOf(a.createdAt);
+    const key = dateKeyOf(a.occurredAt); // 按事情发生的时间归到对应那天
     const arr = map.get(key);
     if (arr) arr.push(a);
     else map.set(key, [a]);
@@ -138,7 +138,7 @@ export function ActivitiesPage() {
                     )}
                   >
                     <span className="mt-0.5 flex-shrink-0 font-mono text-xs text-text-faint">
-                      {fmtTime(a.createdAt)}
+                      {fmtTime(a.occurredAt)}
                     </span>
                     <span className="min-w-0 flex-1 text-sm leading-relaxed text-text">
                       {a.content}

@@ -100,6 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_created_at ON llm_usage(created_at);
 CREATE TABLE IF NOT EXISTS activity_log (
   id TEXT PRIMARY KEY,
   content TEXT NOT NULL,
+  occurred_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -269,6 +270,13 @@ async function migrate(db: Database): Promise<void> {
   if (!todoCols.has("completed_at")) {
     await db.execute("ALTER TABLE todos ADD COLUMN completed_at TEXT");
     console.info("[db] migrated: added todos.completed_at column");
+  }
+  // V9: activity_log 加 occurred_at(事情实际发生时间,与 created_at 写入时间分离)
+  // 旧记录该列 NULL,读取时 COALESCE 回落到 created_at,历史展示不变。
+  const actCols = await getColumns(db, "activity_log");
+  if (actCols.size > 0 && !actCols.has("occurred_at")) {
+    await db.execute("ALTER TABLE activity_log ADD COLUMN occurred_at TEXT");
+    console.info("[db] migrated: added activity_log.occurred_at column");
   }
   // V7: daily_digest 表（AI 秘书每日纪要，Task 1.3）
   // 老库通过 V1 的 IF NOT EXISTS 已建表；新库 V1 路径直接带。这里无需 ALTER，仅记录版本号。
@@ -980,21 +988,24 @@ export async function dbUsageSummary(): Promise<{
 export interface ActivityRecord {
   id: string;
   content: string;
-  /** ISO 时间戳 */
+  /** 事情【实际发生】的时间(ISO),驱动时间线展示与排序;旧记录回落到 createdAt。 */
+  occurredAt: string;
+  /** 记录【写入】的时间(ISO),审计/元数据,不上台面。 */
   createdAt: string;
 }
 
 interface ActivityRow {
   id: string;
   content: string;
+  occurred_at: string | null;
   created_at: string;
 }
 
 export async function dbInsertActivity(rec: ActivityRecord): Promise<void> {
   const db = await getDb();
   await db.execute(
-    "INSERT INTO activity_log (id, content, created_at) VALUES ($1,$2,$3)",
-    [rec.id, rec.content, rec.createdAt]
+    "INSERT INTO activity_log (id, content, occurred_at, created_at) VALUES ($1,$2,$3,$4)",
+    [rec.id, rec.content, rec.occurredAt, rec.createdAt]
   );
 }
 
@@ -1011,25 +1022,28 @@ export async function dbListActivities(
   const conditions: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
+  // 过滤/排序都按「发生时间」(occurred_at 缺省回落 created_at):晚上补记的早上事件,
+  // 归到事情发生那天、排到发生时刻,而不是记录那天/记录时刻。
   if (opts?.startDate) {
-    conditions.push(`created_at >= $${idx}`);
+    conditions.push(`COALESCE(occurred_at, created_at) >= $${idx}`);
     params.push(opts.startDate + "T00:00:00");
     idx++;
   }
   if (opts?.endDate) {
-    conditions.push(`created_at < $${idx}`);
+    conditions.push(`COALESCE(occurred_at, created_at) < $${idx}`);
     params.push(opts.endDate + "T23:59:59.999");
     idx++;
   }
   const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
   params.push(limit);
   const rows = await db.select<ActivityRow[]>(
-    `SELECT * FROM activity_log${where} ORDER BY created_at DESC LIMIT $${idx}`,
+    `SELECT * FROM activity_log${where} ORDER BY COALESCE(occurred_at, created_at) DESC LIMIT $${idx}`,
     params
   );
   return rows.map((r) => ({
     id: r.id,
     content: r.content,
+    occurredAt: r.occurred_at ?? r.created_at,
     createdAt: r.created_at
   }));
 }

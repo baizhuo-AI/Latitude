@@ -51,6 +51,36 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v : undefined;
 }
 
+/**
+ * 把 AI 传入的 occurred_at(事情实际发生时间)收敛成 ISO 时间戳。
+ * - 完整可解析时间(ISO,或 "2026-06-15 09:00")→ 该时刻 ISO
+ * - 纯 "HH:mm" / "H:mm" → 今天本地日期 + 该时刻
+ * - 空 / 无法解析 → undefined(交给 store 兜底成当前时间,绝不把垃圾写进时间线)
+ * 防呆:解析出的时间若比现在晚 1 小时以上,基本是模型把日期/上下午算错了
+ *      (log_activity 只记已发生的事),回退成当前时间。
+ */
+function resolveOccurredAt(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  let ms: number | null = null;
+  const hm = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (hm) {
+    const h = Number(hm[1]);
+    const min = Number(hm[2]);
+    if (h <= 23 && min <= 59) {
+      const d = new Date();
+      d.setHours(h, min, 0, 0);
+      ms = d.getTime();
+    }
+  } else {
+    const parsed = Date.parse(s);
+    if (!Number.isNaN(parsed)) ms = parsed;
+  }
+  if (ms == null) return undefined;
+  if (ms - Date.now() > 60 * 60 * 1000) return undefined; // 明显的"未来"=算错,回退当前
+  return new Date(ms).toISOString();
+}
+
 /** todos 写操作后统一刷新主窗口 + 通知其它窗口 */
 async function refreshTodos() {
   await useTodoStore.getState().hydrate();
@@ -384,18 +414,31 @@ export const CHAT_TOOLS: ChatTool[] = [
         ? { startDate: date, endDate: date }
         : (startDate || endDate) ? { startDate, endDate } : undefined;
       const rows = await dbListActivities(limit, opts);
-      return JSON.stringify({ count: rows.length, activities: rows.map((r) => ({ id: r.id, content: r.content, createdAt: r.createdAt })) });
+      return JSON.stringify({ count: rows.length, activities: rows.map((r) => ({ id: r.id, content: r.content, occurredAt: r.occurredAt, createdAt: r.createdAt })) });
     },
   },
   {
     name: "log_activity",
-    description: "记一条时间日志（你现在/刚才在做什么）",
-    parameters: { type: "object", properties: { content: { type: "string" } }, required: ["content"] },
+    description:
+      "记一条时间日志(用户做过 / 正在做的某件事)。记的时间是这件事【实际发生】的时间,不是现在对话的时间。",
+    parameters: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "做了什么" },
+        occurred_at: {
+          type: "string",
+          description:
+            "这件事实际发生的时间。优先传完整 ISO8601(YYYY-MM-DDTHH:mm:ss,日期用系统给你的当前时间推算);也接受 HH:mm(默认今天)。用户说『刚才/正在/现在』或就是当下做的,省略本字段(默认当前时间)。⚠️用户只给『早上/上午/下午/晚上』这类模糊词时,先问清具体几点,别自己瞎填。",
+        },
+      },
+      required: ["content"],
+    },
     execute: async (a) => {
       const content = str(a.content);
       if (!content) return JSON.stringify({ error: "content 必填" });
-      await useActivityStore.getState().addActivity(content); // 内含 db 写入 + emitSync
-      return JSON.stringify({ logged: { content } });
+      const occurredAt = resolveOccurredAt(str(a.occurred_at));
+      await useActivityStore.getState().addActivity(content, occurredAt); // 内含 db 写入 + emitSync
+      return JSON.stringify({ logged: { content, occurredAt: occurredAt ?? "(当前时间)" } });
     },
   },
   {
