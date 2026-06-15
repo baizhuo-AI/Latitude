@@ -1889,6 +1889,8 @@ export interface RecentProactiveRow {
  *   - 组装 gate 的 recentlySent 状态(同类去重、温和频率)。
  *   - 供启动补发判断"今天是否已发过简报"。
  *
+ * ⚠️ Phase 3 gate 完整化时接入,当前未调用。
+ *
  * @param n 最多返回条数
  */
 export async function dbListRecentProactive(n: number): Promise<RecentProactiveRow[]> {

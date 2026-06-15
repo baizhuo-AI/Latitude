@@ -79,6 +79,13 @@ export interface BackfillCtx {
   morningHour?: number;
   /** 晌午小时(默认 12) */
   noonHour?: number;
+  /**
+   * "别烦我"截止时间戳(ms)。
+   * now < pausedUntil 时跳过补发(与调度器路径 gate 的 pausedUntil 语义一致)。
+   * undefined = 未设置,不影响补发。
+   * 由 wiring 层从 reminder.pausedUntil 读取后注入,保持此函数可测。
+   */
+  pausedUntil?: number;
 }
 
 /** backfillOnStartup 的返回值 */
@@ -199,7 +206,16 @@ export async function backfillOnStartup(ctx: BackfillCtx): Promise<BackfillResul
     userActiveToday,
     morningHour = 7,
     noonHour = 12,
+    pausedUntil,
   } = ctx;
+
+  // "别烦我"闸门:与调度器路径的 gate pausedUntil 检查语义一致
+  if (pausedUntil !== undefined && now < pausedUntil) {
+    console.info(
+      `[BackfillOnStartup] 跳过补发:pausedUntil 未过(${new Date(pausedUntil).toISOString()})`
+    );
+    return { didBackfill: false };
+  }
 
   const shouldDo = shouldBackfill({
     lastSentAt,

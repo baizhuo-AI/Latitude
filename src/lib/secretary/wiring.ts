@@ -199,6 +199,8 @@ export async function runStartupBackfill(now: number = Date.now()): Promise<Back
       dbGetLastProactiveSentAt(BRIEFING_TYPE_PREFIX),
     ]);
 
+    const pausedUntil = useSettingsStore.getState().reminder?.pausedUntil;
+
     return await backfillOnStartup({
       now,
       dateKey,
@@ -207,6 +209,7 @@ export async function runStartupBackfill(now: number = Date.now()): Promise<Back
       lastSentAt,
       userActiveToday,
       morningHour: MORNING_HOUR,
+      pausedUntil,
     });
   } catch (err) {
     console.warn("[secretary/wiring] runStartupBackfill 异常,跳过补发:", err);

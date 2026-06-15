@@ -466,6 +466,77 @@ describe("补发简报 — backfillOnStartup 产出有'补'标记", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// 3b. pausedUntil — "别烦我"截止时间对补发的影响
+// ════════════════════════════════════════════════════════════════════════════
+describe("backfillOnStartup — 尊重 pausedUntil(别烦我)", () => {
+  it("pausedUntil 未过(now < pausedUntil)→ 不补发", async () => {
+    const now = makeTs(9, 0); // 09:00,通常应该补发
+    // pausedUntil 设为 2 小时后,仍在暂停期内
+    const pausedUntil = now + 2 * 60 * 60 * 1000;
+
+    const ctx: BackfillCtx = {
+      now,
+      dateKey: "2026-06-15",
+      yesterdayKey: "2026-06-14",
+      lang: "zh",
+      lastSentAt: undefined,
+      userActiveToday: false,
+      morningHour: 7,
+      noonHour: 12,
+      pausedUntil,
+    };
+
+    const result = await backfillOnStartup(ctx);
+    expect(result.didBackfill).toBe(false);
+    // 不应投递任何消息
+    expect(dbInsertMessage).not.toHaveBeenCalled();
+  });
+
+  it("pausedUntil 已过(now > pausedUntil)→ 正常按 shouldBackfill 走(应补发)", async () => {
+    const now = makeTs(9, 0);
+    // pausedUntil 设为 1 小时前,已过期
+    const pausedUntil = now - 60 * 60 * 1000;
+
+    engine.script = [{ content: "pausedUntil 已过,正常补发", model: "deepseek-chat" }];
+
+    const ctx: BackfillCtx = {
+      now,
+      dateKey: "2026-06-15",
+      yesterdayKey: "2026-06-14",
+      lang: "zh",
+      lastSentAt: undefined,
+      userActiveToday: false,
+      morningHour: 7,
+      noonHour: 12,
+      pausedUntil,
+    };
+
+    const result = await backfillOnStartup(ctx);
+    expect(result.didBackfill).toBe(true);
+  });
+
+  it("pausedUntil 未设(undefined)→ 不影响正常补发", async () => {
+    const now = makeTs(9, 0);
+    engine.script = [{ content: "无 pausedUntil,正常补发", model: "deepseek-chat" }];
+
+    const ctx: BackfillCtx = {
+      now,
+      dateKey: "2026-06-15",
+      yesterdayKey: "2026-06-14",
+      lang: "zh",
+      lastSentAt: undefined,
+      userActiveToday: false,
+      morningHour: 7,
+      noonHour: 12,
+      // pausedUntil 不传 = undefined
+    };
+
+    const result = await backfillOnStartup(ctx);
+    expect(result.didBackfill).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // 4. 漏跑纪要场景 — 缺一天纪要时不报错 + 能补跑
 // ════════════════════════════════════════════════════════════════════════════
 describe("漏跑纪要场景 — 缺天纪要时续接/补跑", () => {

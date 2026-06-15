@@ -57,7 +57,7 @@ const generateOnceSpy = vi.fn(async (_sys: string, _msgs: unknown[]) =>
 );
 
 vi.mock("../../lib/llm/index", () => ({
-  generateOnce: (...args: unknown[]) => generateOnceSpy(...args),
+  generateOnce: (sys: string, msgs: unknown[]) => generateOnceSpy(sys, msgs),
 }));
 
 // ─── composePersonaPrompt mock(仅返回固定串,不测prompt合成) ─────────────────
