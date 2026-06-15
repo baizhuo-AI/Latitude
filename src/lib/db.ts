@@ -200,6 +200,12 @@ CREATE TABLE IF NOT EXISTS calendar_change_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_change_queue_state ON calendar_change_queue(state);
+
+CREATE TABLE IF NOT EXISTS daily_digest (
+  date       TEXT PRIMARY KEY,
+  summary    TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
 /**
@@ -252,6 +258,8 @@ async function migrate(db: Database): Promise<void> {
     await db.execute("ALTER TABLE todos ADD COLUMN completed_at TEXT");
     console.info("[db] migrated: added todos.completed_at column");
   }
+  // V7: daily_digest 表（AI 秘书每日纪要，Task 1.3）
+  // 老库通过 V1 的 IF NOT EXISTS 已建表；新库 V1 路径直接带。这里无需 ALTER，仅记录版本号。
 }
 
 export async function getDb(): Promise<Database> {
@@ -1652,4 +1660,96 @@ export async function dbUpdateChangeState(
 export async function dbDeleteChange(id: string): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM calendar_change_queue WHERE id = $1", [id]);
+}
+
+/* ---------- Daily Digest(AI 秘书每日纪要，Task 1.3) ---------- */
+
+export interface DailyDigestRow {
+  /** YYYY-MM-DD,唯一键 */
+  date: string;
+  summary: string;
+  createdAt: string;
+}
+
+/**
+ * upsert 一条每日纪要。
+ *
+ * 语义:同一天重跑/补跑时覆盖而非重复插入——先 DELETE 再 INSERT。
+ * 选「删后插」而非「INSERT OR REPLACE」的原因:INSERT OR REPLACE 在 SQLite 里
+ * 会先删后插(触发 DELETE 钩子)，语义相同；这里显式写出保证可读性。
+ *
+ * @param date     YYYY-MM-DD 格式的本地日期
+ * @param summary  AI 生成的当日事实性纪要文本
+ */
+export async function dbUpsertDailyDigest(date: string, summary: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO daily_digest (date, summary, created_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT(date) DO UPDATE SET summary = excluded.summary, created_at = excluded.created_at`,
+    [date, summary, now]
+  );
+}
+
+/**
+ * 取近 N 天纪要,按日期倒序(最新的在前)。
+ *
+ * 用于注入到 buildChatSystemPrompt,让对话能引用"最近发生了什么"。
+ * N 的合理默认值见 dailyScan.ts 的 RECENT_DIGEST_DAYS 常量(默认 7)。
+ *
+ * @param n 最多返回条数
+ */
+export async function dbGetRecentDigests(n: number): Promise<DailyDigestRow[]> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ date: string; summary: string; created_at: string }>>(
+    `SELECT date, summary, created_at FROM daily_digest
+     ORDER BY date DESC LIMIT $1`,
+    [n]
+  );
+  return rows.map((r) => ({ date: r.date, summary: r.summary, createdAt: r.created_at }));
+}
+
+/**
+ * 查询某本地日期内发送/收到的消息(供 dailyScan 生成纪要用)。
+ *
+ * 时区口径:created_at 存 UTC ISO,按 [T00:00:00, T23:59:59.999] 字符串区间比较。
+ * 只取 user/assistant 轮次,排除 system/tool 消息(这些不是对话要点)。
+ *
+ * @param dateKey YYYY-MM-DD 格式,由调用方按本地时区算
+ */
+export async function dbListMessagesOnDate(
+  dateKey: string
+): Promise<Array<{ role: string; content: string; created_at: string }>> {
+  const db = await getDb();
+  return db.select<Array<{ role: string; content: string; created_at: string }>>(
+    `SELECT role, content, created_at FROM messages
+     WHERE role IN ('user', 'assistant')
+       AND created_at >= $1 AND created_at < $2
+     ORDER BY created_at ASC`,
+    [`${dateKey}T00:00:00`, `${dateKey}T23:59:59.999`]
+  );
+}
+
+/**
+ * 查询某本地日期内有活动的 todos(供 dailyScan 生成纪要用)。
+ *
+ * "有活动"定义:当天创建(created_at 在该日)或当天完成(completed_at 在该日)。
+ * 供 dailyScan 汇总"今天完成了哪些任务/新增了哪些任务"。
+ *
+ * @param dateKey YYYY-MM-DD 格式
+ */
+export async function dbListTodosOnDate(dateKey: string): Promise<
+  Array<{ title: string; status: string; created_at: string; completed_at: string | null }>
+> {
+  const db = await getDb();
+  return db.select<
+    Array<{ title: string; status: string; created_at: string; completed_at: string | null }>
+  >(
+    `SELECT title, status, created_at, completed_at FROM todos
+     WHERE (created_at >= $1 AND created_at < $2)
+        OR (completed_at >= $1 AND completed_at < $2)
+     ORDER BY created_at ASC`,
+    [`${dateKey}T00:00:00`, `${dateKey}T23:59:59.999`]
+  );
 }

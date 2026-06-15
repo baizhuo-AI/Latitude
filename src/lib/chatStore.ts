@@ -288,7 +288,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // 后续 resume 时 CLI 已持有上下文，只发当前消息
         const fullPrompt = sid
           ? trimmed
-          : `${buildChatSystemPrompt()}\n\n---\n\n${trimmed}`;
+          : `${await buildChatSystemPrompt()}\n\n---\n\n${trimmed}`;
         const result = await sendViaCli(kind, fullPrompt, sid, {
           onText: (t) => set((s) => ({ streaming: s.streaming + t })),
           onThinking: (t) => set((s) => ({ streamingReasoning: s.streamingReasoning + t })),

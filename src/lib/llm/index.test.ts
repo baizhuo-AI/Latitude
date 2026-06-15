@@ -34,9 +34,11 @@ let engine: FakeEngine;
 // ─── mock 模块依赖 ───────────────────────────────────────────────────────────
 
 // db 写入 no-op(usage 记录不该碰真 DB,也不影响控制流)
+// dbGetRecentDigests 返回空数组,使 buildChatSystemPrompt 不注入任何纪要(与原有断言兼容)
 const dbInsertUsageSpy = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("../db", () => ({
   dbInsertUsage: (...args: unknown[]) => dbInsertUsageSpy(...args),
+  dbGetRecentDigests: async () => [],
 }));
 
 // chatTools:可控的工具列表 + 工具执行 fake

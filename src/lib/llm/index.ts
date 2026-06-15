@@ -17,12 +17,15 @@ import {
   useSettingsStore,
   type ProviderName
 } from "../settings";
-import { dbInsertUsage } from "../db";
+import { dbInsertUsage, dbGetRecentDigests } from "../db";
 import { toolsForLLM, runChatTool } from "../chatTools";
 import { useGoalsStore, type Goal } from "../goalsStore";
 import i18n from "../i18n";
 import { composePersonaPrompt } from "../persona/personaSpec";
 import type { Lang } from "../settings";
+
+/** 近期纪要注入的天数上限(近 7 天)。 */
+const RECENT_DIGEST_DAYS = 7;
 
 export type { LLMProvider, ChatMessage, ChatOptions, ChatResult, StreamHandlers, LLMUsage } from "./types";
 
@@ -378,10 +381,17 @@ function recordUsage(
 /* ---------- Chat 高层 API ---------- */
 
 /**
- * 构造一段当前上下文 system prompt:今天 todos + 当前时间 + Telos
- * 让 Chat 知道用户在做什么、长期想去哪里
+ * 构造一段当前上下文 system prompt:今天 todos + 当前时间 + Telos + 近期每日纪要
+ *
+ * 让 Chat 知道:
+ *   - 用户今天在做什么(待办)
+ *   - 长期想去哪里(Telos)
+ *   - 最近几天发生了什么(daily_digest 注入,Task 1.3)
+ *
+ * 变为 async 是为了从 DB 读取 daily_digest 近期纪要。
+ * 调用方(chatStreamCall / chatAgentCall / chatStore)需相应加 await。
  */
-export function buildChatSystemPrompt(): string {
+export async function buildChatSystemPrompt(): Promise<string> {
   const s = useSettingsStore.getState();
   const lang: Lang = s.lang ?? "zh";
   // 若 persona 未配置(旧 settings 数据/测试环境),用默认资深幕僚兜底
@@ -419,6 +429,22 @@ export function buildChatSystemPrompt(): string {
   }
 
   lines.push(telosContextSection());
+
+  // Task 1.3:注入近期每日纪要(让对话能引用"最近发生了什么")
+  // DB 读取失败时静默忽略(不影响对话主流程)
+  try {
+    const digests = await dbGetRecentDigests(RECENT_DIGEST_DAYS);
+    if (digests.length > 0) {
+      lines.push("");
+      lines.push(lang === "zh" ? "【近期每日纪要】" : "[Recent Daily Digests]");
+      for (const d of digests) {
+        lines.push(`${d.date}: ${d.summary}`);
+      }
+    }
+  } catch (err) {
+    // 读取失败不影响对话功能,仅记录警告
+    console.warn("[buildChatSystemPrompt] 读取 daily_digest 失败:", err);
+  }
 
   return lines.join("\n");
 }
@@ -458,7 +484,7 @@ export async function chatStreamCall(
   // 收口到 callBrainStream;model 由 resolveDeepSeekModel 决定(可配置,不写死)
   return callBrainStream(
     [
-      { role: "system", content: buildChatSystemPrompt() },
+      { role: "system", content: await buildChatSystemPrompt() },
       ...history
     ],
     {
@@ -498,7 +524,7 @@ export async function chatAgentCall(
   const caps = getCapabilities(model);
   const tools = caps.supportsTools ? toolsForLLM() : undefined;
   const messages: ChatMessage[] = [
-    { role: "system", content: buildChatSystemPrompt() + TOOL_SYSTEM_HINT },
+    { role: "system", content: (await buildChatSystemPrompt()) + TOOL_SYSTEM_HINT },
     ...history,
   ];
   const MAX_ROUNDS = 6;
