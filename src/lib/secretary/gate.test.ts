@@ -271,29 +271,31 @@ vi.mock("./composeProactive", async (importOriginal) => {
   };
 });
 
+const GATE_SETTINGS = {
+  lang: "zh" as const,
+  persona: { presetKey: "seniorAdvisor" as const },
+  reminder: {
+    enabled: true,
+    workStart: 9,
+    workEnd: 22,
+    intervalMin: 120,
+    channel: "both" as const,
+  },
+  llmProvider: "deepseek" as const,
+  providers: {
+    deepseek: {
+      apiKey: "test-key",
+      baseUrl: "https://example.test",
+      model: "deepseek-chat",
+    },
+  },
+};
+
 vi.mock("../settings", () => ({
   onProviderConfigChange: () => () => undefined,
-  useSettingsStore: {
-    getState: () => ({
-      lang: "zh",
-      persona: { presetKey: "seniorAdvisor" },
-      reminder: {
-        enabled: true,
-        workStart: 9,
-        workEnd: 22,
-        intervalMin: 120,
-        channel: "both",
-      },
-      llmProvider: "deepseek",
-      providers: {
-        deepseek: {
-          apiKey: "test-key",
-          baseUrl: "https://example.test",
-          model: "deepseek-chat",
-        },
-      },
-    }),
-  },
+  useSettingsStore: { getState: () => GATE_SETTINGS },
+  // getProvider / buildChatSystemPrompt 改走真相源读取器,测试里与 store 值保持一致
+  readSettingsSnapshot: () => GATE_SETTINGS,
 }));
 
 import { composeMorningBriefing } from "./composeProactive";

@@ -65,22 +65,27 @@ vi.mock("../goalsStore", () => ({
 
 // settings:固定成「deepseek + 有 key + deepseek-chat」,让 getProvider 走真 provider 分支
 // lang + persona 也带上,确保 buildChatSystemPrompt 的人设路径有稳定输入
+//
+// readSettingsSnapshot() 是修复跨窗口 store 陈旧问题后引入的新真相源读取器,
+// 测试里让它和 useSettingsStore.getState() 返回相同值,保证原有断言不变。
+const FIXED_SETTINGS = {
+  lang: "zh" as const,
+  persona: { presetKey: "seniorAdvisor" as const },
+  llmProvider: "deepseek" as const,
+  providers: {
+    deepseek: {
+      apiKey: "test-key",
+      baseUrl: "https://example.test",
+      model: "deepseek-chat",
+    },
+  },
+};
+
 vi.mock("../settings", () => ({
   onProviderConfigChange: () => () => undefined,
-  useSettingsStore: {
-    getState: () => ({
-      lang: "zh",
-      persona: { presetKey: "seniorAdvisor" },
-      llmProvider: "deepseek",
-      providers: {
-        deepseek: {
-          apiKey: "test-key",
-          baseUrl: "https://example.test",
-          model: "deepseek-chat",
-        },
-      },
-    }),
-  },
+  useSettingsStore: { getState: () => FIXED_SETTINGS },
+  // 新:buildChatSystemPrompt / resolveDeepSeekModel / getProvider 改走这里
+  readSettingsSnapshot: () => FIXED_SETTINGS,
 }));
 
 // 被测模块在 mock 之后再 import(确保拿到 mock 版依赖)

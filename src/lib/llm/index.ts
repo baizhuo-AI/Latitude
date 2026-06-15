@@ -15,6 +15,7 @@ import { useTodoStore } from "../store";
 import {
   onProviderConfigChange,
   useSettingsStore,
+  readSettingsSnapshot,
   type ProviderName
 } from "../settings";
 import { dbInsertUsage, dbGetRecentDigests } from "../db";
@@ -46,7 +47,9 @@ onProviderConfigChange(() => {
 export function getProvider(): LLMProvider {
   if (_provider) return _provider;
 
-  const s = useSettingsStore.getState();
+  // 直读 localStorage 真相源:provider/key 变更后缓存会被清掉并重建,
+  // 重建时必须读最新配置,不能用可能是陈旧快照的 useSettingsStore.getState()。
+  const s = readSettingsSnapshot();
   const name: ProviderName = s.llmProvider;
 
   if (name === "deepseek") {
@@ -392,7 +395,11 @@ function recordUsage(
  * 调用方(chatStreamCall / chatAgentCall / chatStore)需相应加 await。
  */
 export async function buildChatSystemPrompt(): Promise<string> {
-  const s = useSettingsStore.getState();
+  // 必须直读 localStorage 真相源,不能用 useSettingsStore.getState()。
+  // Daybreak 多窗口架构:每个窗口的 Zustand store 只在初始化时读一次 localStorage,
+  // 设置页(主窗)改了人设/语言后只更新主窗 store + localStorage;对话悬浮条的 store
+  // 仍是陈旧快照。readSettingsSnapshot() 直读 localStorage,跨窗口始终拿到最新值。
+  const s = readSettingsSnapshot();
   const lang: Lang = s.lang ?? "zh";
   // 若 persona 未配置(旧 settings 数据/测试环境),用默认资深幕僚兜底
   const persona = s.persona ?? { presetKey: "seniorAdvisor" as const };
@@ -461,7 +468,10 @@ export async function buildChatSystemPrompt(): Promise<string> {
  */
 function resolveDeepSeekModel(purpose: "agent" | "reasoning"): string | undefined {
   if (getProvider().name !== "deepseek") return undefined;
-  const cfg = useSettingsStore.getState().providers.deepseek;
+  // 直读 localStorage 真相源,原因同 buildChatSystemPrompt 的注释:
+  // 对话悬浮条窗口的 store 是陈旧快照,用户在设置页改了 agentModel/reasoningModel 后
+  // 须从 readSettingsSnapshot() 读才能即时生效。
+  const cfg = readSettingsSnapshot().providers.deepseek;
   if (purpose === "agent") {
     return cfg.agentModel || cfg.model || "deepseek-chat";
   }

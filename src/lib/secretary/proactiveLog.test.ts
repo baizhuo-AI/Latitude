@@ -110,23 +110,25 @@ vi.mock("../syncBus", () => ({
 }));
 
 // ─── mock settings ────────────────────────────────────────────────────────────
+const PROACTIVE_LOG_SETTINGS = {
+  lang: "zh" as const,
+  persona: { presetKey: "seniorAdvisor" as const },
+  chatBackend: "deepseek-api" as const,
+  llmProvider: "deepseek" as const,
+  providers: {
+    deepseek: {
+      apiKey: "test-key",
+      baseUrl: "https://example.test",
+      model: "deepseek-chat",
+    },
+  },
+};
+
 vi.mock("../settings", () => ({
   onProviderConfigChange: () => () => undefined,
-  useSettingsStore: {
-    getState: () => ({
-      lang: "zh",
-      persona: { presetKey: "seniorAdvisor" },
-      chatBackend: "deepseek-api",
-      llmProvider: "deepseek",
-      providers: {
-        deepseek: {
-          apiKey: "test-key",
-          baseUrl: "https://example.test",
-          model: "deepseek-chat",
-        },
-      },
-    }),
-  },
+  useSettingsStore: { getState: () => PROACTIVE_LOG_SETTINGS },
+  // getProvider / buildChatSystemPrompt 改走真相源读取器,测试里与 store 值保持一致
+  readSettingsSnapshot: () => PROACTIVE_LOG_SETTINGS,
 }));
 
 // ─── mock store 依赖 ──────────────────────────────────────────────────────────

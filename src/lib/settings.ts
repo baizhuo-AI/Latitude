@@ -215,6 +215,20 @@ export function readFeishuPrefs(): FeishuPrefs {
   return readStored().feishu;
 }
 
+/**
+ * 直接从 localStorage 读完整 settings 快照（跨窗口实时）。
+ *
+ * 用途：对话层（buildChatSystemPrompt / resolveDeepSeekModel 等）读 persona / lang /
+ * providers 等配置时必须走这里，不能用 useSettingsStore.getState()——理由同上（多窗口 store
+ * 隔离，对话悬浮条的 store 是陈旧快照）。localStorage 同源跨窗口共享，直读即实时。
+ *
+ * 同 readFeishuPrefs 一样是「真相源」读取器；命名 readSettingsSnapshot 强调它返回的
+ * 是当前 localStorage 里的完整状态，与任何窗口的 store 内存态无关。
+ */
+export function readSettingsSnapshot(): SettingsState {
+  return readStored();
+}
+
 /** 直接 patch localStorage 里的飞书配置（跨窗口生效）。供对话工具记住"项目字段"等，不经任一窗口 store。 */
 export function patchFeishuPrefsInStorage(patch: Partial<FeishuPrefs>): void {
   if (typeof window === "undefined") return;
