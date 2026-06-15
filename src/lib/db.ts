@@ -219,6 +219,20 @@ CREATE TABLE IF NOT EXISTS proactive_log (
 
 CREATE INDEX IF NOT EXISTS idx_proactive_log_conv ON proactive_log(conv_id);
 CREATE INDEX IF NOT EXISTS idx_proactive_log_sent_at ON proactive_log(sent_at);
+
+CREATE TABLE IF NOT EXISTS memory_facts (
+  id          TEXT PRIMARY KEY,
+  category    TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'inferred',
+  durability  TEXT NOT NULL DEFAULT 'durable',
+  pinned      INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_created_at ON memory_facts(created_at);
 `;
 
 /**
@@ -283,6 +297,10 @@ async function migrate(db: Database): Promise<void> {
 
   // V8: proactive_log 表（AI 秘书主动消息投递日志，Task 1.7）
   // 同 V7：老库已通过 V1 的 IF NOT EXISTS 建表；新库 V1 路径直接带。无需 ALTER。
+
+  // V10: memory_facts 表（AI 秘书记忆事实库，Task 2.1）
+  // 跨窗口共享的事实存储（对话注入时直读 DB，不走任何 store 内存缓存）。
+  // 同 V7/V8：老库通过 V1 的 IF NOT EXISTS 自动建表；新库 V1 路径直接带。无需 ALTER。
 }
 
 export async function getDb(): Promise<Database> {
@@ -1948,4 +1966,228 @@ export async function dbGetLastProactiveSentAt(
   if (!raw) return undefined;
   const ms = Date.parse(raw);
   return Number.isNaN(ms) ? undefined : ms;
+}
+
+/* ---------- Memory Facts(AI 秘书记忆事实库，Task 2.1) ---------- */
+
+/**
+ * 事实分类枚举。这是【单一真相源】:
+ *   - memory_facts.category 列存的就是这些字面量
+ *   - chatTools 的 remember/update_memory 校验也复用 MEMORY_CATEGORIES
+ * 改这里要同步改两边的文档/提示词(枚举值是给大脑看的语义标签)。
+ *
+ * 语义:
+ *   - identity:用户是谁(职业/身份/长期角色)
+ *   - ongoing:当前在进行的事(项目、阶段性任务,通常 transient)
+ *   - habit:习惯/作息/固定模式
+ *   - people:人际(同事/家人/合作方及其关系)
+ *   - preference:偏好(口味、工具、表达方式)
+ */
+export type MemoryCategory =
+  | "identity"
+  | "ongoing"
+  | "habit"
+  | "people"
+  | "preference";
+
+/** 枚举的运行时数组(校验用)。与 MemoryCategory 一一对应,改一处改两处。 */
+export const MEMORY_CATEGORIES: readonly MemoryCategory[] = [
+  "identity",
+  "ongoing",
+  "habit",
+  "people",
+  "preference",
+];
+
+/** 事实来源:told=用户明说的、inferred=对话中推断的。 */
+export type MemorySource = "told" | "inferred";
+
+/** 耐久度:durable=长期有效、transient=阶段性(通常带 expires_at)。 */
+export type MemoryDurability = "durable" | "transient";
+
+export interface MemoryFact {
+  id: string;
+  category: MemoryCategory;
+  content: string;
+  source: MemorySource;
+  durability: MemoryDurability;
+  /** 用户钉住:不因过期被淘汰、列表里优先。 */
+  pinned: boolean;
+  createdAt: string;
+  /** 有效期(ISO,可空)。空=永不过期;到点后非 pinned 则不再 active。 */
+  expiresAt?: string;
+}
+
+interface MemoryFactRow {
+  id: string;
+  category: string;
+  content: string;
+  source: string;
+  durability: string;
+  pinned: number;
+  created_at: string;
+  expires_at: string | null;
+}
+
+function rowToMemoryFact(r: MemoryFactRow): MemoryFact {
+  return {
+    id: r.id,
+    category: r.category as MemoryCategory,
+    content: r.content,
+    source: r.source as MemorySource,
+    durability: r.durability as MemoryDurability,
+    pinned: r.pinned === 1,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at ?? undefined,
+  };
+}
+
+/**
+ * 判断一条事实在给定时刻是否仍然有效(active)。【纯函数 + 时间注入】
+ *
+ * 规则(与 dbListMemoryFacts 的 SQL 过滤一一对应,改一处改两处):
+ *   - pinned → 永远 active(用户钉住优先于过期)
+ *   - expiresAt 为空 / 无法解析 → 永远 active(无有效期,脏值不误删)
+ *   - expiresAt 有效 → 仅当 now < expiresAt 才 active(到点即失效,边界取闭)
+ *
+ * @param fact 事实(只读 pinned / expiresAt)
+ * @param now  当前时刻(ms),由调用方注入,便于单测
+ */
+export function isMemoryFactActive(
+  fact: Pick<MemoryFact, "pinned" | "expiresAt">,
+  now: number
+): boolean {
+  if (fact.pinned) return true;
+  if (!fact.expiresAt) return true;
+  const exp = Date.parse(fact.expiresAt);
+  if (Number.isNaN(exp)) return true; // 脏值按"无有效期"处理,不误删
+  return now < exp;
+}
+
+/** dbInsertMemoryFact 的入参(不含由本函数生成的 id / createdAt)。 */
+export interface MemoryFactInput {
+  category: MemoryCategory;
+  content: string;
+  source: MemorySource;
+  durability: MemoryDurability;
+  pinned: boolean;
+  /** 可空。transient 事实通常由调用方兜一个有效期再传进来。 */
+  expiresAt?: string;
+}
+
+/**
+ * 插入一条记忆事实。id(前缀 'mf')与 createdAt 由本函数生成,返回新 id。
+ * @returns 新事实的 id
+ */
+export async function dbInsertMemoryFact(input: MemoryFactInput): Promise<string> {
+  const db = await getDb();
+  const id = `mf${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO memory_facts
+      (id, category, content, source, durability, pinned, created_at, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      id,
+      input.category,
+      input.content,
+      input.source,
+      input.durability,
+      input.pinned ? 1 : 0,
+      now,
+      input.expiresAt ?? null,
+    ]
+  );
+  return id;
+}
+
+/** dbUpdateMemoryFact 的可改字段(只改传入的;expiresAt 传 null 显式清空)。 */
+export interface MemoryFactPatch {
+  category?: MemoryCategory;
+  content?: string;
+  source?: MemorySource;
+  durability?: MemoryDurability;
+  pinned?: boolean;
+  /** undefined=不动;null=清空有效期;string=设新有效期。 */
+  expiresAt?: string | null;
+}
+
+/**
+ * 部分更新一条记忆事实。只更新 patch 里出现的字段(动态拼 SET 子句)。
+ * 没有任何字段时直接返回(不打空 UPDATE)。
+ *
+ * @param id    目标事实 id
+ * @param patch 要改的字段
+ */
+export async function dbUpdateMemoryFact(
+  id: string,
+  patch: MemoryFactPatch
+): Promise<void> {
+  const db = await getDb();
+  const sets: string[] = [];
+  const args: unknown[] = [];
+  const push = (col: string, val: unknown) => {
+    args.push(val);
+    sets.push(`${col} = $${args.length}`);
+  };
+  if (patch.category !== undefined) push("category", patch.category);
+  if (patch.content !== undefined) push("content", patch.content);
+  if (patch.source !== undefined) push("source", patch.source);
+  if (patch.durability !== undefined) push("durability", patch.durability);
+  if (patch.pinned !== undefined) push("pinned", patch.pinned ? 1 : 0);
+  // expiresAt: undefined=不动;null=清空;string=设值
+  if (patch.expiresAt !== undefined) push("expires_at", patch.expiresAt);
+  if (sets.length === 0) return; // 没有要改的,不打空 UPDATE
+  args.push(id);
+  await db.execute(
+    `UPDATE memory_facts SET ${sets.join(", ")} WHERE id = $${args.length}`,
+    args
+  );
+}
+
+/** 删除一条记忆事实(硬删,记忆不需要软删/可恢复语义)。 */
+export async function dbDeleteMemoryFact(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM memory_facts WHERE id = $1", [id]);
+}
+
+export interface ListMemoryFactsOptions {
+  /** 只取仍然有效的事实(过滤过期且非 pinned 的)。默认 false=全取。 */
+  onlyActive?: boolean;
+  /** 限定分类。 */
+  category?: MemoryCategory;
+}
+
+/**
+ * 列出记忆事实。pinned 优先、再按创建时间倒序(新的在前)。
+ *
+ * onlyActive 的过滤在 SQL 层做(保证跨窗口直读 DB 即时新鲜):
+ *   active = pinned=1 OR expires_at IS NULL OR expires_at > now
+ * 这与纯函数 isMemoryFactActive 的规则对齐(脏 expires_at 在 SQL 字符串比较里
+ * 一般 > now 不成立,会被滤掉;若要严格对齐脏值"保活",可在内存再过一道纯函数。
+ * 这里取 SQL 口径:正常 ISO 时间戳字符串可比,脏值极少出现且偏保守地淘汰,可接受)。
+ */
+export async function dbListMemoryFacts(
+  opts: ListMemoryFactsOptions = {}
+): Promise<MemoryFact[]> {
+  const db = await getDb();
+  const where: string[] = [];
+  const args: unknown[] = [];
+  if (opts.onlyActive) {
+    args.push(new Date().toISOString());
+    where.push(
+      `(pinned = 1 OR expires_at IS NULL OR expires_at > $${args.length})`
+    );
+  }
+  if (opts.category) {
+    args.push(opts.category);
+    where.push(`category = $${args.length}`);
+  }
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const rows = await db.select<MemoryFactRow[]>(
+    `SELECT * FROM memory_facts ${clause}
+     ORDER BY pinned DESC, created_at DESC`,
+    args
+  );
+  return rows.map(rowToMemoryFact);
 }
