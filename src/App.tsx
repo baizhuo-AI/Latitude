@@ -8,9 +8,11 @@ import { useGoalsStore } from "./lib/goalsStore";
 import { useActivityStore } from "./lib/activityStore";
 import { useCalendarEventsStore } from "./lib/calendarEventsStore";
 import { useFieldStore } from "./lib/fieldStore";
+import { useChatStore } from "./lib/chatStore";
 import { onSync, type SyncTopic } from "./lib/syncBus";
 import { setupOnlineReplay } from "./lib/calendarSync";
 import { startReminderScheduler } from "./lib/reminder";
+import { startSecretaryScheduler, runStartupBackfill } from "./lib/secretary/wiring";
 import { windowRole } from "./lib/windowLayout";
 import { useSettingsStore } from "./lib/settings";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
@@ -45,7 +47,9 @@ function useDataSync(topics: SyncTopic[]) {
       todos: () => { void useTodoStore.getState().hydrate(); void useFieldStore.getState().hydrate(); },
       goals: () => void useGoalsStore.getState().hydrate(),
       activities: () => void useActivityStore.getState().hydrate(),
-      calendar_events: () => void useCalendarEventsStore.getState().hydrate()
+      calendar_events: () => void useCalendarEventsStore.getState().hydrate(),
+      // 对话列表:秘书投递简报后跨窗口刷新(目前只 ChatBarWindow 订阅)
+      conversations: () => void useChatStore.getState().hydrate()
     };
     topics.forEach((tp) => hydrators[tp]?.());
     const offs = topics.map((tp) => onSync(tp, () => hydrators[tp]?.()));
@@ -79,6 +83,19 @@ function MainWindow() {
     return stop;
   }, []);
 
+  // AI 秘书调度器(日终纪要 + 晨间简报):同 reminder,只在工作台主窗起一份(单 owner)。
+  // 卸载时 stop(),停 tick 并释放 owner 锁。
+  useEffect(() => {
+    const stop = startSecretaryScheduler();
+    return stop;
+  }, []);
+
+  // 启动补发:若今早错过晨间简报且用户尚未活跃,补发一条(只在主窗起一次)。
+  // 不阻塞渲染、不抛错——内部已吞异常并保守降级。
+  useEffect(() => {
+    void runStartupBackfill();
+  }, []);
+
   // 全局快捷键:启动时按设置里保存的 accelerator 注册一次(用户改时由设置页重新注册)。
   useEffect(() => {
     void (async () => {
@@ -106,9 +123,13 @@ function MainWindow() {
   );
 }
 
-/** 对话悬浮条窗口:对话上下文(buildChatSystemPrompt)要 todos + goals,这里 hydrate 并随同步刷新。 */
+/**
+ * 对话悬浮条窗口:对话上下文(buildChatSystemPrompt)要 todos + goals,这里 hydrate 并随同步刷新。
+ * 另订阅 conversations:AI 秘书投递晨间简报(新建对话)后 emitSync("conversations"),
+ * 让悬浮条自动 hydrate 出这条新简报对话,无需用户手动刷新。
+ */
 function ChatBarWindow() {
-  useDataSync(["todos", "goals"]);
+  useDataSync(["todos", "goals", "conversations"]);
   return (
     <ErrorBoundary>
       <ConfirmDialogProvider>

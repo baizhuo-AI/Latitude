@@ -2,15 +2,14 @@
  * composeProactive.ts — AI 秘书主动消息合成 (Task 1.4)
  *
  * 职责:
- *   1. composeMorningBriefing(ctx):
+ *   composeMorningBriefing(ctx):
  *      - 收集〔昨日纪要 + 今日任务 + 人设〕
  *      - 用 generateOnce 合成一条带人设腔调、续接昨天的简报文本
  *      - 把简报作为一条 assistant 消息插入新建的"今日简报"对话并持久化
  *      - 发出 conversations 数据变更事件,让悬浮条能刷新到这个新对话
- *   2. createMorningBriefingJob(opts):
- *      - 返回可注册到 scheduler 的调度任务对象
- *      - shouldRun 做成纯函数:当天首次、到达配置的早晨时间 → true
- *      - 本 Task 只定义任务,不在 App.tsx 挂载(wiring 留给后续)
+ *
+ * ⚠️ 调度任务工厂统一用 gate.ts 的 createMorningBriefingJobWithGate(带防骚扰闸门);
+ *    本文件曾有的 createMorningBriefingJob(无 gate)已废弃删除,见 Task 1.8。
  *
  * C6 错误降级:generateOnce 失败时静默——不投递、不弹错、仅日志。
  *
@@ -19,8 +18,8 @@
  *     不复用当前对话(避免污染用户正在进行的会话),
  *     也不需要用户先说一句话——简报作为 assistant 首条消息投入空对话,
  *     用户直接回复即接入正常 sendMessage 流程。
- *   - chatStore 的 in-memory 状态通过 useChatStore.getState() 更新,
- *     让同窗口的 UI 立即响应;同时 emitSync("conversations") 通知跨窗口。
+ *   - 投递后只 emitSync("conversations"):多窗口各有独立 chatStore,
+ *     统一靠跨窗口同步事件触发 hydrate 刷新,不直接改某个窗口的 in-memory store。
  */
 
 import { generateOnce } from "../llm/index";
@@ -34,9 +33,7 @@ import {
   dbLogProactiveSent,
 } from "../db";
 import { useSettingsStore } from "../settings";
-import { useChatStore } from "../chatStore";
 import { emitSync } from "../syncBus";
-import type { ScheduledJob } from "./scheduler";
 import type { Lang } from "../settings";
 import type { ConversationRow, ChatMessageRow } from "../db";
 
@@ -58,7 +55,10 @@ export interface MorningBriefingCtx {
   isBackfill?: boolean;
 }
 
-/** createMorningBriefingJob 的配置项 */
+/**
+ * 简报调度任务的配置项。
+ * 被 gate.ts 的 MorningBriefingWithGateOpts 继承(createMorningBriefingJobWithGate 用)。
+ */
 export interface MorningBriefingJobOpts {
   /** 早晨触发小时(本地时间 0-23),默认 7 */
   morningHour?: number;
@@ -67,12 +67,6 @@ export interface MorningBriefingJobOpts {
 }
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
-
-/** 默认触发小时(本地时间 07:00) */
-const DEFAULT_MORNING_HOUR = 7;
-
-/** 一天内重复 tick 的最短间隔(23h),防同天多次触发 */
-const MIN_INTERVAL_MS = 23 * 60 * 60 * 1000;
 
 /** 从 daily_digest 取多少天的纪要(只取昨天 1 条就够了,但统一用近 2 条保留余量) */
 const DIGEST_LOOKBACK = 2;
@@ -293,24 +287,12 @@ export async function composeMorningBriefing(
   await dbInsertMessage(msg);
   await dbTouchConversation(convId).catch(() => undefined);
 
-  // 6. 更新当前窗口的 chatStore 内存态(让同窗口 UI 立即看到)
-  try {
-    const store = useChatStore.getState();
-    // createConv 会走完整的 DB 流程(已经做过了),这里只更新 in-memory state
-    // 直接注入到 store 的 set 不可从外部访问,但 conversations 列表会在 hydrate 时自动更新
-    // 因为 emitSync 会触发监听方 hydrate(),这里做最小侵入:
-    // 如果 store 没有当前对话选中,则把新对话设为当前(让 ChatBar 展开显示简报)
-    // 注意:多窗口架构下这里的 store 是本窗口的,ChatBar 在独立窗口里有自己的 store
-    const _ = store; // 标注 store 被引用(即便本窗口 ChatBar 用同一个 store 实例也能刷新)
-    void _;
-  } catch {
-    // store 访问失败不影响持久化,忽略
-  }
-
-  // 7. 发出跨窗口数据变更事件
+  // 6. 发出跨窗口数据变更事件:让监听 "conversations" 的窗口(含 ChatBar)hydrate 出这条新简报对话。
+  //    多窗口架构下各窗口有独立 chatStore,统一靠 emitSync + daybreak://data-changed 刷新,
+  //    不在此处直接改 in-memory store(那只能影响本窗口,反而不一致)。
   emitSync("conversations");
 
-  // 8. 记录投递日志(Task 1.7):投递成功后打点,C6 失败路径在步骤 4 已提前 return,不会走到这里
+  // 7. 记录投递日志(Task 1.7):投递成功后打点,C6 失败路径在步骤 4 已提前 return,不会走到这里
   //    补发时 type 体现"补发"标记
   const proactiveType = isBackfill ? "morning_briefing_backfill" : "morning_briefing";
   const previewLen = 50;
@@ -328,72 +310,5 @@ export async function composeMorningBriefing(
   return convId;
 }
 
-// ─── 调度任务工厂 ──────────────────────────────────────────────────────────────
-
-/**
- * 创建晨间简报调度任务。
- *
- * 挂载方:在主窗口入口处调用 scheduler.registerJob(createMorningBriefingJob())。
- * 本 Task 只定义,不在 App.tsx 注册(wiring 留给后续)。
- *
- * shouldRun 规则(纯函数,所有状态从参数注入):
- *   - 当前本地时间 >= morningHour
- *   - 距上次运行 < 当天 0 点到现在的毫秒数(即今天还没跑过)
- *
- * 判断"今天是否已跑过"的方式:
- *   取今天 00:00:00 的时间戳,若 lastRan >= todayStart 则今天已跑过。
- *   不依赖 MIN_INTERVAL_MS(23h 间隔) ——避免"昨晚 23:00 跑过,今早 7:00 不触发"的坑。
- *   改用"跨自然日"判断。
- */
-export function createMorningBriefingJob(
-  opts: MorningBriefingJobOpts = {}
-): ScheduledJob {
-  const morningHour = opts.morningHour ?? DEFAULT_MORNING_HOUR;
-
-  return {
-    id: "morning-briefing",
-
-    /**
-     * 纯函数:当天首次 + 已到早晨时间 → true。
-     *
-     * @param now  当前时间戳(ms),由 scheduler 注入(⚠️ 不在函数体内读 Date.now())
-     * @param ctx  调度上下文,ctx.lastRan 为上次运行的时间戳(ms)
-     */
-    shouldRun(now: number, ctx: { lastRan: number | undefined }): boolean {
-      // 当前本地时间
-      const d = new Date(now);
-      const hour = d.getHours();
-
-      // 条件 1:早晨时间到了
-      if (hour < morningHour) return false;
-
-      // 条件 2:今天还没跑过
-      // 算今天 00:00:00 的时间戳
-      const todayStart = new Date(now);
-      todayStart.setHours(0, 0, 0, 0);
-      const todayStartMs = todayStart.getTime();
-
-      if (ctx.lastRan !== undefined && ctx.lastRan >= todayStartMs) {
-        // 今天已经跑过了
-        return false;
-      }
-
-      return true;
-    },
-
-    async run(): Promise<void> {
-      const today = new Date();
-      const fmt = (d: Date): string =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-      const dateKey = fmt(today);
-      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-      const yesterdayKey = fmt(yesterday);
-
-      const s = useSettingsStore.getState();
-      const lang: Lang = opts.lang ?? s.lang ?? "zh";
-
-      await composeMorningBriefing({ dateKey, yesterdayKey, lang });
-    },
-  };
-}
+// 调度任务工厂统一在 gate.ts:createMorningBriefingJobWithGate(带防骚扰闸门)。
+// 原本文件里无 gate 的 createMorningBriefingJob 已于 Task 1.8 废弃删除。

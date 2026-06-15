@@ -1869,3 +1869,67 @@ export async function dbHasUnrepliedProactive(convId: string): Promise<boolean> 
   );
   return (rows[0]?.cnt ?? 0) > 0;
 }
+
+/** dbListRecentProactive 返回的单条主动消息记录(供启动 wiring / gate 状态用) */
+export interface RecentProactiveRow {
+  /** 主动消息类型,如 "morning_briefing" / "morning_briefing_backfill" */
+  type: string;
+  /** 投递进的对话 id */
+  convId: string;
+  /** 发送时间(UTC ISO 字符串) */
+  sentAt: string;
+  /** 内容预览 */
+  contentPreview: string;
+}
+
+/**
+ * 取最近 N 条主动消息日志,按发送时间倒序(最新在前)。
+ *
+ * 用途(Task 1.8 wiring):
+ *   - 组装 gate 的 recentlySent 状态(同类去重、温和频率)。
+ *   - 供启动补发判断"今天是否已发过简报"。
+ *
+ * @param n 最多返回条数
+ */
+export async function dbListRecentProactive(n: number): Promise<RecentProactiveRow[]> {
+  const db = await getDb();
+  const rows = await db.select<
+    Array<{ type: string; conv_id: string; sent_at: string; content_preview: string }>
+  >(
+    `SELECT type, conv_id, sent_at, content_preview FROM proactive_log
+     ORDER BY sent_at DESC LIMIT $1`,
+    [n]
+  );
+  return rows.map((r) => ({
+    type: r.type,
+    convId: r.conv_id,
+    sentAt: r.sent_at,
+    contentPreview: r.content_preview,
+  }));
+}
+
+/**
+ * 取某类(前缀匹配)主动消息最近一次的发送时间戳(ms)。
+ *
+ * 用途(Task 1.8 wiring):启动补发时判断"今天是否已发过晨间简报"——
+ * 传 typePrefix="morning_briefing" 可同时覆盖正常("morning_briefing")
+ * 与补发("morning_briefing_backfill")两种 type。
+ *
+ * @param typePrefix 类型前缀(用 LIKE 'prefix%' 匹配)
+ * @returns 最近一条匹配记录的 sent_at 转成的毫秒时间戳;无记录时 undefined
+ */
+export async function dbGetLastProactiveSentAt(
+  typePrefix: string
+): Promise<number | undefined> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ sent_at: string }>>(
+    `SELECT sent_at FROM proactive_log
+     WHERE type LIKE $1
+     ORDER BY sent_at DESC LIMIT 1`,
+    [`${typePrefix}%`]
+  );
+  const raw = rows[0]?.sent_at;
+  if (!raw) return undefined;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? undefined : ms;
+}

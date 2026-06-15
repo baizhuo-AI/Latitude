@@ -141,9 +141,11 @@ vi.mock("../chatTools", () => ({
 // ─── 被测模块(所有 mock 之后 import) ─────────────────────────────────────────
 import {
   composeMorningBriefing,
-  createMorningBriefingJob,
   type MorningBriefingCtx,
 } from "./composeProactive";
+// 旧的 createMorningBriefingJob 已删除,统一用 gate.ts 的带闸门版本。
+// 其 shouldRun 逻辑与旧版完全一致,故 shouldRun 纯函数测试改测带 gate 的工厂。
+import { createMorningBriefingJobWithGate } from "./gate";
 import { dbInsertMessage, dbInsertConversation } from "../db";
 
 // ─── 辅助函数 ─────────────────────────────────────────────────────────────────
@@ -305,8 +307,8 @@ describe("可回复续聊 — 简报是第一条 assistant 消息,不破坏后�
 // ════════════════════════════════════════════════════════════════════════════
 // 3. shouldRun 纯函数
 // ════════════════════════════════════════════════════════════════════════════
-describe("createMorningBriefingJob — shouldRun 纯函数", () => {
-  const job = createMorningBriefingJob({ morningHour: 7 });
+describe("createMorningBriefingJobWithGate — shouldRun 纯函数", () => {
+  const job = createMorningBriefingJobWithGate({ morningHour: 7 });
 
   it("当天没发过 + 到达配置的早晨时间 → true", () => {
     const now = makeNow(7, 0); // 07:00
@@ -339,7 +341,7 @@ describe("createMorningBriefingJob — shouldRun 纯函数", () => {
   });
 
   it("时间注入:使用不同 morningHour 配置", () => {
-    const job9 = createMorningBriefingJob({ morningHour: 9 });
+    const job9 = createMorningBriefingJobWithGate({ morningHour: 9 });
     const at8 = makeNow(8, 59);
     const at9 = makeNow(9, 0);
     expect(job9.shouldRun(at8, { lastRan: undefined })).toBe(false);
