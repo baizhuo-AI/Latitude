@@ -274,6 +274,26 @@
       "titleRequired": "Goal title is required"
     }
   },
+  "persona": {
+    "sectionTitle": "AI Secretary Persona",
+    "sectionDesc": "Tune the AI's tone and what it knows about you. Hit \"Try a sample\" to preview.",
+    "name": "Name it",
+    "tone": "Tone",
+    "preset": {
+      "seniorAdvisor": "Senior Advisor",
+      "wittyPartner": "Witty Partner",
+      "gentleCompanion": "Gentle Companion"
+    },
+    "userAlias": "How to address you",
+    "relationship": "Relationship",
+    "habits": "Habits / Boundaries",
+    "habitInput": "Habit input",
+    "freeNote": "Anything else",
+    "trySample": "Try a sample",
+    "trySamplePending": "Generating…",
+    "noKey": "No AI model configured. Add an API Key in the provider section above, then Try a sample will work.",
+    "lockedRulesNote": "Core anti-boilerplate rules are built in — just tune the personality."
+  },
   "settings": {
     "title": "Settings",
     "shortcuts": {

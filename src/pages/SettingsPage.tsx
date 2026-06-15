@@ -17,7 +17,8 @@ import {
   CalendarClock,
   Command,
   ListFilter,
-  Sheet
+  Sheet,
+  UserCircle2
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -39,6 +40,7 @@ import { useCalendarEventsStore } from "../lib/calendarEventsStore";
 import { feishuSyncNow } from "../lib/calendarSync";
 import { CustomFieldsManager } from "../components/CustomFieldsManager";
 import { describeBitable } from "../lib/feishuBitable";
+import { PersonaPanel } from "../components/persona/PersonaPanel";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -149,6 +151,17 @@ export function SettingsPage() {
               <ProviderKeyEditor provider={settings.llmProvider} />
             )}
           </Section>
+
+          {/* AI 秘书人设 */}
+          <div id="persona-panel">
+          <Section
+            icon={<UserCircle2 className="w-4 h-4" />}
+            title={t("persona.sectionTitle")}
+            description={t("persona.sectionDesc")}
+          >
+            <PersonaPanel />
+          </Section>
+          </div>
 
           {/* 对话后端切换：DeepSeek API / 三家本地 CLI */}
           <Section

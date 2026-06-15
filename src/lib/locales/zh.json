@@ -274,6 +274,26 @@
       "titleRequired": "目标标题不能为空"
     }
   },
+  "persona": {
+    "sectionTitle": "AI 秘书人设",
+    "sectionDesc": "调整 AI 的说话风格和对你的了解。改完点「试一句」看看效果。",
+    "name": "叫它什么名字",
+    "tone": "性格基调",
+    "preset": {
+      "seniorAdvisor": "资深幕僚",
+      "wittyPartner": "机灵搭档",
+      "gentleCompanion": "温和陪伴"
+    },
+    "userAlias": "怎么称呼你",
+    "relationship": "关系设定",
+    "habits": "习惯 / 雷区",
+    "habitInput": "习惯/雷区输入",
+    "freeNote": "自由补充",
+    "trySample": "试一句",
+    "trySamplePending": "生成中…",
+    "noKey": "还没有配置 AI 模型。在上方「AI 提供商」填入 API Key 后,「试一句」就能用了。",
+    "lockedRulesNote": "底层反机械规则已内置,你只管调性格。"
+  },
   "settings": {
     "title": "设置",
     "shortcuts": {
