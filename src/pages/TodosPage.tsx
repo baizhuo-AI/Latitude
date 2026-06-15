@@ -294,7 +294,7 @@ export function TodosPage() {
               type="button"
               onClick={() => navigate("/settings?scrollTo=custom-fields")}
               title={t("todos.manageFields")}
-              className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
+              className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md shadow-sm border border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -630,7 +630,7 @@ function TodoRow({
     <div
       onDoubleClick={onEdit}
       className={cn(
-        "group relative grid gap-4 items-center px-4 py-3 transition-all rounded-xl cursor-default",
+        "group relative grid gap-4 items-center px-4 py-3 mr-8 transition-all rounded-xl cursor-default",
         gridColsClass(fieldDefs.length),
         "bg-white dark:bg-zinc-900",
         "border border-zinc-200 dark:border-zinc-800",

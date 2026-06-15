@@ -48,6 +48,8 @@ export interface Todo {
   isPushBackSuggestion?: boolean;
   isProcrastinated?: boolean;
   customFields?: Record<string, string | string[]>;
+  /** 完成时刻(ISO/UTC)。仅 status==='done' 时有值；done↔completedAt 不变式由 db 写入层维护(见 db.ts)。 */
+  completedAt?: string;
 }
 
 /**

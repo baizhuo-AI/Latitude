@@ -30,7 +30,16 @@ const TOKEN_PATH: &str = "/authen/v2/oauth/token";
 ///
 /// 代价（注意）：只读阶段（Phase 0-3）就已持有写权限，企业管理员审批门槛比纯只读更高、
 /// 可能更慢。若审批受阻，回退方案是先用 `calendar:calendar:readonly` 起步、Phase 4 再升级。
-pub const SCOPES: &[&str] = &["calendar:calendar", "offline_access"];
+pub const SCOPES: &[&str] = &[
+    "calendar:calendar",
+    "offline_access",
+    // 多维表格 connector：bitable:app 覆盖表字段/记录的读写；wiki:node:retrieve 解析 /wiki/ 链接。
+    // 注（联调确认）：用户的飞书自建应用需在开放平台后台勾选对应权限，OAuth 才会授予这些 scope；
+    // 若 bitable:app 粒度不被接受，回退用 base:field:read / base:record:retrieve / base:record:create
+    // / base:record:update 这组细粒度替换。改这一个数组即可，授权 URL 拼装自动带上。
+    "bitable:app",
+    "wiki:node:retrieve",
+];
 
 /// 授权页路径（拼在 `Region::api_base()` 之后）。
 const AUTHORIZE_PATH: &str = "/authen/v1/authorize";

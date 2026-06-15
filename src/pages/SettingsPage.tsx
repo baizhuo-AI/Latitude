@@ -16,7 +16,8 @@ import {
   Plug,
   CalendarClock,
   Command,
-  ListFilter
+  ListFilter,
+  Sheet
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -37,6 +38,7 @@ import { dbUsageSummary } from "../lib/db";
 import { useCalendarEventsStore } from "../lib/calendarEventsStore";
 import { feishuSyncNow } from "../lib/calendarSync";
 import { CustomFieldsManager } from "../components/CustomFieldsManager";
+import { describeBitable } from "../lib/feishuBitable";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -174,6 +176,17 @@ export function SettingsPage() {
           >
             <FeishuConnectSection />
           </Section>
+
+          {/* 飞书多维表格写入 */}
+          <div id="bitable-connector">
+          <Section
+            icon={<Sheet className="w-4 h-4" />}
+            title="飞书多维表格"
+            description="把今天完成的项目进展，由 AI 整理后写入你指定的飞书多维表格。贴链接 + 开开关即可，平时用对话触发。"
+          >
+            <FeishuBitableSection />
+          </Section>
+          </div>
 
           {/* 自定义字段 */}
           <div id="custom-fields">
@@ -792,6 +805,125 @@ function FeishuConnectSection() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------- 飞书多维表格 connector ---------- */
+
+function FeishuBitableSection() {
+  const f = useSettingsStore((s) => s.feishu);
+  const setBitableConfig = useSettingsStore((s) => s.setBitableConfig);
+  const [link, setLink] = useState(f.bitableLink ?? "");
+  const [testing, setTesting] = useState(false);
+  const [fields, setFields] = useState<{ name: string; isPrimary: boolean }[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const region = f.activeRegion;
+  const enabled = f.bitableEnabled ?? false;
+
+  async function test() {
+    setErr(null);
+    setFields(null);
+    const l = link.trim();
+    if (!l) {
+      setErr("请先粘贴飞书多维表格的链接");
+      return;
+    }
+    if (!region) {
+      setErr("请先在上方「连接飞书 / Lark 日历」选好区域并连接账号");
+      return;
+    }
+    setTesting(true);
+    try {
+      const info = await describeBitable(region, l);
+      setBitableConfig({
+        bitableLink: l,
+        bitableAppToken: info.app_token,
+        bitableTableId: info.table_id
+      });
+      setFields(info.fields.map((x) => ({ name: x.field_name, isPrimary: x.is_primary })));
+    } catch (e) {
+      const msg = String(e);
+      // token 失效 / 权限不足 → 引导去重新授权（设计决策 B）。
+      const needReauth =
+        msg.includes("失效") || msg.includes("token") || msg.includes("权限") || msg.includes("99991");
+      setErr(
+        needReauth
+          ? `${msg}\n→ 请到上方「连接飞书 / Lark 日历」点「重新授权」，并确认已在飞书开放平台后台给应用勾选「多维表格」相关权限。`
+          : msg
+      );
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+        粘贴一张飞书多维表格的链接并开启，之后就能在对话里说「把今天的项目进展写进飞书表」，
+        AI 会自动按项目整理并写入。需先在上方连接好同一个飞书 / Lark 账号。
+      </p>
+
+      <Field label="表格链接">
+        <input
+          type="text"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="https://xxx.feishu.cn/wiki/...?table=tbl..."
+          className={cn(feishuInputCls, "w-full")}
+        />
+      </Field>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void test()}
+          disabled={testing}
+          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+        >
+          {testing ? "读取中…" : "测试连接 / 读取表结构"}
+        </button>
+      </div>
+
+      {fields && (
+        <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 p-3 space-y-2">
+          <p className="text-xs text-emerald-700 dark:text-emerald-300">
+            ✓ 已连接，共 {fields.length} 个字段：
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {fields.map((x) => (
+              <span
+                key={x.name}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px]",
+                  x.isPrimary
+                    ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-medium"
+                    : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+                )}
+              >
+                {x.name}
+                {x.isPrimary ? " · 主" : ""}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {err && <p className="text-xs text-red-500 whitespace-pre-line">{err}</p>}
+
+      <Field label="启用插件">
+        <SegmentControl<"on" | "off">
+          value={enabled ? "on" : "off"}
+          onChange={(v) =>
+            setBitableConfig({ bitableEnabled: v === "on", bitableLink: link.trim() || undefined })
+          }
+          options={[
+            { value: "on", label: "开启" },
+            { value: "off", label: "关闭" }
+          ]}
+        />
+      </Field>
     </div>
   );
 }

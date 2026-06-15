@@ -10,6 +10,8 @@
 
 import {
   dbListTodos,
+  dbListTodosCompletedOn,
+  dbListFields,
   dbUpdateTodoStatus,
   dbUpdateTodoSchedule,
   dbListActivities,
@@ -18,6 +20,15 @@ import {
 import { useTodoStore, newTodoId, type Todo, type Priority, type TodoStatus } from "./store";
 import { useGoalsStore, newGoalId, type Goal } from "./goalsStore";
 import { useActivityStore } from "./activityStore";
+import { readFeishuPrefs, patchFeishuPrefsInStorage } from "./settings";
+import { buildSyncPlan } from "./bitableSync";
+import {
+  describeBitable,
+  createBitableRecords,
+  updateBitableRecords,
+  type BitableRecordUpdate,
+  type BitableFieldMeta,
+} from "./feishuBitable";
 import { emitSync } from "./syncBus";
 
 export interface ChatTool {
@@ -44,6 +55,27 @@ function str(v: unknown): string | undefined {
 async function refreshTodos() {
   await useTodoStore.getState().hydrate();
   emitSync("todos");
+}
+
+/**
+ * 把 AI 传入的 CellValue 按字段类型收敛：DateTime 字段的日期字符串 → 毫秒时间戳
+ * （飞书 DateTime 字段写入要毫秒数）。其它类型原样透传。让 AI 只需填 "YYYY-MM-DD" 即可。
+ */
+function coerceFields(
+  fields: Record<string, unknown>,
+  metaByName: Map<string, BitableFieldMeta>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    const meta = metaByName.get(k);
+    if (meta?.ui_type === "DateTime" && typeof v === "string") {
+      const ts = Date.parse(v);
+      out[k] = Number.isNaN(ts) ? v : ts;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 /* ---------- 工具定义 ---------- */
@@ -333,11 +365,25 @@ export const CHAT_TOOLS: ChatTool[] = [
   },
   {
     name: "list_activities",
-    description: "列出最近的时间日志",
-    parameters: { type: "object", properties: { limit: { type: "number", description: "默认 100" } } },
+    description: "列出时间日志,可按日期/日期范围过滤。不传日期默认返回最近记录",
+    parameters: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "单日 YYYY-MM-DD（与 start_date/end_date 互斥）" },
+        start_date: { type: "string", description: "范围起始 YYYY-MM-DD（含）" },
+        end_date: { type: "string", description: "范围结束 YYYY-MM-DD（含）" },
+        limit: { type: "number", description: "最多返回多少条，默认 100" },
+      },
+    },
     execute: async (a) => {
       const limit = typeof a.limit === "number" ? a.limit : 100;
-      const rows = await dbListActivities(limit);
+      const date = str(a.date);
+      const startDate = str(a.start_date);
+      const endDate = str(a.end_date);
+      const opts = date
+        ? { startDate: date, endDate: date }
+        : (startDate || endDate) ? { startDate, endDate } : undefined;
+      const rows = await dbListActivities(limit, opts);
       return JSON.stringify({ count: rows.length, activities: rows.map((r) => ({ id: r.id, content: r.content, createdAt: r.createdAt })) });
     },
   },
@@ -428,6 +474,144 @@ export const CHAT_TOOLS: ChatTool[] = [
         allDay: e.isAllDay,
       }));
       return JSON.stringify({ count: items.length, events: items });
+    },
+  },
+  {
+    name: "preview_feishu_table_sync",
+    description:
+      "预览『把今天完成的项目进展同步到飞书表格』：拉取今天完成的任务，按『项目』自定义字段聚合、与表中现有行匹配出要新建/更新的计划，但不写入。必须先调它、把计划讲给用户确认后，再调 write_feishu_table_sync。",
+    parameters: {
+      type: "object",
+      properties: {
+        project_field_id: {
+          type: "string",
+          description:
+            "指定哪个自定义字段代表『项目』。首次若返回 needProjectField=true，问清用户后带上它重新预览。",
+        },
+      },
+    },
+    execute: async (a) => {
+      // 直读 localStorage（跨窗口实时），不读窗口本地 store 内存态——对话悬浮窗的 store 可能是陈旧快照
+      const f = readFeishuPrefs();
+      if (!f.bitableEnabled)
+        return JSON.stringify({ error: "飞书表格插件未开启。请到设置→飞书多维表格开启并粘贴表格链接。" });
+      const region = f.activeRegion;
+      const link = f.bitableLink;
+      if (!region || !link)
+        return JSON.stringify({ error: "尚未配置飞书表格链接。请到设置→飞书多维表格粘贴链接。" });
+
+      const today = todayKey();
+      const [todos, activities, fieldDefs] = await Promise.all([
+        dbListTodosCompletedOn(today),
+        dbListActivities(200, { startDate: today, endDate: today }),
+        dbListFields(),
+      ]);
+
+      let info;
+      try {
+        info = await describeBitable(region, link);
+      } catch (e) {
+        return JSON.stringify({
+          error: `读取飞书表失败：${String(e)}（若提示 access_token 失效，请到设置里重新连接飞书）。`,
+        });
+      }
+
+      const overrideFieldId = str(a.project_field_id);
+      const plan = buildSyncPlan({
+        todos,
+        fieldDefs,
+        existingRows: info.records,
+        tableFields: info.fields,
+        projectFieldId: overrideFieldId ?? f.bitableProjectFieldId,
+      });
+      // 记住用户指定的项目字段（直写 localStorage，跨窗口生效）
+      if (overrideFieldId) patchFeishuPrefsInStorage({ bitableProjectFieldId: overrideFieldId });
+
+      return JSON.stringify({
+        needProjectField: plan.needProjectField,
+        availableCustomFields: fieldDefs.map((x) => ({ id: x.id, name: x.name })),
+        projectFieldName: plan.projectFieldName,
+        primaryFieldName: plan.primaryFieldName,
+        tableFields: info.fields.map((x) => ({
+          name: x.field_name,
+          type: x.ui_type,
+          isPrimary: x.is_primary,
+        })),
+        groups: plan.groups,
+        unassigned: plan.unassigned,
+        todayActivities: activities.map((x) => x.content),
+        todayCompletedCount: todos.length,
+        guidance:
+          "若 needProjectField=true，先问用户用哪个自定义字段标项目（见 availableCustomFields），再带 project_field_id 重新预览。" +
+          "unassigned 非空时问用户这些条目算哪个项目。把每个项目的 items 整理成『进展摘要』而非任务清单流水。" +
+          "suspectNew=true 的项目要提示用户『疑似新项目，确认新建？』。最后把计划渲染成表格请用户确认，确认后才调 write_feishu_table_sync。",
+      });
+    },
+  },
+  {
+    name: "write_feishu_table_sync",
+    description:
+      "把确认好的项目进展写入飞书表格。creates=新建的项目行，updates=更新已有行（带 record_id）。必须先 preview 且经用户确认后再调。fields 用『字段名→值』；更新时间这类日期字段填 YYYY-MM-DD 即可（会自动转换为飞书格式）。",
+    parameters: {
+      type: "object",
+      properties: {
+        creates: {
+          type: "array",
+          description: "新建的行，每项形如 { fields: { 字段名: 值 } }",
+          items: { type: "object" },
+        },
+        updates: {
+          type: "array",
+          description: "更新的行，每项形如 { record_id: string, fields: { 字段名: 值 } }",
+          items: { type: "object" },
+        },
+      },
+    },
+    execute: async (a) => {
+      // 直读 localStorage（跨窗口实时）
+      const f = readFeishuPrefs();
+      const region = f.activeRegion;
+      const link = f.bitableLink;
+      if (!region || !link)
+        return JSON.stringify({ error: "缺少表格配置，请先到设置→飞书多维表格配置并开启，再 preview。" });
+
+      const creates = Array.isArray(a.creates)
+        ? (a.creates as Array<{ fields?: Record<string, unknown> }>)
+        : [];
+      const updates = Array.isArray(a.updates)
+        ? (a.updates as Array<{ record_id?: unknown; fields?: Record<string, unknown> }>)
+        : [];
+      if (creates.length === 0 && updates.length === 0)
+        return JSON.stringify({ error: "creates 和 updates 都为空，没有要写入的内容。" });
+
+      // describe 一次：拿 app_token/table_id（不依赖缓存，避免读到陈旧值）+ 字段类型（DateTime 转换）
+      let info;
+      try {
+        info = await describeBitable(region, link);
+      } catch (e) {
+        return JSON.stringify({ error: `读取表结构失败：${String(e)}` });
+      }
+      const appToken = info.app_token;
+      const tableId = info.table_id;
+      const metaByName = new Map<string, BitableFieldMeta>(
+        info.fields.map((x) => [x.field_name, x])
+      );
+
+      const createRows = creates.map((c) => coerceFields(c.fields ?? {}, metaByName));
+      const updateRows: BitableRecordUpdate[] = updates
+        .filter((u) => str(u.record_id))
+        .map((u) => ({
+          record_id: String(u.record_id),
+          fields: coerceFields(u.fields ?? {}, metaByName),
+        }));
+
+      try {
+        const createdIds = await createBitableRecords(region, appToken, tableId, createRows);
+        await updateBitableRecords(region, appToken, tableId, updateRows);
+        return JSON.stringify({ ok: true, created: createdIds.length, updated: updateRows.length });
+      } catch (e) {
+        return JSON.stringify({ error: `写入飞书表失败：${String(e)}` });
+      }
     },
   },
 ];

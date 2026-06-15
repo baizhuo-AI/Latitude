@@ -251,6 +251,9 @@ pub fn run() {
             feishu::commands::feishu_status,
             feishu::engine::feishu_sync_now,
             feishu::engine::feishu_flush_queue,
+            feishu::bitable::feishu_bitable_describe,
+            feishu::bitable::feishu_bitable_create,
+            feishu::bitable::feishu_bitable_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

@@ -28,6 +28,7 @@ import { enqueueEventEdit } from "../lib/calendarQueue";
 import { flushQueue } from "../lib/calendarSync";
 import { dbUpdateCalendarEventSchedule } from "../lib/db";
 import EventDetailModal from "../components/EventDetailModal";
+import { FeishuSyncButton } from "../components/FeishuSyncButton";
 import { generateTodayPlan } from "../lib/llm";
 import { toast } from "../lib/toast";
 import {
@@ -335,6 +336,7 @@ export function CalendarPage() {
               label={t("calendar.view.month")}
             />
           </div>
+          <FeishuSyncButton />
           <button
             type="button"
             onClick={() => void handleAiPlan()}

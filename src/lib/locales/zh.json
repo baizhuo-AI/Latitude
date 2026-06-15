@@ -6,9 +6,10 @@
     "briefing": "早安",
     "todos": "待办",
     "calendar": "日历",
-    "history": "对话记录",
+    "activities": "记录",
+    "history": "对话",
     "chat": "AI 对话",
-    "telos": "Telos",
+    "telos": "目标",
     "settings": "设置",
     "openChatBar": "打开对话条",
     "openTodo": "打开 todo 悬浮窗"
@@ -233,6 +234,14 @@
     "empty": "还没有对话。",
     "pick": "在左侧选一段对话查看。",
     "noMessages": "这段对话还没有消息。"
+  },
+  "activities": {
+    "title": "活动记录",
+    "empty": "还没有活动记录。开启定时提醒后,每次记一句「刚才在做什么」就会出现在这里。",
+    "deleteConfirm": "删除这条记录?",
+    "deleted": "已删除",
+    "loadMore": "加载更多",
+    "noMore": "没有更多了"
   },
   "telos": {
     "title": "Telos · 长期目标",

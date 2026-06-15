@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod bitable;
 pub mod callback;
 pub mod client;
 pub mod commands;

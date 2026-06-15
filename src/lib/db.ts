@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS todos (
   is_pushback INTEGER NOT NULL DEFAULT 0,
   is_procrastinated INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
@@ -246,6 +247,11 @@ async function migrate(db: Database): Promise<void> {
     );
     console.info("[db] migrated: added calendar_events.freshness column");
   }
+  // V6: todos 加 completed_at（完成时刻，喂"今日完成事项"同步到飞书表）
+  if (!todoCols.has("completed_at")) {
+    await db.execute("ALTER TABLE todos ADD COLUMN completed_at TEXT");
+    console.info("[db] migrated: added todos.completed_at column");
+  }
 }
 
 export async function getDb(): Promise<Database> {
@@ -307,6 +313,7 @@ interface TodoRow {
   custom_fields: string;
   created_at: string;
   updated_at: string;
+  completed_at: string | null;
 }
 
 function rowToTodo(row: TodoRow): Todo {
@@ -332,6 +339,7 @@ function rowToTodo(row: TodoRow): Todo {
     isProcrastinated: row.is_procrastinated === 1,
     createdAt: row.created_at,
     customFields,
+    completedAt: row.completed_at ?? undefined,
   };
 }
 
@@ -354,6 +362,26 @@ export async function dbListTodos(): Promise<Todo[]> {
   return rows.map(rowToTodo);
 }
 
+/**
+ * 列出某本地日期"完成"的 todo（status='done' 且 completed_at 落在该日）。
+ * 喂"把今日完成事项同步到飞书表"。
+ *
+ * 时区口径：completed_at 存 UTC ISO，这里按 dateKey 的 [T00:00:00, T23:59:59.999]
+ * 字符串区间比较，与 dbListActivities 保持一致（接受 UTC 边界近似，换取两个数据源同口径）。
+ * dateKey 由前端按本地时区算（YYYY-MM-DD）。
+ */
+export async function dbListTodosCompletedOn(dateKey: string): Promise<Todo[]> {
+  const db = await getDb();
+  const rows = await db.select<TodoRow[]>(
+    `SELECT * FROM todos
+     WHERE status = 'done'
+       AND completed_at >= $1 AND completed_at < $2
+     ORDER BY completed_at DESC`,
+    [`${dateKey}T00:00:00`, `${dateKey}T23:59:59.999`]
+  );
+  return rows.map(rowToTodo);
+}
+
 export async function dbInsertTodo(todo: Todo): Promise<void> {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -361,8 +389,8 @@ export async function dbInsertTodo(todo: Todo): Promise<void> {
     `INSERT INTO todos
       (id, title, reason, deadline, priority, tags, est_time, status,
        scheduled_time, scheduled_date, is_pushback, is_procrastinated,
-       custom_fields, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+       custom_fields, created_at, updated_at, completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
     [
       todo.id,
       todo.title,
@@ -378,7 +406,9 @@ export async function dbInsertTodo(todo: Todo): Promise<void> {
       todo.isProcrastinated ? 1 : 0,
       JSON.stringify(todo.customFields ?? {}),
       todo.createdAt ?? now,
-      now
+      now,
+      // 插入即 done 时记完成时刻；否则空。done↔completed_at 不变式由写入层统一维护
+      todo.status === "done" ? (todo.completedAt ?? now) : null
     ]
   );
 }
@@ -388,9 +418,14 @@ export async function dbUpdateTodoStatus(
   status: TodoStatus
 ): Promise<void> {
   const db = await getDb();
+  const now = new Date().toISOString();
+  // 维护 done↔completed_at 不变式：变 done 时若无完成时刻则记 now（已有则保留，避免重复标 done 刷新），
+  // 变其它状态清空。
   await db.execute(
-    "UPDATE todos SET status = $1, updated_at = $2 WHERE id = $3",
-    [status, new Date().toISOString(), id]
+    `UPDATE todos SET status = $1, updated_at = $2,
+       completed_at = CASE WHEN $1 = 'done' THEN COALESCE(completed_at, $2) ELSE NULL END
+     WHERE id = $3`,
+    [status, now, id]
   );
 }
 
@@ -412,7 +447,8 @@ export async function dbUpdateTodo(todo: Todo): Promise<void> {
     `UPDATE todos SET
       title = $1, reason = $2, deadline = $3, priority = $4, tags = $5,
       est_time = $6, status = $7, scheduled_time = $8, scheduled_date = $9,
-      is_pushback = $10, is_procrastinated = $11, custom_fields = $12, updated_at = $13
+      is_pushback = $10, is_procrastinated = $11, custom_fields = $12, updated_at = $13,
+      completed_at = CASE WHEN $7 = 'done' THEN COALESCE(completed_at, $13) ELSE NULL END
      WHERE id = $14`,
     [
       todo.title,
@@ -939,12 +975,34 @@ export async function dbInsertActivity(rec: ActivityRecord): Promise<void> {
   );
 }
 
-/** 最近 N 条活动记录,按时间倒序。当日过滤交给前端(按本地时区 dateKey),避免 UTC 边界问题。 */
-export async function dbListActivities(limit = 100): Promise<ActivityRecord[]> {
+/**
+ * 活动记录查询,按时间倒序。
+ * 可选日期范围过滤(ISO 前缀匹配,如 "2026-06-12")。
+ * 当日过滤交给前端(按本地时区 dateKey),避免 UTC 边界问题。
+ */
+export async function dbListActivities(
+  limit = 100,
+  opts?: { startDate?: string; endDate?: string }
+): Promise<ActivityRecord[]> {
   const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+  if (opts?.startDate) {
+    conditions.push(`created_at >= $${idx}`);
+    params.push(opts.startDate + "T00:00:00");
+    idx++;
+  }
+  if (opts?.endDate) {
+    conditions.push(`created_at < $${idx}`);
+    params.push(opts.endDate + "T23:59:59.999");
+    idx++;
+  }
+  const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
+  params.push(limit);
   const rows = await db.select<ActivityRow[]>(
-    "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT $1",
-    [limit]
+    `SELECT * FROM activity_log${where} ORDER BY created_at DESC LIMIT $${idx}`,
+    params
   );
   return rows.map((r) => ({
     id: r.id,

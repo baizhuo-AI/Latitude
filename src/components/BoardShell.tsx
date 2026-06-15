@@ -6,6 +6,7 @@ import { TodosPage } from "../pages/TodosPage";
 import { CalendarPage } from "../pages/CalendarPage";
 import { ChatHistoryPage } from "../pages/ChatHistoryPage";
 import { TelosPage } from "../pages/TelosPage";
+import { ActivitiesPage } from "../pages/ActivitiesPage";
 import { SettingsPage } from "../pages/SettingsPage";
 
 /**
@@ -26,6 +27,7 @@ export function BoardShell() {
               <Route path="/" element={<BriefingPage />} />
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
+              <Route path="/activities" element={<ActivitiesPage />} />
               <Route path="/history" element={<ChatHistoryPage />} />
               <Route path="/telos" element={<TelosPage />} />
               <Route path="/settings" element={<SettingsPage />} />

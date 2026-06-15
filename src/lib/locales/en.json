@@ -6,6 +6,7 @@
     "briefing": "Briefing",
     "todos": "Todos",
     "calendar": "Calendar",
+    "activities": "Activity Log",
     "history": "History",
     "chat": "Chat",
     "telos": "Telos",
@@ -233,6 +234,14 @@
     "empty": "No conversations yet.",
     "pick": "Pick a conversation on the left to view.",
     "noMessages": "This conversation has no messages."
+  },
+  "activities": {
+    "title": "Activity Log",
+    "empty": "No activity records yet. Enable reminders to periodically jot down what you've been doing.",
+    "deleteConfirm": "Delete this record?",
+    "deleted": "Deleted",
+    "loadMore": "Load more",
+    "noMore": "No more records"
   },
   "telos": {
     "title": "Telos · Long-term goals",

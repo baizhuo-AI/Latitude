@@ -9,7 +9,8 @@ import {
   Target,
   Settings,
   PanelTopOpen,
-  History
+  History,
+  NotebookPen
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useTodoStore } from "../lib/store";
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/", icon: Sun, key: "briefing" },
   { href: "/todos", icon: ListTodo, key: "todos" },
   { href: "/calendar", icon: CalendarDays, key: "calendar" },
+  { href: "/activities", icon: NotebookPen, key: "activities" },
   { href: "/history", icon: History, key: "history" },
   { href: "/telos", icon: Target, key: "telos" }
 ] as const;

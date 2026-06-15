@@ -33,6 +33,16 @@ export type FeishuRegion = "feishu" | "lark";
 export interface FeishuPrefs {
   /** 当前选中的区域；null = 还没选过 */
   activeRegion: FeishuRegion | null;
+  /** 多维表格 connector：用户粘贴的目标表链接（原始链接，非敏感） */
+  bitableLink?: string;
+  /** 解析缓存：base app_token（describe 成功后存，写入时复用，免重复解析 wiki） */
+  bitableAppToken?: string;
+  /** 解析缓存：table_id */
+  bitableTableId?: string;
+  /** 插件开关 */
+  bitableEnabled?: boolean;
+  /** 记住"哪个自定义字段代表项目"（field_definitions.id）；空 = 用默认名为"项目"的字段 */
+  bitableProjectFieldId?: string;
 }
 
 interface ProviderConfig {
@@ -117,7 +127,7 @@ function defaults(): SettingsState {
       workEnd: 22
     },
     shortcuts: { toggleChatbar: "Alt+Space", toggleTodo: "", showWorkbench: "" },
-    feishu: { activeRegion: null }
+    feishu: { activeRegion: null, bitableEnabled: false }
   };
 }
 
@@ -152,12 +162,43 @@ function readStored(): SettingsState {
       feishu: {
         activeRegion: validFeishuRegion(parsed.feishu?.activeRegion)
           ? parsed.feishu!.activeRegion!
-          : def.feishu.activeRegion
+          : def.feishu.activeRegion,
+        bitableLink: parsed.feishu?.bitableLink,
+        bitableAppToken: parsed.feishu?.bitableAppToken,
+        bitableTableId: parsed.feishu?.bitableTableId,
+        bitableEnabled: parsed.feishu?.bitableEnabled ?? def.feishu.bitableEnabled,
+        bitableProjectFieldId: parsed.feishu?.bitableProjectFieldId
       }
     };
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
     return defaults();
+  }
+}
+
+/**
+ * 直接从 localStorage 读最新飞书配置（跨窗口实时）。
+ *
+ * 为什么不用 useSettingsStore.getState()：Daybreak 是多窗口应用，每个窗口（工作台 / 对话悬浮条 /
+ * todo 浮窗）有各自独立的 Zustand store 实例，store 内存态只在该窗口 create 时读一次 localStorage、
+ * 之后不重读。设置页（主窗）改了配置只更新主窗 store + localStorage，对话悬浮条窗口的 store 内存态
+ * 仍是陈旧快照。localStorage 同源跨窗口共享，故对话里的 AI 工具必须直读 localStorage 才能拿到最新配置。
+ */
+export function readFeishuPrefs(): FeishuPrefs {
+  return readStored().feishu;
+}
+
+/** 直接 patch localStorage 里的飞书配置（跨窗口生效）。供对话工具记住"项目字段"等，不经任一窗口 store。 */
+export function patchFeishuPrefsInStorage(patch: Partial<FeishuPrefs>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const cur = readStored();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...cur, feishu: { ...cur.feishu, ...patch } })
+    );
+  } catch (err) {
+    console.error("[settings] patchFeishuPrefsInStorage failed:", err);
   }
 }
 
@@ -189,6 +230,7 @@ interface SettingsStore extends SettingsState {
   setShortcut: (patch: Partial<ShortcutsConfig>) => void;
   setChatBackend: (b: ChatBackend) => void;
   setFeishuRegion: (r: FeishuRegion | null) => void;
+  setBitableConfig: (patch: Partial<FeishuPrefs>) => void;
   reset: () => void;
 }
 
@@ -228,6 +270,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
   setFeishuRegion: (region) => {
     const feishu = { ...get().feishu, activeRegion: region };
+    set({ feishu });
+    persist({ ...get(), feishu });
+  },
+  setBitableConfig: (patch) => {
+    const feishu = { ...get().feishu, ...patch };
     set({ feishu });
     persist({ ...get(), feishu });
   },
