@@ -206,6 +206,18 @@ CREATE TABLE IF NOT EXISTS daily_digest (
   summary    TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS proactive_log (
+  id              TEXT PRIMARY KEY,
+  type            TEXT NOT NULL,
+  conv_id         TEXT NOT NULL,
+  sent_at         TEXT NOT NULL,
+  content_preview TEXT NOT NULL DEFAULT '',
+  replied_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_proactive_log_conv ON proactive_log(conv_id);
+CREATE INDEX IF NOT EXISTS idx_proactive_log_sent_at ON proactive_log(sent_at);
 `;
 
 /**
@@ -260,6 +272,9 @@ async function migrate(db: Database): Promise<void> {
   }
   // V7: daily_digest 表（AI 秘书每日纪要，Task 1.3）
   // 老库通过 V1 的 IF NOT EXISTS 已建表；新库 V1 路径直接带。这里无需 ALTER，仅记录版本号。
+
+  // V8: proactive_log 表（AI 秘书主动消息投递日志，Task 1.7）
+  // 同 V7：老库已通过 V1 的 IF NOT EXISTS 建表；新库 V1 路径直接带。无需 ALTER。
 }
 
 export async function getDb(): Promise<Database> {
@@ -1752,4 +1767,105 @@ export async function dbListTodosOnDate(dateKey: string): Promise<
      ORDER BY created_at ASC`,
     [`${dateKey}T00:00:00`, `${dateKey}T23:59:59.999`]
   );
+}
+
+/* ---------- Proactive Log(AI 秘书主动消息投递日志，Task 1.7) ---------- */
+
+/** dbLogProactiveSent 的入参 */
+export interface ProactiveSentInput {
+  /** 主动消息类型，如 "morning_briefing" */
+  type: string;
+  /** 投递进的对话 id */
+  convId: string;
+  /** 简报内容前若干字的预览 */
+  contentPreview: string;
+}
+
+/** dbGetProactiveStats 的返回值 */
+export interface ProactiveStats {
+  /** 期间内总发送数 */
+  total: number;
+  /** 已回复数 */
+  replied: number;
+  /** 未回复数 */
+  unreplied: number;
+}
+
+/**
+ * 记录一条主动消息投递日志。
+ *
+ * 在投递成功后（dbInsertMessage 完成之后）调用，失败时不调（C6 路径天然不到这里）。
+ * id 由本函数生成（前缀 'pl'），sent_at 取当前 UTC 时间戳。
+ *
+ * @param entry  投递信息
+ */
+export async function dbLogProactiveSent(entry: ProactiveSentInput): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const id = `pl${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  await db.execute(
+    `INSERT INTO proactive_log (id, type, conv_id, sent_at, content_preview, replied_at)
+     VALUES ($1, $2, $3, $4, $5, NULL)`,
+    [id, entry.type, entry.convId, now, entry.contentPreview]
+  );
+}
+
+/**
+ * 标记某对话的主动消息日志为"已回复"。
+ *
+ * 按 conv_id 匹配 replied_at IS NULL 的行——即只标记还未回复的条目（保留首次回复时间）。
+ * 无匹配时静默（不报错）。
+ *
+ * 轻量设计：按 conv_id 匹配，一个对话通常只有一条 proactive_log，不用加额外 id 关联。
+ *
+ * @param convId    对话 id
+ * @param repliedAt 回复时间（ISO 时间戳）
+ */
+export async function dbMarkProactiveReplied(convId: string, repliedAt: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE proactive_log
+     SET replied_at = $1
+     WHERE conv_id = $2 AND replied_at IS NULL`,
+    [repliedAt, convId]
+  );
+}
+
+/**
+ * 统计近 N 天内主动消息的发送 / 已回复 / 未回复数。
+ *
+ * 时区口径：sent_at 存 UTC ISO，以 sinceDays 天前的 UTC 时刻为截止点（字符串比较，与其他表一致）。
+ *
+ * @param sinceDays 往前看多少天（含当天）
+ */
+export async function dbGetProactiveStats(sinceDays: number): Promise<ProactiveStats> {
+  const db = await getDb();
+  const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+  const rows = await db.select<Array<{ total: number; replied: number }>>(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN replied_at IS NOT NULL THEN 1 ELSE 0 END) AS replied
+     FROM proactive_log
+     WHERE sent_at >= $1`,
+    [cutoff]
+  );
+  const total = rows[0]?.total ?? 0;
+  const replied = rows[0]?.replied ?? 0;
+  return { total, replied, unreplied: total - replied };
+}
+
+/**
+ * 查询某对话是否有未回复的主动消息日志（用于 chatStore 回复打点）。
+ *
+ * 返回 true 表示该对话是"主动消息对话"且用户还没回复过；返回 false 则跳过标记。
+ * 这是轻量 SELECT，不会阻塞 sendMessage 流程。
+ */
+export async function dbHasUnrepliedProactive(convId: string): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ cnt: number }>>(
+    `SELECT COUNT(*) AS cnt FROM proactive_log
+     WHERE conv_id = $1 AND replied_at IS NULL`,
+    [convId]
+  );
+  return (rows[0]?.cnt ?? 0) > 0;
 }

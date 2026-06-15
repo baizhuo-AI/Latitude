@@ -31,6 +31,7 @@ import {
   dbInsertMessage,
   dbTouchConversation,
   dbListTodosOnDate,
+  dbLogProactiveSent,
 } from "../db";
 import { useSettingsStore } from "../settings";
 import { useChatStore } from "../chatStore";
@@ -250,6 +251,17 @@ export async function composeMorningBriefing(
 
   // 6. 发出跨窗口数据变更事件
   emitSync("conversations");
+
+  // 7. 记录投递日志(Task 1.7):投递成功后打点,C6 失败路径在步骤 3 已提前 return,不会走到这里
+  const previewLen = 50;
+  await dbLogProactiveSent({
+    type: "morning_briefing",
+    convId,
+    contentPreview: briefingText.slice(0, previewLen),
+  }).catch((err) => {
+    // 日志写入失败不影响投递结果——仅打 warn,简报已经投递成功
+    console.warn("[MorningBriefing] 写 proactive_log 失败,忽略:", err);
+  });
 
   console.info(`[MorningBriefing] 晨间简报已投递: conv=${convId}, date=${dateKey}`);
   return convId;

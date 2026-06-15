@@ -8,6 +8,8 @@ import {
   dbTouchConversation,
   dbUpdateConversationTitle,
   dbUpdateMessageContent,
+  dbHasUnrepliedProactive,
+  dbMarkProactiveReplied,
   type ChatMessageRow,
   type ConversationRow
 } from "./db";
@@ -236,6 +238,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         [convId!]: [...(s.messagesByConv[convId!] ?? []), userMsg]
       }
     }));
+
+    // 主动消息回复打点(Task 1.7):
+    // 若该对话有未回复的 proactive_log 记录,标记为已回复。
+    // 用 await + try/catch:保证打点在 LLM 调用前完成,同时失败不拖垮 sendMessage。
+    try {
+      const hasUnreplied = await dbHasUnrepliedProactive(convId!);
+      if (hasUnreplied) {
+        await dbMarkProactiveReplied(convId!, userMsg.createdAt);
+      }
+    } catch (err) {
+      console.warn("[chatStore] 标记主动消息已回复失败,忽略:", err);
+    }
 
     // 占位 assistant 消息(content 后续覆写)
     const assistantId = newId("m");
