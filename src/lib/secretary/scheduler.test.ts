@@ -16,6 +16,30 @@ import {
   type ScheduledJob,
 } from "./scheduler";
 
+// ─── 可控 storage mock 工具 ──────────────────────────────────────────────────
+/**
+ * 创建一个「写入后 getItem 可返回任意 id」的可控 storage。
+ * overrideOwnerId 不为 null 时,读锁返回该 id(模拟另一个窗口后写覆盖)。
+ */
+function makeControllableStorage(overrideOwnerId: string | null = null): SchedulerStorage & {
+  setOverrideOwnerId: (id: string | null) => void;
+} {
+  const store = new Map<string, string>();
+  let _override = overrideOwnerId;
+  const LOCK_KEY = "daybreak.secretary.scheduler.lock";
+  return {
+    getItem: (k) => {
+      if (k === LOCK_KEY && _override !== null) {
+        return JSON.stringify({ ownerId: _override, lastHeartbeat: T0 });
+      }
+      return store.get(k) ?? null;
+    },
+    setItem: (k, v) => { store.set(k, v); },
+    removeItem: (k) => { store.delete(k); },
+    setOverrideOwnerId: (id) => { _override = id; },
+  };
+}
+
 // ─── 时间常量 ────────────────────────────────────────────────────────────────
 const SEC = 1000;
 const TIMEOUT = 30 * SEC; // 锁过期阈值 30s(与实现保持一致)
@@ -331,6 +355,64 @@ describe("createScheduler — 注册任务执行", () => {
     expect(runs).toHaveLength(1);
   });
 
+  it("同步任务抛错:onError 被调用,携带正确 jobId 和 err", () => {
+    const storage = makeMemoryStorage();
+    const errors: Array<{ jobId: string; err: unknown }> = [];
+    const onError = vi.fn((jobId: string, err: unknown) => {
+      errors.push({ jobId, err });
+    });
+
+    const sched = createScheduler({
+      windowId: "win-A",
+      storage,
+      clock: () => T0,
+      onError,
+    });
+
+    const boom = new Error("sync-boom");
+    sched.registerJob({
+      id: "sync-bad-job",
+      shouldRun: () => true,
+      run: () => { throw boom; },
+    });
+
+    sched.tick();
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(errors[0].jobId).toBe("sync-bad-job");
+    expect(errors[0].err).toBe(boom);
+  });
+
+  it("异步任务 reject:onError 被调用,携带正确 jobId 和 err", async () => {
+    const storage = makeMemoryStorage();
+    const errors: Array<{ jobId: string; err: unknown }> = [];
+    const onError = vi.fn((jobId: string, err: unknown) => {
+      errors.push({ jobId, err });
+    });
+
+    const sched = createScheduler({
+      windowId: "win-A",
+      storage,
+      clock: () => T0,
+      onError,
+    });
+
+    const boom = new Error("async-boom");
+    sched.registerJob({
+      id: "async-bad-job",
+      shouldRun: () => true,
+      run: () => Promise.reject(boom),
+    });
+
+    sched.tick();
+    // 等 microtask queue 排空
+    await Promise.resolve();
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(errors[0].jobId).toBe("async-bad-job");
+    expect(errors[0].err).toBe(boom);
+  });
+
   it("startScheduler / stopScheduler:stop 后任务不再执行(真实 setInterval)", () => {
     vi.useFakeTimers();
     const storage = makeMemoryStorage();
@@ -359,5 +441,98 @@ describe("createScheduler — 注册任务执行", () => {
     expect(runs).toHaveLength(prevLen);
 
     vi.useRealTimers();
+  });
+});
+
+// ─── 写后回读:缓解双 owner 竞态 ─────────────────────────────────────────────
+describe("createScheduler — 写后回读竞态防护", () => {
+  it("写锁后回读发现是别人的 id → 本窗口认输,isOwner() 为 false", () => {
+    // 模拟:本窗口写入锁后,storage 里实际保存的是另一个窗口的 id(后写者胜)
+    const storage = makeControllableStorage("win-B"); // 读锁始终返回 win-B
+    const sched = createScheduler({ windowId: "win-A", storage, clock: () => T0 });
+
+    sched.tick();
+
+    // 回读到的 ownerId 是 win-B,不是 win-A → 认输
+    expect(sched.isOwner()).toBe(false);
+  });
+
+  it("写锁后回读发现是自己的 id → 成为 owner", () => {
+    // 正常情况:没有竞争,读回来的就是自己
+    const storage = makeControllableStorage(null); // 不覆盖 → 读回自己写的
+    const sched = createScheduler({ windowId: "win-A", storage, clock: () => T0 });
+
+    sched.tick();
+
+    expect(sched.isOwner()).toBe(true);
+  });
+});
+
+// ─── stop() 主动释放锁 ────────────────────────────────────────────────────────
+describe("createScheduler — stop() 释锁行为", () => {
+  it("本窗口是 owner 时 stop → 锁被清,另一窗口下一拍即可接管(不用等 30s)", () => {
+    let nowMs = T0;
+    const clock = () => nowMs;
+    const storage = makeMemoryStorage();
+
+    const schedA = createScheduler({ windowId: "win-A", storage, clock });
+    const schedB = createScheduler({ windowId: "win-B", storage, clock });
+
+    schedA.tick(); // A 成为 owner
+    expect(schedA.isOwner()).toBe(true);
+
+    schedA.stop(); // A 主动停,应清除锁
+
+    // B 立刻 tick(时间没推进,30s 超时根本没到)
+    schedB.tick();
+    expect(schedB.isOwner()).toBe(true); // 不用等 30s,锁已清
+  });
+
+  it("本窗口不是 owner 时 stop → 不清除别人的锁", () => {
+    let nowMs = T0;
+    const clock = () => nowMs;
+    const storage = makeMemoryStorage();
+
+    const schedA = createScheduler({ windowId: "win-A", storage, clock });
+    const schedB = createScheduler({ windowId: "win-B", storage, clock });
+
+    schedA.tick(); // A 成为 owner
+    schedB.tick(); // B 非 owner
+
+    expect(schedA.isOwner()).toBe(true);
+    expect(schedB.isOwner()).toBe(false);
+
+    schedB.stop(); // B 停止 → 不应清除 A 的锁
+
+    // A 继续 tick,锁仍在,A 依然是 owner
+    schedA.tick();
+    expect(schedA.isOwner()).toBe(true);
+  });
+});
+
+// ─── isOwnerNow():实时读 storage ─────────────────────────────────────────────
+describe("createScheduler — isOwnerNow() 实时性", () => {
+  it("isOwnerNow() 直接反映 storage,isOwner() 反映上次 tick 的内存态", () => {
+    let nowMs = T0;
+    const clock = () => nowMs;
+    const storage = makeMemoryStorage();
+
+    const schedA = createScheduler({ windowId: "win-A", storage, clock });
+    const schedB = createScheduler({ windowId: "win-B", storage, clock });
+
+    schedA.tick(); // A 成为 owner
+    schedB.tick(); // B 确认非 owner
+
+    expect(schedA.isOwner()).toBe(true);     // 内存态:owner
+    expect(schedA.isOwnerNow()).toBe(true);  // 实时:owner
+
+    // 模拟 A 在外部被覆盖(B 超时接管写入了新锁),但 A 没有 tick 过
+    nowMs += TIMEOUT + 1;
+    schedB.tick(); // B 接管
+
+    // A 的内存态还没更新(没有 tick)
+    expect(schedA.isOwner()).toBe(true);      // 仍然是上次 tick 的滞后值
+    // A 的实时读 storage 能发现自己已被 B 替换
+    expect(schedA.isOwnerNow()).toBe(false);  // 实时:已不是 owner
   });
 });

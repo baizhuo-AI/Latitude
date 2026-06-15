@@ -50,6 +50,10 @@ export interface JobContext {
  * id:唯一标识,用于存储 lastRan。
  * shouldRun(now, ctx): 纯判断——此刻是否该跑。
  * run():执行副作用。允许抛异常,scheduler 会捕获并隔离。
+ *
+ * ⚠️ run() 失败不会在本周期内重试,要到下个周期才会再次判断 shouldRun。
+ *    原因:lastRan 在 run() 调用前已写入(防死循环),失败不会回滚。
+ *    job 实现者若需要重试语义,请在 run() 内部自行实现重试逻辑。
  */
 export interface ScheduledJob {
   id: string;
@@ -169,6 +173,11 @@ export interface SchedulerOptions {
   clock?: () => number;
   /** 锁过期阈值(ms),默认 30s。 */
   timeoutMs?: number;
+  /**
+   * 任务出错回调(同步抛异常或异步 reject 均走此钩子)。
+   * 未传时兜底 console.error,保证错误可观测。
+   */
+  onError?: (jobId: string, err: unknown) => void;
 }
 
 export interface Scheduler {
@@ -179,11 +188,20 @@ export interface Scheduler {
    * 供外部测试直接调用(不依赖真实 setInterval)。
    */
   tick(): void;
-  /** 本窗口当前是否认为自己是 owner(内存态,以最后一次 tick 为准)。 */
+  /**
+   * 本窗口当前是否认为自己是 owner(内存态,以最后一次 tick 为准)。
+   * ⚠️ 此值最多滞后一个 tick 间隔。若需要准确的实时归属判断,请用 isOwnerNow()。
+   */
   isOwner(): boolean;
+  /**
+   * 实时读 storage 判断本窗口是否是 owner。
+   * 供下游 job 在任务执行中途需要准确归属时调用(例如长耗时任务中途校验)。
+   * 比 isOwner() 稍慢(涉及 storage 读取),但结果实时、无滞后。
+   */
+  isOwnerNow(): boolean;
   /** 启动定时 tick 循环。intervalMs 默认 5000(5s)。 */
   start(intervalMs?: number): void;
-  /** 停止定时 tick 循环。 */
+  /** 停止定时 tick 循环,并主动释放本窗口持有的 owner 锁。 */
   stop(): void;
 }
 
@@ -194,7 +212,17 @@ export function createScheduler(opts: SchedulerOptions): Scheduler {
     storage = typeof localStorage !== "undefined" ? localStorage : makeFallbackStorage(),
     clock = () => Date.now(),
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    onError,
   } = opts;
+
+  // 错误上报:有 onError 钩子走钩子,否则兜底 console.error(保证可观测)
+  const reportError = (jobId: string, err: unknown): void => {
+    if (onError) {
+      onError(jobId, err);
+    } else {
+      console.error(`[Scheduler] job "${jobId}" failed:`, err);
+    }
+  };
 
   const jobs: ScheduledJob[] = [];
   let _isOwner = false;
@@ -218,7 +246,16 @@ export function createScheduler(opts: SchedulerOptions): Scheduler {
     if (takeOver) {
       // 写锁:compare-and-set 风格——只在"我该抢/续"时才写
       writeStoredLock(storage, { ownerId: windowId, lastHeartbeat: now });
-      _isOwner = true;
+
+      // 写后回读:验证实际写入的是本窗口 id。
+      // localStorage 无原子 CAS,两个独立进程同时读到「无 owner/已过期」后
+      // 都可能写入自己的 id,最终 storage 里保留后写者的 id(last-write-wins)。
+      // 回读可将双 owner 窗口缩减为一个:先写者读回别人的 id → 认输。
+      //
+      // ⚠️ 注意:这缩小但不能彻底消除竞态(读-写仍有间隙)。
+      //    彻底根治需后端 mutex(如 Tauri 全局锁或服务端协调),属后续架构升级。
+      const writtenBack = readStoredLock(storage);
+      _isOwner = writtenBack?.ownerId === windowId;
     } else {
       // 别的活跃 owner 持有锁,本窗口退出(或保持)非 owner 状态
       _isOwner = false;
@@ -249,18 +286,32 @@ export function createScheduler(opts: SchedulerOptions): Scheduler {
         // 若 run 返回 Promise,不在 tick 里 await(tick 是同步边界);
         // 上层若需要知道完成,job 自己管理异步状态。
         if (result instanceof Promise) {
-          result.catch(() => {
-            // 异步错误静默:避免 UnhandledPromiseRejection
+          result.catch((err) => {
+            reportError(job.id, err);
           });
         }
-      } catch {
+      } catch (err) {
         // 同步异常隔离:单个任务失败不影响其他任务和 tick 循环
+        reportError(job.id, err);
       }
     }
   }
 
+  /**
+   * 内存态 owner 标志,以最后一次 tick 为准。
+   * ⚠️ 此值最多滞后一个 tick 间隔。需要实时结果请用 isOwnerNow()。
+   */
   function isOwner(): boolean {
     return _isOwner;
+  }
+
+  /**
+   * 实时读 storage 判断本窗口是否持有 owner 锁。
+   * 供下游 job 在执行中途需要准确归属时调用。
+   */
+  function isOwnerNow(): boolean {
+    const stored = readStoredLock(storage);
+    return stored?.ownerId === windowId;
   }
 
   function registerJob(job: ScheduledJob): void {
@@ -280,10 +331,20 @@ export function createScheduler(opts: SchedulerOptions): Scheduler {
       clearInterval(_timer);
       _timer = null;
     }
+    // 主动释放本窗口持有的锁:仅当 storage 里的 ownerId 是本窗口才删除,
+    // 避免误删其他窗口已写入的锁(竞态接管场景下本窗口可能已不是 owner)。
+    const stored = readStoredLock(storage);
+    if (stored?.ownerId === windowId) {
+      try {
+        storage.removeItem(LOCK_KEY);
+      } catch {
+        // storage 操作失败静默忽略,不影响 stop 本身
+      }
+    }
     _isOwner = false;
   }
 
-  return { registerJob, tick, isOwner, start, stop };
+  return { registerJob, tick, isOwner, isOwnerNow, start, stop };
 }
 
 // ─── 兜底:无 localStorage 环境(SSR/纯 Node 测试)────────────────────────────
