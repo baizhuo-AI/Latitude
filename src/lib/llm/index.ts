@@ -21,6 +21,8 @@ import { dbInsertUsage } from "../db";
 import { toolsForLLM, runChatTool } from "../chatTools";
 import { useGoalsStore, type Goal } from "../goalsStore";
 import i18n from "../i18n";
+import { composePersonaPrompt } from "../persona/personaSpec";
+import type { Lang } from "../settings";
 
 export type { LLMProvider, ChatMessage, ChatOptions, ChatResult, StreamHandlers, LLMUsage } from "./types";
 
@@ -380,6 +382,14 @@ function recordUsage(
  * 让 Chat 知道用户在做什么、长期想去哪里
  */
 export function buildChatSystemPrompt(): string {
+  const s = useSettingsStore.getState();
+  const lang: Lang = s.lang ?? "zh";
+  // 若 persona 未配置(旧 settings 数据/测试环境),用默认资深幕僚兜底
+  const persona = s.persona ?? { presetKey: "seniorAdvisor" as const };
+
+  // 人设片段(用户可配置字段 + 锁死核心规则段);替换原来写死的"你是 Daybreak…"
+  const personaSection = composePersonaPrompt(persona, lang);
+
   const todos = useTodoStore.getState().todos;
   const today = new Date();
   const todayKey = formatDateKey(today);
@@ -388,23 +398,24 @@ export function buildChatSystemPrompt(): string {
     return k === todayKey;
   });
 
-  const lines = [
-    "你是 Daybreak,一个 AI 助理,帮助用户规划日程、复盘、思考长期方向。",
-    "请用简洁的中文与用户对话,默认温和、克制、专业,不要刻意夸张。",
+  const lines: string[] = [
+    personaSection,
     "",
-    `当前时间:${today.toLocaleString("zh-CN")}`,
+    lang === "zh"
+      ? `当前时间:${today.toLocaleString("zh-CN")}`
+      : `Current time: ${today.toLocaleString("en-US")}`,
     ""
   ];
 
   if (todayTodos.length > 0) {
-    lines.push("用户今天的待办:");
+    lines.push(lang === "zh" ? "用户今天的待办:" : "Today's tasks:");
     for (const t of todayTodos) {
-      const status = t.status === "done" ? "[已完成]" : "";
+      const status = t.status === "done" ? (lang === "zh" ? "[已完成]" : "[done]") : "";
       const time = t.scheduledTime ? `(${t.scheduledTime})` : "";
       lines.push(`- ${status}${t.title}${time}${t.estTime ? ` · ${t.estTime}` : ""}`);
     }
   } else {
-    lines.push("用户今天还没有安排任何待办。");
+    lines.push(lang === "zh" ? "用户今天还没有安排任何待办。" : "The user has no tasks scheduled today.");
   }
 
   lines.push(telosContextSection());

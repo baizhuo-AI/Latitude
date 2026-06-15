@@ -62,10 +62,13 @@ vi.mock("../goalsStore", () => ({
 }));
 
 // settings:固定成「deepseek + 有 key + deepseek-chat」,让 getProvider 走真 provider 分支
+// lang + persona 也带上,确保 buildChatSystemPrompt 的人设路径有稳定输入
 vi.mock("../settings", () => ({
   onProviderConfigChange: () => () => undefined,
   useSettingsStore: {
     getState: () => ({
+      lang: "zh",
+      persona: { presetKey: "seniorAdvisor" },
       llmProvider: "deepseek",
       providers: {
         deepseek: {
@@ -199,8 +202,10 @@ describe("chatAgentCall — agent loop 特征化(锁住现有行为)", () => {
     expect(engine.received).toHaveLength(3);
     for (const call of engine.received) {
       // 每一轮第一条都是 system,且带上了 buildChatSystemPrompt 的内容
+      // (原来检测 "Daybreak" 字符串;Task 1.1 后人设注入替换了写死的 header,
+      //  改为断言锁死核心规则段里必然存在的锚字符串)
       expect(call.messages[0].role).toBe("system");
-      expect(call.messages[0].content).toContain("Daybreak");
+      expect(call.messages[0].content).toContain("不替用户甩选项");
       // 每一轮都带着原始 user/assistant 历史(没有因为进入后续轮次而丢上下文)
       const contents = call.messages.map((m) => m.content).join("\n");
       expect(contents).toContain("第一句");

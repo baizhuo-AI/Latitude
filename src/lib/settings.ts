@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import i18n from "./i18n";
+import type { PersonaSpec } from "./persona/personaSpec";
+import { DEFAULT_PERSONA_KEY } from "./persona/personaSpec";
 
 /**
  * 应用偏好设置
@@ -104,7 +106,15 @@ export interface SettingsState {
   reminder: ReminderConfig;
   shortcuts: ShortcutsConfig;
   feishu: FeishuPrefs;
+  /**
+   * 用户人设配置(Task 1.1)
+   * 默认=资深幕僚预设;用户可在 Settings 里切换/自定义(Task 1.2 做 UI)
+   */
+  persona: PersonaSpec;
 }
+
+// re-export PersonaSpec 让消费方不用另外 import persona 模块
+export type { PersonaSpec };
 
 const STORAGE_KEY = "daybreak.settings";
 
@@ -142,7 +152,8 @@ function defaults(): SettingsState {
       workEnd: 22
     },
     shortcuts: { toggleChatbar: "Alt+Space", toggleTodo: "", showWorkbench: "" },
-    feishu: { activeRegion: null, bitableEnabled: false }
+    feishu: { activeRegion: null, bitableEnabled: false },
+    persona: { presetKey: DEFAULT_PERSONA_KEY }
   };
 }
 
@@ -183,7 +194,8 @@ function readStored(): SettingsState {
         bitableTableId: parsed.feishu?.bitableTableId,
         bitableEnabled: parsed.feishu?.bitableEnabled ?? def.feishu.bitableEnabled,
         bitableProjectFieldId: parsed.feishu?.bitableProjectFieldId
-      }
+      },
+      persona: parsed.persona ? { ...def.persona, ...parsed.persona } : def.persona
     };
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
@@ -246,6 +258,8 @@ interface SettingsStore extends SettingsState {
   setChatBackend: (b: ChatBackend) => void;
   setFeishuRegion: (r: FeishuRegion | null) => void;
   setBitableConfig: (patch: Partial<FeishuPrefs>) => void;
+  /** Task 1.1: 更新人设配置 */
+  setPersona: (patch: Partial<PersonaSpec>) => void;
   reset: () => void;
 }
 
@@ -292,6 +306,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const feishu = { ...get().feishu, ...patch };
     set({ feishu });
     persist({ ...get(), feishu });
+  },
+  setPersona: (patch) => {
+    const persona = { ...get().persona, ...patch };
+    set({ persona });
+    persist({ ...get(), persona });
   },
   reset: () => {
     const d = defaults();
