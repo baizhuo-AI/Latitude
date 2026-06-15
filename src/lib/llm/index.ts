@@ -18,11 +18,12 @@ import {
   readSettingsSnapshot,
   type ProviderName
 } from "../settings";
-import { dbInsertUsage, dbGetRecentDigests } from "../db";
+import { dbInsertUsage, dbGetRecentDigests, dbListMemoryFacts } from "../db";
 import { toolsForLLM, runChatTool } from "../chatTools";
 import { useGoalsStore, type Goal } from "../goalsStore";
 import i18n from "../i18n";
 import { composePersonaPrompt } from "../persona/personaSpec";
+import { buildMemorySection } from "../memorySection";
 import type { Lang } from "../settings";
 
 /** 近期纪要注入的天数上限(近 7 天)。 */
@@ -451,6 +452,23 @@ export async function buildChatSystemPrompt(): Promise<string> {
   } catch (err) {
     // 读取失败不影响对话功能,仅记录警告
     console.warn("[buildChatSystemPrompt] 读取 daily_digest 失败:", err);
+  }
+
+  // Task 2.2:全量注入 active 记忆事实。
+  // 【铁律】直读 DB(dbListMemoryFacts),不走任何 store 内存缓存——
+  // 跨窗口共享 + 即时新鲜:面板(主窗)刚改的记忆,对话(悬浮条窗口)立刻读到。
+  // onlyActive:true 让过期且非 pinned 的事实不进 prompt(口径与 isMemoryFactActive 对齐)。
+  // 注入体积由 buildMemorySection 的字符预算约束:超量截断不报错、pinned 优先保留、
+  // inferred 事实带「(推断)」试探标注。DB 读取失败时静默降级,不影响对话主流程。
+  try {
+    const facts = await dbListMemoryFacts({ onlyActive: true });
+    const memorySection = buildMemorySection(facts, lang);
+    if (memorySection) {
+      lines.push("");
+      lines.push(memorySection);
+    }
+  } catch (err) {
+    console.warn("[buildChatSystemPrompt] 读取 memory_facts 失败:", err);
   }
 
   return lines.join("\n");
