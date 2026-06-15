@@ -45,6 +45,27 @@ export interface LLMUsage {
   totalTokens: number;
 }
 
+/**
+ * Provider / 模型的能力位
+ *
+ * 上层据此「降级适配」:不支持工具就别传 tools、不支持推理就别期待 reasoning。
+ * 关键:能力随「当前生效的 model」变化(同一 provider 换 model 能力不同),
+ * 所以由 provider 据「实际 model」据实声明,而不是写死在调用点。
+ *
+ * 设计意图(Task 0.2 解 reasoner/工具互斥):
+ *   旧代码在调用点散落 `model.includes("reasoner")` 来硬 block 工具/JSON。
+ *   改成「provider 暴露能力位 + 调用层按能力位降级」,这样 DeepSeek V4 这种
+ *   「工具+推理合一」的模型只要 model 名配上,能力位自然全开,无需改调用点。
+ */
+export interface LLMCapabilities {
+  /** 是否支持 function calling(工具) */
+  supportsTools: boolean;
+  /** 是否支持推理链(reasoning_content / 思考过程) */
+  supportsReasoning: boolean;
+  /** 是否支持 SSE 流式 */
+  supportsStreaming: boolean;
+}
+
 export interface ChatResult {
   content: string;
   /** 推理模型的思考过程(deepseek-reasoner / o1 系列才有) */
@@ -79,6 +100,11 @@ export interface LLMProvider {
     opts: ChatOptions,
     handlers: StreamHandlers
   ): Promise<ChatResult>;
+  /**
+   * 声明能力位。可传入「将要使用的 model」以得到针对该 model 的能力
+   * (不传则按 provider 默认 model)。Phase 4 抽统一适配器时,降级逻辑都读这里。
+   */
+  capabilities(model?: string): LLMCapabilities;
 }
 
 /* ---------- 高层 API 的输出类型 ---------- */

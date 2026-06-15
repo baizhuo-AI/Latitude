@@ -221,7 +221,8 @@
     "reasoningStreaming": "思考中…",
     "capturePlaceholder": "随手记个待办(回车)",
     "pin": "置顶",
-    "unpin": "取消置顶"
+    "unpin": "取消置顶",
+    "tooManyRounds": "(处理轮数过多,请换种说法重试)"
   },
   "chatbar": {
     "title": "对话",

@@ -1,4 +1,13 @@
-import type { LLMProvider, ParseTaskResult, LLMUsage } from "./types";
+import type {
+  LLMProvider,
+  ParseTaskResult,
+  LLMUsage,
+  LLMCapabilities,
+  ChatMessage,
+  ChatOptions,
+  ChatResult,
+  StreamHandlers,
+} from "./types";
 import { DeepSeekProvider } from "./deepseek";
 import { MockProvider } from "./mock";
 import type { Priority, Todo, ScheduleUpdate } from "../store";
@@ -11,6 +20,7 @@ import {
 import { dbInsertUsage } from "../db";
 import { toolsForLLM, runChatTool } from "../chatTools";
 import { useGoalsStore, type Goal } from "../goalsStore";
+import i18n from "../i18n";
 
 export type { LLMProvider, ChatMessage, ChatOptions, ChatResult, StreamHandlers, LLMUsage } from "./types";
 
@@ -60,6 +70,84 @@ export function getProviderName(): string {
   return getProvider().name;
 }
 
+/* ---------- 单一收口层(Brain seam)---------- */
+/**
+ * 所有「大脑调用」的唯一非流式收口。
+ *
+ * 为什么要这层(评审要求 + Phase 4 铺路):
+ *   重构前 parseTask / generateTodayPlan / chatAgentCall 各自 getProvider().chat(...),
+ *   provider 调用点散落四处。收成一个 callBrain 后,Phase 4 要抽统一适配器、加重试、
+ *   加可观测、做模型路由,只改这一处即可,不必到处找。
+ *
+ * 无状态(C1):每次调用都由调用方传入完整 messages(系统提示词 + 历史),
+ *   本层不持有任何会话状态、不依赖引擎侧 session/resume。
+ *
+ * @param messages 完整上下文(含 system),调用方负责拼好
+ * @param opts     ChatOptions + recordAs:
+ *                 - recordAs 给定 → 记一条 usage(feature=该值);
+ *                 - recordAs 省略 → 不记 usage(裸调用 generateOnce 用)
+ */
+async function callBrain(
+  messages: ChatMessage[],
+  opts: ChatOptions & { recordAs?: string } = {}
+): Promise<ChatResult> {
+  const provider = getProvider();
+  const { recordAs, ...chatOpts } = opts;
+  const result = await provider.chat(messages, chatOpts);
+  if (recordAs) recordUsage(provider, result.usage, recordAs, result.model);
+  return result;
+}
+
+/** 流式收口(对应 callBrain 的 SSE 版);Chat 流式对话走这里。 */
+async function callBrainStream(
+  messages: ChatMessage[],
+  opts: ChatOptions & { recordAs?: string },
+  handlers: StreamHandlers
+): Promise<ChatResult> {
+  const provider = getProvider();
+  const { recordAs, ...chatOpts } = opts;
+  const result = await provider.chatStream(messages, chatOpts, handlers);
+  if (recordAs) recordUsage(provider, result.usage, recordAs, result.model);
+  return result;
+}
+
+/**
+ * 当前 provider 在「将要使用的 model」下的能力位。
+ *
+ * 上层据此降级:不支持工具就别传 tools、不支持推理就别等思考链。
+ * @param model 不传则按 provider 当前默认 model
+ */
+export function getCapabilities(model?: string): LLMCapabilities {
+  return getProvider().capabilities(model);
+}
+
+/**
+ * 裸调用(C3):给「试一句」和主动消息合成用。
+ *
+ * 特点:不绑会话、不写 DB、不记 usage、不调工具——就是「拿系统提示词 + 一段消息,
+ * 同一个 provider 出一段文本」。和会话 turn(sendMessage→chatAgentCall)并列为
+ * 仅有的两个对外语义入口,底层都收口到 callBrain。
+ *
+ * @returns 模型输出的纯文本
+ */
+export async function generateOnce(
+  systemPrompt: string,
+  messages: ChatMessage[],
+  opts?: ChatOptions
+): Promise<string> {
+  const full: ChatMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ];
+  // 不传 recordAs → 不记 usage;不传 tools → 不调工具。裸到底。
+  const result = await callBrain(full, {
+    temperature: 0.5,
+    maxTokens: 1500,
+    ...opts,
+  });
+  return result.content;
+}
+
 /* ---------- 高层 API ---------- */
 
 const PARSE_TASK_SYSTEM = `你是一个任务解析助手。用户会说一段中文自然语言(可能描述一个待办事项),你要把它解析成结构化 JSON。
@@ -100,14 +188,14 @@ export async function parseTask(input: string): Promise<ParseTaskResult> {
   }
 
   try {
-    const result = await provider.chat(
+    // 收口到 callBrain;recordAs 让它顺手记 usage(feature=parseTask)
+    const result = await callBrain(
       [
         { role: "system", content: PARSE_TASK_SYSTEM },
         { role: "user", content: input }
       ],
-      { temperature: 0.2, responseFormat: "json", maxTokens: 400 }
+      { temperature: 0.2, responseFormat: "json", maxTokens: 400, recordAs: "parseTask" }
     );
-    recordUsage(provider, result.usage, "parseTask");
 
     const json = JSON.parse(result.content) as Partial<ParseTaskResult> & {
       title?: string;
@@ -200,14 +288,13 @@ export async function generateTodayPlan(todos: Todo[]): Promise<void> {
     }));
 
     try {
-      const result = await provider.chat(
+      const result = await callBrain(
         [
           { role: "system", content: PLAN_SYSTEM + telosContextSection() },
           { role: "user", content: JSON.stringify(list) }
         ],
-        { temperature: 0.3, responseFormat: "json", maxTokens: 1200 }
+        { temperature: 0.3, responseFormat: "json", maxTokens: 1200, recordAs: "generateTodayPlan" }
       );
-      recordUsage(provider, result.usage, "generateTodayPlan");
       const parsed = JSON.parse(result.content) as
         | { plan?: Array<{ id?: string; scheduledTime?: string }> }
         | Array<{ id?: string; scheduledTime?: string }>;
@@ -288,8 +375,6 @@ function recordUsage(
 
 /* ---------- Chat 高层 API ---------- */
 
-import type { ChatMessage, ChatResult, StreamHandlers } from "./types";
-
 /**
  * 构造一段当前上下文 system prompt:今天 todos + 当前时间 + Telos
  * 让 Chat 知道用户在做什么、长期想去哪里
@@ -328,21 +413,39 @@ export function buildChatSystemPrompt(): string {
 }
 
 /**
+ * DeepSeek 各路径要用的 model 解析。
+ *
+ * 不再写死。优先读 Settings 里对应字段,缺省回退到历史内置值,保证「不配也照旧」。
+ * 非 DeepSeek provider 返回 undefined(用 provider 自己的默认 model)。
+ *
+ * @param purpose
+ *   - "agent":带工具的对话(chatAgentCall),回退 deepseek-chat
+ *   - "reasoning":深度思考流式(chatStreamCall),回退 deepseek-reasoner
+ */
+function resolveDeepSeekModel(purpose: "agent" | "reasoning"): string | undefined {
+  if (getProvider().name !== "deepseek") return undefined;
+  const cfg = useSettingsStore.getState().providers.deepseek;
+  if (purpose === "agent") {
+    return cfg.agentModel || cfg.model || "deepseek-chat";
+  }
+  return cfg.reasoningModel || "deepseek-reasoner";
+}
+
+/**
  * 给 ChatPage 用:发一条用户消息 + 流式接收
  *
  * 调用方负责把"用户消息"和最终的"assistant 完整内容"存进 messages 表。
  * 这一层只负责"调 LLM + token 流"。
  *
- * Chat 强制走推理模型(deepseek-reasoner),用户在 Settings 里设的 model 仅用于
+ * Chat 默认走推理模型(可在 Settings.reasoningModel 改);用户设的默认 model 仅用于
  * parseTask / 排今日 / 反思这些结构化任务,Chat 单独要思考链。
  */
 export async function chatStreamCall(
   history: ChatMessage[],
   handlers: StreamHandlers
 ) {
-  const provider = getProvider();
-  const isDeepSeek = provider.name === "deepseek";
-  const result = await provider.chatStream(
+  // 收口到 callBrainStream;model 由 resolveDeepSeekModel 决定(可配置,不写死)
+  return callBrainStream(
     [
       { role: "system", content: buildChatSystemPrompt() },
       ...history
@@ -350,13 +453,11 @@ export async function chatStreamCall(
     {
       temperature: 0.6,
       maxTokens: 2000,
-      // DeepSeek 时显式切到推理模型;其他 provider(anthropic/openai)保持默认
-      model: isDeepSeek ? "deepseek-reasoner" : undefined
+      model: resolveDeepSeekModel("reasoning"),
+      recordAs: "chat",
     },
     handlers
   );
-  recordUsage(provider, result.usage, "chat", result.model);
-  return result;
 }
 
 const TOOL_SYSTEM_HINT = `
@@ -378,26 +479,29 @@ export async function chatAgentCall(
   history: ChatMessage[],
   opts?: { onStep?: (info: { type: "tool"; name: string }) => void }
 ): Promise<ChatResult> {
-  const provider = getProvider();
-  const isDeepSeek = provider.name === "deepseek";
-  const tools = toolsForLLM();
+  // model 可配置(不再写死 deepseek-chat);非 deepseek 用 provider 默认
+  const model = resolveDeepSeekModel("agent");
+  // 是否带工具,改由「该 model 的能力位」决定(解 reasoner/工具互斥):
+  //   - 支持工具的 model(deepseek-chat、未来 V4)→ 带 tools,走完整 agent loop;
+  //   - 不支持工具的 model(reasoner)→ 不带 tools,自然退化为单轮问答,不会硬报错。
+  const caps = getCapabilities(model);
+  const tools = caps.supportsTools ? toolsForLLM() : undefined;
   const messages: ChatMessage[] = [
     { role: "system", content: buildChatSystemPrompt() + TOOL_SYSTEM_HINT },
     ...history,
   ];
-  // deepseek-chat 支持工具调用（reasoner 不支持）；其它 provider 用默认 model
-  const model = isDeepSeek ? "deepseek-chat" : undefined;
   const MAX_ROUNDS = 6;
   let last: ChatResult = { content: "" };
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const result = await provider.chat(messages, {
+    // 每轮都收口到 callBrain,并整段重传 system+history+回灌结果(无状态 C1)
+    const result = await callBrain(messages, {
       temperature: 0.5,
       maxTokens: 2000,
       tools,
       model,
+      recordAs: "chat-agent",
     });
-    recordUsage(provider, result.usage, "chat-agent", result.model);
     last = result;
 
     if (!result.toolCalls || result.toolCalls.length === 0) {
@@ -424,7 +528,7 @@ export async function chatAgentCall(
     }
   }
 
-  return { content: last.content || "(处理轮数过多，请换种说法重试)", model };
+  return { content: last.content || i18n.t("chat.tooManyRounds"), model };
 }
 
 function formatDateKey(d: Date): string {

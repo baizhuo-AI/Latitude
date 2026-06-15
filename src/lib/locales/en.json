@@ -221,7 +221,8 @@
     "reasoningStreaming": "Thinking…",
     "capturePlaceholder": "Quick add a todo (Enter)",
     "pin": "Pin on top",
-    "unpin": "Unpin"
+    "unpin": "Unpin",
+    "tooManyRounds": "(Too many tool rounds — please rephrase and try again.)"
   },
   "chatbar": {
     "title": "Chat",

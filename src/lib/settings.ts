@@ -48,7 +48,22 @@ export interface FeishuPrefs {
 interface ProviderConfig {
   apiKey?: string;
   baseUrl?: string;
+  /** 默认 model(parseTask / 排今日 等结构化任务用) */
   model?: string;
+  /**
+   * 带工具的 agent 对话路径(sendMessage → chatAgentCall)用的 model。
+   * 不填则回退到 model;再不填回退到内置默认。
+   * 设这个字段是为了「解 reasoner/工具互斥」:
+   *   - 以前 agent 路径写死 deepseek-chat(无推理);
+   *   - 现在可配,比如 DeepSeek V4 这种「工具+推理合一」的模型可直接填这里,
+   *     能力位会据 model 名据实放开工具+推理。
+   */
+  agentModel?: string;
+  /**
+   * 深度思考的流式对话路径(chatStreamCall)用的 model。
+   * 不填则回退到内置默认(deepseek-reasoner)。同样不再写死,便于换成 V4。
+   */
+  reasoningModel?: string;
 }
 
 /** 提醒方式:浮窗 / 系统通知 / 两者都用 */

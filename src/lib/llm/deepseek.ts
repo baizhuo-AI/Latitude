@@ -5,6 +5,7 @@ import type {
   LLMProvider,
   StreamHandlers,
   LLMUsage,
+  LLMCapabilities,
 } from "./types";
 
 /**
@@ -73,6 +74,35 @@ function toApiMessage(m: ChatMessage): Record<string, unknown> {
   return { role: m.role, content: m.content };
 }
 
+/**
+ * 据「实际 model」推断 DeepSeek 能力位。
+ *
+ * 原则:
+ *   - 已知模型据实声明(精确反映厂商现状);
+ *   - 未知 / 未来模型(如 DeepSeek V4)默认「全开」,绝不硬 block。
+ *
+ * 已知:
+ *   - deepseek-reasoner:有推理链,但不支持 tools / JSON mode(带了反而 400)。
+ *   - deepseek-chat:支持 tools / JSON,但没有独立推理链(reasoning_content 为空)。
+ *
+ * 为什么未知模型默认全开:V4 这类「工具+推理合一」的模型现在没 key 无法实测,
+ * 若用「白名单 chat」会把新模型默认关掉工具,与需求相悖;故未知模型 tools/reasoning
+ * 都默认 true,只要在 Settings 里把 model 名配上即可用满能力(Task 0.2 解互斥要求)。
+ * 即便某未知模型其实没有推理链,supportsReasoning=true 也无害——实际 reasoning 为空而已。
+ */
+export function deepseekCapabilities(model: string): LLMCapabilities {
+  // 已知:reasoner —— 有推理、无工具
+  if (model.includes("reasoner")) {
+    return { supportsTools: false, supportsReasoning: true, supportsStreaming: true };
+  }
+  // 已知:chat —— 有工具、无独立推理链
+  if (model.includes("chat")) {
+    return { supportsTools: true, supportsReasoning: false, supportsStreaming: true };
+  }
+  // 未知 / 未来模型(V4 等):默认全开,不 block
+  return { supportsTools: true, supportsReasoning: true, supportsStreaming: true };
+}
+
 export class DeepSeekProvider implements LLMProvider {
   readonly name = "deepseek";
   private cfg: DeepSeekConfig;
@@ -85,8 +115,13 @@ export class DeepSeekProvider implements LLMProvider {
     return this.cfg.model;
   }
 
+  capabilities(model?: string): LLMCapabilities {
+    return deepseekCapabilities(model ?? this.cfg.model);
+  }
+
   private buildBody(messages: ChatMessage[], opts: ChatOptions, stream: boolean) {
     const model = opts.model ?? this.cfg.model;
+    const caps = deepseekCapabilities(model);
     const body: Record<string, unknown> = {
       model,
       messages: messages.map(toApiMessage),
@@ -94,12 +129,13 @@ export class DeepSeekProvider implements LLMProvider {
       stream,
     };
     if (opts.maxTokens) body.max_tokens = opts.maxTokens;
-    // 注意:deepseek-reasoner 不支持 response_format/JSON mode,启用了反而报错。
-    if (opts.responseFormat === "json" && !model.includes("reasoner")) {
+    // JSON mode:仅在该 model 支持工具/结构化输出时带(reasoner 带了会 400)。
+    // 用能力位而非散落的字符串判断,Phase 4 抽适配器时只改 deepseekCapabilities 一处。
+    if (opts.responseFormat === "json" && caps.supportsTools) {
       body.response_format = { type: "json_object" };
     }
-    // function calling:reasoner 不支持 tools，保险起见只在非 reasoner 上带
-    if (opts.tools && opts.tools.length > 0 && !model.includes("reasoner")) {
+    // function calling:同样按能力位放行(reasoner=false 不带 tools)
+    if (opts.tools && opts.tools.length > 0 && caps.supportsTools) {
       body.tools = opts.tools;
     }
     return body;
