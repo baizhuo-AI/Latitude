@@ -214,7 +214,8 @@ CREATE TABLE IF NOT EXISTS proactive_log (
   conv_id         TEXT NOT NULL,
   sent_at         TEXT NOT NULL,
   content_preview TEXT NOT NULL DEFAULT '',
-  replied_at      TEXT
+  replied_at      TEXT,
+  ref_id          TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_proactive_log_conv ON proactive_log(conv_id);
@@ -301,6 +302,16 @@ async function migrate(db: Database): Promise<void> {
   // V10: memory_facts 表（AI 秘书记忆事实库，Task 2.1）
   // 跨窗口共享的事实存储（对话注入时直读 DB，不走任何 store 内存缓存）。
   // 同 V7/V8：老库通过 V1 的 IF NOT EXISTS 自动建表；新库 V1 路径直接带。无需 ALTER。
+
+  // V11: proactive_log 加 ref_id（完整闸门按触发源实体去重，Task 3.2）
+  // 闸门 gateProactive 的去重键是候选 refId（todo.id / event.id），重启后要能从
+  // proactive_log 派生回 GateState 做同实体去重，所以日志必须落 ref_id。
+  // 旧库该列 NULL/缺失 → ALTER 补；旧简报日志 ref_id 默认空串（按 type 冷却/预算计数仍生效）。
+  const proCols = await getColumns(db, "proactive_log");
+  if (proCols.size > 0 && !proCols.has("ref_id")) {
+    await db.execute("ALTER TABLE proactive_log ADD COLUMN ref_id TEXT NOT NULL DEFAULT ''");
+    console.info("[db] migrated: added proactive_log.ref_id column");
+  }
 }
 
 export async function getDb(): Promise<Database> {
@@ -1805,12 +1816,17 @@ export async function dbListTodosOnDate(dateKey: string): Promise<
 
 /** dbLogProactiveSent 的入参 */
 export interface ProactiveSentInput {
-  /** 主动消息类型，如 "morning_briefing" */
+  /** 主动消息类型，如 "morning_briefing"，或触发层候选 kind（"meeting_soon" 等） */
   type: string;
   /** 投递进的对话 id */
   convId: string;
   /** 简报内容前若干字的预览 */
   contentPreview: string;
+  /**
+   * 触发源实体 id（todo.id / event.id），完整闸门 gateProactive 据此做同实体去重。
+   * 简报类无实体 → 不传，落库空串。
+   */
+  refId?: string;
 }
 
 /** dbGetProactiveStats 的返回值 */
@@ -1836,9 +1852,9 @@ export async function dbLogProactiveSent(entry: ProactiveSentInput): Promise<voi
   const now = new Date().toISOString();
   const id = `pl${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   await db.execute(
-    `INSERT INTO proactive_log (id, type, conv_id, sent_at, content_preview, replied_at)
-     VALUES ($1, $2, $3, $4, $5, NULL)`,
-    [id, entry.type, entry.convId, now, entry.contentPreview]
+    `INSERT INTO proactive_log (id, type, conv_id, sent_at, content_preview, replied_at, ref_id)
+     VALUES ($1, $2, $3, $4, $5, NULL, $6)`,
+    [id, entry.type, entry.convId, now, entry.contentPreview, entry.refId ?? ""]
   );
 }
 
@@ -1966,6 +1982,43 @@ export async function dbGetLastProactiveSentAt(
   if (!raw) return undefined;
   const ms = Date.parse(raw);
   return Number.isNaN(ms) ? undefined : ms;
+}
+
+/** dbListProactiveLogSince 返回的单条记录(给完整闸门派生 GateState 用) */
+export interface ProactiveLogSinceRow {
+  /** 主动消息类型(= 候选 kind 或 "morning_briefing" 等) */
+  type: string;
+  /** 触发源实体 id(旧简报日志为空串) */
+  refId: string;
+  /** 发送时间戳(ms) */
+  sentAtMs: number;
+}
+
+/**
+ * 取 sinceMs(含)之后发送的所有主动消息日志,供完整闸门(gateProactive)
+ * 跨重启派生 GateState(去重 / 冷却 / 半天预算计数)。
+ *
+ * 时区口径:proactive_log.sent_at 存 UTC ISO,这里把 sinceMs 转 ISO 做字符串比较
+ * (与其他表一致);返回时把 sent_at 转回 ms 时间戳。脏 sent_at(无法解析)跳过。
+ *
+ * @param sinceMs 截止毫秒时间戳(早于此的不取)
+ */
+export async function dbListProactiveLogSince(sinceMs: number): Promise<ProactiveLogSinceRow[]> {
+  const db = await getDb();
+  const cutoff = new Date(sinceMs).toISOString();
+  const rows = await db.select<Array<{ type: string; ref_id: string | null; sent_at: string }>>(
+    `SELECT type, ref_id, sent_at FROM proactive_log
+     WHERE sent_at >= $1
+     ORDER BY sent_at DESC`,
+    [cutoff]
+  );
+  const out: ProactiveLogSinceRow[] = [];
+  for (const r of rows) {
+    const ms = Date.parse(r.sent_at);
+    if (Number.isNaN(ms)) continue;
+    out.push({ type: r.type, refId: r.ref_id ?? "", sentAtMs: ms });
+  }
+  return out;
 }
 
 /* ---------- Memory Facts(AI 秘书记忆事实库，Task 2.1) ---------- */
