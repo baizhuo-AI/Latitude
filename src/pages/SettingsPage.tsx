@@ -1572,7 +1572,7 @@ function ChatBackendField() {
     if (key === "claude") {
       return "✓ 已检测到 claude。先 claude login 登录订阅。Daybreak 启动 claude 时会自动配 MCP 指向本机 server。";
     }
-    return "✓ 已检测到 codex。先 codex login 登录。Daybreak 暂不自动配 MCP，请用 codex mcp add 一次性配好 daybreak server。";
+    return "✓ 已检测到 codex。先 codex login 登录。Daybreak 启动 codex 时会自动配 MCP 指向本机 server（无需手动 codex mcp add）。";
   })();
 
   return (

@@ -66,6 +66,40 @@ vi.mock("../engine/claudeCodeAdapter", () => ({
   }),
 }));
 
+// ─── mock Codex 适配器:可观测桩,断言被选中,绝不真 spawn ──────────────────────
+// Task 4.4:验证 chatBackend=codex-cli 时 generateOnce 切到 Codex 适配器。
+interface CodexCall {
+  method: "generate" | "generateStream";
+  messages: EngineMessage[];
+  opts?: EngineOptions;
+}
+let codexCalls: CodexCall[];
+let codexNextResult: EngineResult;
+
+vi.mock("../engine/codexAdapter", () => ({
+  makeCodexAdapter: (): EngineAdapter => ({
+    name: "codex",
+    model: "codex",
+    async generate(messages: EngineMessage[], opts?: EngineOptions): Promise<EngineResult> {
+      codexCalls.push({ method: "generate", messages, opts });
+      return codexNextResult;
+    },
+    async generateStream(
+      messages: EngineMessage[],
+      opts: EngineOptions,
+      handlers: EngineStreamHandlers
+    ): Promise<EngineResult> {
+      codexCalls.push({ method: "generateStream", messages, opts });
+      handlers.onToken(codexNextResult.content);
+      handlers.onDone?.(codexNextResult);
+      return codexNextResult;
+    },
+    capabilities(): EngineCapabilities {
+      return { supportsTools: true, supportsReasoning: true, supportsStreaming: true };
+    },
+  }),
+}));
+
 // ─── db / chatTools / stores 桩(同 index.test.ts) ──────────────────────────
 const dbInsertUsageSpy = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("../db", () => ({
@@ -115,25 +149,29 @@ beforeEach(() => {
   engine = setEngine(new FakeEngine());
   ccCalls = [];
   ccNextResult = { content: "CC-回复", model: "claude-code" };
+  codexCalls = [];
+  codexNextResult = { content: "Codex-回复", model: "codex" };
   dbInsertUsageSpy.mockClear();
-  chatBackend = "deepseek-api"; // 默认 API;需要 CC 的用例自行覆盖
+  chatBackend = "deepseek-api"; // 默认 API;需要 CC/Codex 的用例自行覆盖
 });
 
 describe("分发:chatBackend=deepseek-api → 走 API 引擎(行为不变)", () => {
-  it("generateOnce 走 API(假 deepseek),不碰 CC 适配器", async () => {
+  it("generateOnce 走 API(假 deepseek),不碰 CC / Codex 适配器", async () => {
     engine.script = [{ content: "API-回复", model: "deepseek-chat" }];
     const text = await generateOnce("sys", [{ role: "user", content: "hi" }]);
     expect(text).toBe("API-回复");
     expect(engine.received).toHaveLength(1); // API 被调
     expect(ccCalls).toHaveLength(0); // CC 没被调
+    expect(codexCalls).toHaveLength(0); // Codex 没被调
   });
 
-  it("chatAgentCall 走 API(假 deepseek),不碰 CC 适配器", async () => {
+  it("chatAgentCall 走 API(假 deepseek),不碰 CC / Codex 适配器", async () => {
     engine.script = [{ content: "agent 最终答复", model: "deepseek-chat" }];
     const result = await chatAgentCall([{ role: "user", content: "在吗" }]);
     expect(result.content).toBe("agent 最终答复");
     expect(engine.received).toHaveLength(1);
     expect(ccCalls).toHaveLength(0);
+    expect(codexCalls).toHaveLength(0);
   });
 });
 
@@ -158,6 +196,35 @@ describe("分发:chatBackend=claude-cli → generateOnce 切到 CC 适配器", (
     ccNextResult = {
       content: "x",
       model: "claude-code",
+      usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
+    };
+    await generateOnce("sys", [{ role: "user", content: "hi" }]);
+    expect(dbInsertUsageSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("分发:chatBackend=codex-cli → generateOnce 切到 Codex 适配器(Task 4.4)", () => {
+  beforeEach(() => {
+    chatBackend = "codex-cli";
+  });
+
+  it("generateOnce 走 Codex 适配器(主动引擎/简报因此能用 Codex)", async () => {
+    const text = await generateOnce("你是助手", [{ role: "user", content: "今天咋样" }]);
+    expect(text).toBe("Codex-回复");
+    expect(codexCalls).toHaveLength(1);
+    expect(codexCalls[0].method).toBe("generate");
+    // generateOnce 把 systemPrompt 拼成首条 system,messages 原样跟随(无状态注入)
+    expect(codexCalls[0].messages[0]).toEqual({ role: "system", content: "你是助手" });
+    expect(codexCalls[0].messages[1]).toEqual({ role: "user", content: "今天咋样" });
+    // API 路径与 CC 路径都没被调
+    expect(engine.received).toHaveLength(0);
+    expect(ccCalls).toHaveLength(0);
+  });
+
+  it("generateOnce 经 Codex 不记 usage(裸调语义不变)", async () => {
+    codexNextResult = {
+      content: "x",
+      model: "codex",
       usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
     };
     await generateOnce("sys", [{ role: "user", content: "hi" }]);

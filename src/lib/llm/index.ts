@@ -28,6 +28,7 @@ import type { Lang, ChatBackend } from "../settings";
 import type { EngineAdapter } from "../engine/types";
 import { makeApiAdapter } from "../engine/apiAdapter";
 import { makeClaudeCodeAdapter } from "../engine/claudeCodeAdapter";
+import { makeCodexAdapter } from "../engine/codexAdapter";
 
 /** 近期纪要注入的天数上限(近 7 天)。 */
 const RECENT_DIGEST_DAYS = 7;
@@ -92,20 +93,22 @@ export function getProviderName(): string {
  *
  * 选择规则(真相源:readSettingsSnapshot().chatBackend —— 多窗口直读 localStorage):
  *   - claude-cli                → claudeCodeAdapter(无状态驱动本地 claude,经 cli_agent 路径)
+ *   - codex-cli                 → codexAdapter(无状态驱动本地 codex,经 cli_agent 路径;Task 4.4)
  *   - deepseek-api              → apiAdapter(包现有 HTTP provider,行为不变)
- *   - codex-cli / kiro-cli      → 暂用 apiAdapter 兜底(这两条 CLI 适配器不在 Task 4.3 范围;
- *                                 它们的对话仍由 chatStore.sendMessage 的 CLI 分流处理,不经此分发)
+ *   - kiro-cli                  → 暂用 apiAdapter 兜底(Kiro 适配器不在 Task 4.4 范围;
+ *                                 它的对话仍由 chatStore.sendMessage 的 CLI 分流处理,不经此分发)
  *
  * @param forceApi 钉死走 API 引擎(无视 chatBackend)。结构化 JSON 任务
  *                 (parseTask / generateTodayPlan)用 —— 它们需要 HTTP provider 的
- *                 JSON mode + 结构化输出,CC CLI 给不了;且这些是工作台触发的非对话任务,
- *                 不该被「对话后端」开关切走。
+ *                 JSON mode + 结构化输出,CC / Codex CLI 给不了;且这些是工作台触发的非对话
+ *                 任务,不该被「对话后端」开关切走。
  */
 function selectEngine(opts: { forceApi?: boolean } = {}): EngineAdapter {
   if (opts.forceApi) return makeApiAdapter();
   const backend: ChatBackend = readSettingsSnapshot().chatBackend;
   if (backend === "claude-cli") return makeClaudeCodeAdapter();
-  // deepseek-api(默认)与暂不支持分发的 codex/kiro 都回到 API 适配器(包现有 provider)。
+  if (backend === "codex-cli") return makeCodexAdapter();
+  // deepseek-api(默认)与暂不支持分发的 kiro 都回到 API 适配器(包现有 provider)。
   return makeApiAdapter();
 }
 
