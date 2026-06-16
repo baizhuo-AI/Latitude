@@ -2292,9 +2292,12 @@ export interface ListMemoryFactsOptions {
  *
  * onlyActive 的过滤在 SQL 层做(保证跨窗口直读 DB 即时新鲜):
  *   active = pinned=1 OR expires_at IS NULL OR expires_at > now
- * 这与纯函数 isMemoryFactActive 的规则对齐(脏 expires_at 在 SQL 字符串比较里
- * 一般 > now 不成立,会被滤掉;若要严格对齐脏值"保活",可在内存再过一道纯函数。
- * 这里取 SQL 口径:正常 ISO 时间戳字符串可比,脏值极少出现且偏保守地淘汰,可接受)。
+ * 这与纯函数 isMemoryFactActive 的规则对齐:
+ *   - pinned=true / expires_at 为 NULL → 永远 active(两者口径一致)
+ *   - 脏 expires_at(字母开头等非 ISO 值):SQLite 字符串比较下字母开头 > 数字开头的
+ *     ISO 时间戳,故脏值 > now → 被保活。与 isMemoryFactActive 纯函数一致
+ *     (脏值 Date.parse 返回 NaN,按"永远有效"处理,同样保活)。
+ *   - 正常 ISO 时间戳:字符串排序与时间先后一致,SQL 过滤结果准确。
  */
 export async function dbListMemoryFacts(
   opts: ListMemoryFactsOptions = {}

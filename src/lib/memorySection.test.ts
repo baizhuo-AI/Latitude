@@ -135,4 +135,33 @@ describe("buildMemorySection — 记忆注入段(纯函数)", () => {
     });
     expect(() => buildMemorySection([huge], "zh", 50)).not.toThrow();
   });
+
+  it("精确预算边界:恰好填满 maxChars 的事实必须被纳入(不多丢一条)", () => {
+    // 构造一个 fact,使其加入后 join 长度恰好等于 maxChars。
+    // 验证精确预算:不因尾换行计数多余导致提前 break。
+    //
+    // 段头 "【关于用户的长期记忆】" = 12 字符
+    // join 格式: header + "\n" + line,长度 = 12 + 1 + line.length
+    // 令 maxChars = 12 + 1 + line.length,则这条 fact 必须被纳入
+    const header = "【关于用户的长期记忆】"; // 12 chars
+    const target = fact({ content: "精确边界" }); // renderFactLine → "- [偏好] 精确边界"
+    const line = `- [偏好] 精确边界`; // 确认行长
+    const budget = header.length + 1 + line.length; // 恰好填满
+    const out = buildMemorySection([target], "zh", budget);
+    // 事实必须被纳入(没有因为 +1 多算而提前 break)
+    expect(out).toContain("精确边界");
+    // 且产物长度恰好等于预算(不超)
+    expect(out.length).toBe(budget);
+  });
+
+  it("精确预算边界:比 maxChars 多 1 字符的事实必须被排除", () => {
+    // 与上条对称:maxChars 少 1 时,同一条 fact 不能被纳入
+    const header = "【关于用户的长期记忆】"; // 12 chars
+    const target = fact({ content: "精确边界" });
+    const line = `- [偏好] 精确边界`;
+    const budget = header.length + 1 + line.length - 1; // 少 1,装不下
+    const out = buildMemorySection([target], "zh", budget);
+    // 装不下:只有头部(lines.length==1 → 返回空)或者空串
+    expect(out).toBe("");
+  });
 });

@@ -92,16 +92,18 @@ export function buildMemorySection(
 
   for (const fact of ordered) {
     const line = renderFactLine(fact, lang);
-    // +1 为行间换行符的成本(join("\n"))
-    const cost = line.length + 1;
-    if (used + cost > maxChars) {
+    // 每条事实以 "\n" 开头拼接(join("\n") 的分隔符在 fact 前面,不是尾部)。
+    // 精确模型:这条 fact 加入后的实际 join 长度 = used + 1(\n) + line.length。
+    // 只有当 used + 1 + line.length ≤ maxChars 时才装填——无多余的尾换行。
+    const newUsed = used + 1 + line.length;
+    if (newUsed > maxChars) {
       // 超预算:停止装填后续事实。
       // 因为 pinned 排在最前,被丢的必然是靠后的非 pinned(或预算极小连
       // pinned 都装不下时的剩余 pinned)——满足「pinned 优先保留」。
       break;
     }
     lines.push(line);
-    used += cost;
+    used = newUsed;
   }
 
   // 只剩段头、一条事实都没装下 → 不注入(纯头部无意义)。

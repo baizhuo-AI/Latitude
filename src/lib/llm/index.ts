@@ -578,7 +578,11 @@ export async function chatStreamCall(
   history: ChatMessage[],
   handlers: StreamHandlers
 ) {
-  // 收口到 callBrainStream;model 由 resolveDeepSeekModel 决定(可配置,不写死)
+  // 收口到 callBrainStream;model 由 resolveDeepSeekModel 决定(可配置,不写死)。
+  // forceApi:流式深度思考依赖 deepseek-reasoner 的 SSE+thinking_content,
+  // CC / Codex CLI 给不了 reasoning_content 字段和 SSE chunk 格式——钉死走 API 引擎。
+  // 防御性约束:目前 chatStreamCall 无 live 调用方(ChatPage 用 chatAgentCall),
+  // 钉死是为了防止未来接入者把 chatBackend=claude-cli/codex-cli 时的流式推理送到 CLI 适配器。
   return callBrainStream(
     [
       { role: "system", content: await buildChatSystemPrompt() },
@@ -589,6 +593,7 @@ export async function chatStreamCall(
       maxTokens: 2000,
       model: resolveDeepSeekModel("reasoning"),
       recordAs: "chat",
+      forceApi: true,
     },
     handlers
   );

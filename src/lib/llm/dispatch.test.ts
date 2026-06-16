@@ -143,6 +143,7 @@ import {
   parseTask,
   generateTodayPlan,
   chatAgentCall,
+  chatStreamCall,
 } from "./index";
 
 beforeEach(() => {
@@ -322,5 +323,31 @@ describe("分发:结构化任务钉死 API(chatBackend=codex-cli 也不被切到
     expect(ccCalls).toHaveLength(0);
     expect(codexCalls).toHaveLength(0);
     expect(engine.received[0].opts.responseFormat).toBe("json");
+  });
+});
+
+describe("分发:chatStreamCall 钉死 API(chatBackend=claude-cli 也不被切到 CC)", () => {
+  // chatStreamCall 依赖 deepseek-reasoner 的 SSE+thinking_content,
+  // CC / Codex CLI 给不了 reasoning_content 字段和 SSE chunk 格式。
+  // forceApi:true 是防御性约束,确保即使 chatBackend 切到 CLI 也走 API 引擎。
+  beforeEach(() => {
+    chatBackend = "claude-cli"; // 对话后端切到 CC
+  });
+
+  it("chatStreamCall 仍走 API 引擎(FakeEngine),不碰 CC 适配器", async () => {
+    // FakeEngine.chatStream 直接 onToken + onDone,无需配置 script
+    const tokens: string[] = [];
+    await chatStreamCall(
+      [{ role: "user", content: "你好" }],
+      {
+        onToken: (t) => tokens.push(t),
+        onDone: () => undefined,
+      }
+    );
+    // API 路径(FakeEngine.chatStream)被调:tokens 收到了假引擎的输出
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).toBe("stream-done");
+    // CC 适配器没被调
+    expect(ccCalls).toHaveLength(0);
   });
 });
