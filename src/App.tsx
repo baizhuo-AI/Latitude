@@ -9,7 +9,7 @@ import { useActivityStore } from "./lib/activityStore";
 import { useCalendarEventsStore } from "./lib/calendarEventsStore";
 import { useFieldStore } from "./lib/fieldStore";
 import { useChatStore } from "./lib/chatStore";
-import { onSync, type SyncTopic } from "./lib/syncBus";
+import { onSync, bridgeDataChangedToSync, type SyncTopic } from "./lib/syncBus";
 import { setupOnlineReplay } from "./lib/calendarSync";
 import { startReminderScheduler } from "./lib/reminder";
 import { startSecretaryScheduler, runStartupBackfill } from "./lib/secretary/wiring";
@@ -73,6 +73,11 @@ function useDataSync(topics: SyncTopic[]) {
 /** 工作台主窗:承载现有视图 + 应用级单例副作用(只在此窗起一份,避免悬浮窗重复)。 */
 function MainWindow() {
   useDataSync(["todos", "goals", "activities", "calendar_events"]);
+
+  // 后端事件 → 前端 syncBus 的桥接(只在主窗起一份)。
+  // MCP(CC/Codex)经 daybreak://data-changed 发的 "memory" 不在 useDataSync 列表里,
+  // 这里转嫁成 syncBus 的 emitSync("memory"),让 AboutYouPanel 的 onSync("memory") 实时刷新。
+  useEffect(() => bridgeDataChangedToSync(), []);
 
   // 离线期间入队的本地日历变更:联网恢复时自动 flush 回写飞书。
   useEffect(() => setupOnlineReplay(), []);

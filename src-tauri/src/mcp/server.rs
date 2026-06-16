@@ -534,8 +534,11 @@ impl DaybreakMcp {
     /* ===================== 记忆事实工具（Task 4.2） =====================
      * 镜像 TS chatTools 的 remember / update_memory / forget，让 CC/Codex 经 MCP 写记忆。
      * 字段、枚举、默认值、TTL 兜底与 TS 侧逐字对齐（见 src/lib/chatTools.ts 与 src/lib/db.ts）。
-     * 表由前端 migrate 建（memory_facts），此处只读写既有库；写后 notify("memory")
-     * 与 TS 的 emitSync("memory") 对齐，触发「关于你」面板等窗口刷新。
+     * 表由前端 migrate 建（memory_facts），此处只读写既有库；写后 notify("memory") 发到后端→前端桥
+     * daybreak://data-changed（topic "memory"）。注意它与前端 syncBus 的 emitSync("memory") 是
+     * 两条不同事件名，并不直接互通：前端在常驻主窗用 bridgeDataChangedToSync()（见 src/lib/syncBus.ts
+     * 与 src/App.tsx 的 MainWindow）把这条 data-changed 的 "memory" 转嫁到 syncBus，
+     * onSync("memory") 的消费者（「关于你」面板 AboutYouPanel）才会实时刷新。
      */
 
     #[tool(
