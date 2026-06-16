@@ -294,6 +294,23 @@
     "noKey": "No AI model configured. Add an API Key in the provider section above, then Try a sample will work.",
     "lockedRulesNote": "Core anti-boilerplate rules are built in — just tune the personality."
   },
+  "privacy": {
+    "sectionTitle": "Privacy & Cost",
+    "sectionDesc": "Control what data is sent to cloud AI, memory boundaries, and proactive nudge frequency.",
+    "disclosureTitle": "Cloud memory disclosure",
+    "disclosureBody": "When you use a cloud AI (e.g. DeepSeek API, Anthropic API), Daybreak sends your memory facts and today's tasks as a system prompt to the respective API provider. This data is not uploaded to Daybreak's own servers, but it does pass through the third-party AI provider's infrastructure. To prevent memory from being sent to the cloud, enable \"Local brain only\".",
+    "localOnlyBrain": "Local brain only",
+    "localOnlyBrainDesc": "When enabled, memory facts are only injected into local CLI engines (Claude Code / Codex). If you are using a cloud API backend, memories will not be sent to third-party APIs.",
+    "localOnlyBrainWarning": "⚠ Current backend is a cloud API — memory will not be injected into this session. Switch to a local CLI backend (Claude Code / Codex) to get both memory and privacy protection.",
+    "noSensitiveMemory": "No sensitive memory",
+    "noSensitiveMemoryDesc": "When enabled, the AI secretary is instructed not to record passwords, financial data, ID numbers, medical details, or other private information into long-term memory.",
+    "lowPowerMode": "Low-power / low-frequency mode",
+    "lowPowerModeDesc": "When enabled, proactive nudges are throttled (heartbeat extended to 4 hours, max 1 interruption per half-day). Reduces API costs — useful on limited bandwidth or low battery.",
+    "lowPowerModeOn": "Low-frequency on",
+    "lowPowerModeOff": "Low-frequency off",
+    "on": "On",
+    "off": "Off"
+  },
   "memory": {
     "sectionTitle": "About You",
     "sectionDesc": "Facts the AI secretary remembers about you. Edit, delete, or add manually.",

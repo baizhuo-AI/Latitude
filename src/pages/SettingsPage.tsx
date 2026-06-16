@@ -21,7 +21,8 @@ import {
   UserCircle2,
   BellRing,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  ShieldCheck
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -47,6 +48,7 @@ import { describeBitable } from "../lib/feishuBitable";
 import { PersonaPanel } from "../components/persona/PersonaPanel";
 import { AboutYouPanel } from "../components/memory/AboutYouPanel";
 import { ProactiveSettings } from "../components/secretary/ProactiveSettings";
+import { PrivacySettings } from "../components/privacy/PrivacySettings";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -188,6 +190,17 @@ export function SettingsPage() {
             description={t("memory.sectionDesc")}
           >
             <AboutYouPanel />
+          </Section>
+          </div>
+
+          {/* 隐私与成本(Task 4.6a) */}
+          <div id="privacy-panel">
+          <Section
+            icon={<ShieldCheck className="w-4 h-4" />}
+            title={t("privacy.sectionTitle")}
+            description={t("privacy.sectionDesc")}
+          >
+            <PrivacySettings />
           </Section>
           </div>
 

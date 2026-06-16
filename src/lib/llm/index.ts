@@ -20,6 +20,10 @@ import {
 } from "../settings";
 import { dbInsertUsage, dbGetRecentDigests, dbListMemoryFacts } from "../db";
 import { toolsForLLM, runChatTool } from "../chatTools";
+import {
+  shouldInjectMemoryToEngine,
+  buildSensitiveMemoryInstruction,
+} from "../privacy";
 import { useGoalsStore, type Goal } from "../goalsStore";
 import i18n from "../i18n";
 import { composePersonaPrompt } from "../persona/personaSpec";
@@ -496,21 +500,44 @@ export async function buildChatSystemPrompt(): Promise<string> {
     console.warn("[buildChatSystemPrompt] 读取 daily_digest 失败:", err);
   }
 
+  // Task 4.6a 隐私控制:直读 localStorage 真相源,决定是否注入记忆。
+  // localOnlyBrain=true + 云端 API 后端 → 跳过记忆注入(保护用户隐私)。
+  // 也附加敏感信息禁记指令(noSensitiveMemory=true 时)。
+  const localOnlyBrain = s.localOnlyBrain ?? false;
+  const noSensitiveMemory = s.noSensitiveMemory ?? false;
+  const chatBackend = s.chatBackend;
+
+  // 敏感不记指令(注在记忆段后面或独立段)
+  const sensitiveInstruction = buildSensitiveMemoryInstruction(noSensitiveMemory, lang);
+
   // Task 2.2:全量注入 active 记忆事实。
   // 【铁律】直读 DB(dbListMemoryFacts),不走任何 store 内存缓存——
   // 跨窗口共享 + 即时新鲜:面板(主窗)刚改的记忆,对话(悬浮条窗口)立刻读到。
   // onlyActive:true 让过期且非 pinned 的事实不进 prompt(口径与 isMemoryFactActive 对齐)。
   // 注入体积由 buildMemorySection 的字符预算约束:超量截断不报错、pinned 优先保留、
   // inferred 事实带「(推断)」试探标注。DB 读取失败时静默降级,不影响对话主流程。
-  try {
-    const facts = await dbListMemoryFacts({ onlyActive: true });
-    const memorySection = buildMemorySection(facts, lang);
-    if (memorySection) {
-      lines.push("");
-      lines.push(memorySection);
+  // Task 4.6a: shouldInjectMemoryToEngine 据 localOnlyBrain + chatBackend 决策。
+  if (shouldInjectMemoryToEngine(localOnlyBrain, chatBackend)) {
+    try {
+      const facts = await dbListMemoryFacts({ onlyActive: true });
+      const memorySection = buildMemorySection(facts, lang);
+      if (memorySection) {
+        lines.push("");
+        lines.push(memorySection);
+      }
+    } catch (err) {
+      console.warn("[buildChatSystemPrompt] 读取 memory_facts 失败:", err);
     }
-  } catch (err) {
-    console.warn("[buildChatSystemPrompt] 读取 memory_facts 失败:", err);
+  } else {
+    // localOnlyBrain=true + 云端后端:记忆不注入,仅记录日志供调试
+    console.info(
+      "[buildChatSystemPrompt] localOnlyBrain=true + cloud backend — skipping memory injection"
+    );
+  }
+
+  // 敏感不记指令追加(在记忆段之后,不影响记忆注入决策)
+  if (sensitiveInstruction) {
+    lines.push(sensitiveInstruction);
   }
 
   return lines.join("\n");

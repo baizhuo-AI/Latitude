@@ -294,6 +294,23 @@
     "noKey": "还没有配置 AI 模型。在上方「AI 提供商」填入 API Key 后,「试一句」就能用了。",
     "lockedRulesNote": "底层反机械规则已内置,你只管调性格。"
   },
+  "privacy": {
+    "sectionTitle": "隐私与成本",
+    "sectionDesc": "控制哪些数据会发送给云端 AI、记忆的边界,以及主动推送的频率。",
+    "disclosureTitle": "云端记忆披露",
+    "disclosureBody": "当你使用云端 AI(如 DeepSeek API、Anthropic API)时,Daybreak 会把你的记忆事实和今日待办作为系统提示词发送给对应的 API 服务商。这些数据不会上传到 Daybreak 自己的服务器,但会经过第三方 AI 服务商的基础设施处理。如不希望记忆发送给云端,请开启「仅本地大脑」。",
+    "localOnlyBrain": "仅本地大脑",
+    "localOnlyBrainDesc": "开启后,记忆事实只注入本地 CLI 引擎(Claude Code / Codex)。若当前选了云端 API 后端,记忆将不发送给第三方 API。",
+    "localOnlyBrainWarning": "⚠ 当前对话后端是云端 API,记忆不会注入此次对话。切换到本地 CLI 后端(Claude Code/Codex)可同时获得记忆和隐私保护。",
+    "noSensitiveMemory": "敏感信息不记忆",
+    "noSensitiveMemoryDesc": "开启后,AI 秘书会被告知不要把密码、财务、身份证号、医疗等隐私信息写入长期记忆。适合在公共场合或多人共用设备时使用。",
+    "lowPowerMode": "省电/低频模式",
+    "lowPowerModeDesc": "开启后,AI 秘书的主动推送频率会降低(心跳拉长到 4 小时,每半天最多打扰 1 次)。节省 API 调用成本,适合流量受限或低电量场景。",
+    "lowPowerModeOn": "已开启低频",
+    "lowPowerModeOff": "已关闭低频",
+    "on": "开",
+    "off": "关"
+  },
   "memory": {
     "sectionTitle": "关于你",
     "sectionDesc": "AI 秘书记住的关于你的事实。你可以直接改、删,或手动补充。",

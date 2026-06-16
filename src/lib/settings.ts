@@ -127,6 +127,29 @@ export interface SettingsState {
    * 默认温和(gentle);静默时段沿用 reminder.workStart/workEnd(不在此重复存)。
    */
   proactive: ProactiveConfig;
+  /**
+   * 隐私:仅本地大脑(Task 4.6a)
+   * 开启时,记忆/上下文只注入本地 CLI 引擎(claude-cli/codex-cli/kiro-cli)。
+   * 若用户选了云端 API 后端(deepseek-api),UI 显示警告;buildChatSystemPrompt
+   * 在云端后端时跳过记忆注入。
+   * 默认 false(不改变现有行为)。
+   */
+  localOnlyBrain: boolean;
+  /**
+   * 隐私:敏感信息不记忆(Task 4.6a)
+   * 开启时,在系统提示词里追加指令,告知大脑不要把密码/财务/身份/医疗等
+   * 敏感信息写进 remember 工具的长期记忆。
+   * 默认 false。
+   */
+  noSensitiveMemory: boolean;
+  /**
+   * 成本:省电/低频模式(Task 4.6a)
+   * 开启时用于 UI 提示「已切换低频」;实际参数通过 setProactive 写入 proactive
+   * (heartbeatMin 拉长到 240min、budgetPerHalfDay 收紧到 1 次/半天)。
+   * 此字段本身仅作 UI 状态跟踪(开关是否激活)。
+   * 默认 false。
+   */
+  lowPowerMode: boolean;
 }
 
 // re-export PersonaSpec / ProactiveConfig 让消费方不用另外 import 子模块
@@ -172,7 +195,11 @@ function defaults(): SettingsState {
     feishu: { activeRegion: null, bitableEnabled: false },
     persona: { presetKey: DEFAULT_PERSONA_KEY },
     // 主动姿态默认温和(gentle)——见 defaultProactiveConfig
-    proactive: defaultProactiveConfig()
+    proactive: defaultProactiveConfig(),
+    // 隐私 + 成本(Task 4.6a):默认全关,不改变现有行为
+    localOnlyBrain: false,
+    noSensitiveMemory: false,
+    lowPowerMode: false
   };
 }
 
@@ -230,7 +257,11 @@ function readStored(): SettingsState {
             ...parsed.proactive,
             events: { ...def.proactive.events, ...(parsed.proactive.events ?? {}) }
           }
-        : def.proactive
+        : def.proactive,
+      // Task 4.6a 隐私 + 成本:布尔字段浅合并,旧存档无此字段时回退 defaults
+      localOnlyBrain: typeof parsed.localOnlyBrain === "boolean" ? parsed.localOnlyBrain : def.localOnlyBrain,
+      noSensitiveMemory: typeof parsed.noSensitiveMemory === "boolean" ? parsed.noSensitiveMemory : def.noSensitiveMemory,
+      lowPowerMode: typeof parsed.lowPowerMode === "boolean" ? parsed.lowPowerMode : def.lowPowerMode
     };
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
@@ -311,6 +342,8 @@ interface SettingsStore extends SettingsState {
   setPersona: (patch: Partial<PersonaSpec>) => void;
   /** Task 3.4: 更新主动姿态配置(events 单独深合并,patch.events 只需带变动的开关) */
   setProactive: (patch: ProactivePatch) => void;
+  /** Task 4.6a: 更新隐私/成本开关(localOnlyBrain / noSensitiveMemory / lowPowerMode) */
+  setPrivacy: (patch: Partial<Pick<SettingsState, "localOnlyBrain" | "noSensitiveMemory" | "lowPowerMode">>) => void;
   reset: () => void;
 }
 
@@ -373,6 +406,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     };
     set({ proactive });
     persist({ ...get(), proactive });
+  },
+  setPrivacy: (patch) => {
+    set(patch);
+    persist({ ...get(), ...patch });
   },
   reset: () => {
     const d = defaults();
