@@ -41,6 +41,7 @@ import { feishuSyncNow } from "../lib/calendarSync";
 import { CustomFieldsManager } from "../components/CustomFieldsManager";
 import { describeBitable } from "../lib/feishuBitable";
 import { PersonaPanel } from "../components/persona/PersonaPanel";
+import { AboutYouPanel } from "../components/memory/AboutYouPanel";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -160,6 +161,17 @@ export function SettingsPage() {
             description={t("persona.sectionDesc")}
           >
             <PersonaPanel />
+          </Section>
+          </div>
+
+          {/* 关于你(记忆事实面板) */}
+          <div id="about-you-panel">
+          <Section
+            icon={<UserCircle2 className="w-4 h-4" />}
+            title={t("memory.sectionTitle")}
+            description={t("memory.sectionDesc")}
+          >
+            <AboutYouPanel />
           </Section>
           </div>
 

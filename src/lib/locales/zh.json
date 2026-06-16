@@ -294,6 +294,30 @@
     "noKey": "还没有配置 AI 模型。在上方「AI 提供商」填入 API Key 后,「试一句」就能用了。",
     "lockedRulesNote": "底层反机械规则已内置,你只管调性格。"
   },
+  "memory": {
+    "sectionTitle": "关于你",
+    "sectionDesc": "AI 秘书记住的关于你的事实。你可以直接改、删,或手动补充。",
+    "category": {
+      "identity": "身份",
+      "ongoing": "进行中",
+      "habit": "习惯",
+      "people": "人际",
+      "preference": "偏好"
+    },
+    "source": {
+      "told": "你说的",
+      "inferred": "学到"
+    },
+    "pinned": "已置顶",
+    "edit": "编辑",
+    "delete": "删除",
+    "confirm": "确认",
+    "cancel": "取消",
+    "add": "添加",
+    "addTitle": "手动添加",
+    "addPlaceholder": "填写一条事实,回车或点添加",
+    "empty": "还没有记忆事实。和 AI 秘书多聊几句,或手动添加。"
+  },
   "settings": {
     "title": "设置",
     "shortcuts": {

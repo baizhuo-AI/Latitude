@@ -294,6 +294,30 @@
     "noKey": "No AI model configured. Add an API Key in the provider section above, then Try a sample will work.",
     "lockedRulesNote": "Core anti-boilerplate rules are built in — just tune the personality."
   },
+  "memory": {
+    "sectionTitle": "About You",
+    "sectionDesc": "Facts the AI secretary remembers about you. Edit, delete, or add manually.",
+    "category": {
+      "identity": "Identity",
+      "ongoing": "Ongoing",
+      "habit": "Habits",
+      "people": "People",
+      "preference": "Preferences"
+    },
+    "source": {
+      "told": "You told me",
+      "inferred": "Learned"
+    },
+    "pinned": "Pinned",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "add": "Add",
+    "addTitle": "Add manually",
+    "addPlaceholder": "Enter a fact, press Enter or click Add",
+    "empty": "No memory facts yet. Chat with the AI secretary or add one manually."
+  },
   "settings": {
     "title": "Settings",
     "shortcuts": {
