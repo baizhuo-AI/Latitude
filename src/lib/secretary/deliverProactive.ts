@@ -1,7 +1,7 @@
 /**
  * deliverProactive.ts — AI 秘书主动消息「投递层」(Task 3.4)
  *
- * 上游(3.7 接线层,未做)拿触发候选过 gateProactive,放行一条后调本层投递。
+ * 上游(wiring.ts 3.7 接线层)拿触发候选过 gateProactive,放行一条后调本层投递。
  * 本层与 composeMorningBriefing 平行——合成一条带人设腔调的主动消息并送达,
  * 区别是服务「事件触发候选」(ProactiveCandidate),且语气受 3.3 负荷档调制。
  *

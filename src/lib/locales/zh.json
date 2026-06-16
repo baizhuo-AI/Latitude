@@ -228,7 +228,8 @@
     "title": "对话",
     "placeholder": "今天想做点什么?",
     "empty": "问我今天的安排,或随手记个待办。",
-    "collapse": "收起"
+    "collapse": "收起",
+    "proactiveHint": "拂晓给你发了条消息,点开查看"
   },
   "history": {
     "title": "对话记录",

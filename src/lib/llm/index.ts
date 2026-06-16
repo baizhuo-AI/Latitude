@@ -641,12 +641,17 @@ export async function chatAgentCall(
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     // 每轮都收口到 callBrain,并整段重传 system+history+回灌结果(无状态 C1)
+    // forceApi:true — chatAgentCall 是 API 机制(function calling / tool_calls JSON),
+    // 只有 HTTP provider 支持;CLI 路线另走 chatStore.sendMessage 的 sendViaCli 分支,不经此函数。
+    // 加 forceApi 让引擎选择意图显式,防止 chatBackend=claude-cli/codex-cli 时被切到 CLI 适配器
+    // 导致 tool_calls 字段丢失、agent loop 静默退化为单轮问答。
     const result = await callBrain(messages, {
       temperature: 0.5,
       maxTokens: 2000,
       tools,
       model,
       recordAs: "chat-agent",
+      forceApi: true,
     });
     last = result;
 

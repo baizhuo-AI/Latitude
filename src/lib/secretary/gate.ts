@@ -224,9 +224,11 @@ export function createMorningBriefingJobWithGate(
       const lang: Lang = opts.lang ?? settings.lang ?? "zh";
 
       // gate 检查
+      // ⚠️ type 用下划线 "morning_briefing"——与 proactive_log.type 落库值一致(composeProactive.ts 的
+      // proactiveType = "morning_briefing")。连字符版本是历史遗留;统一下划线避免去重比对静默失效。
       const candidate: GateCandidate = {
-        type: "morning-briefing",
-        content: `morning-briefing-${now.toISOString().slice(0, 10)}`,
+        type: "morning_briefing",
+        content: `morning_briefing-${now.toISOString().slice(0, 10)}`,
         workStart,
         workEnd,
       };

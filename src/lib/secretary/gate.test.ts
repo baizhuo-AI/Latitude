@@ -350,12 +350,14 @@ describe("简报投递路径 — gate 接入 createMorningBriefingJob", () => {
     const now = makeDate(10, 0);
     const nowMs = now.getTime();
 
+    // ⚠️ type 必须与 gate.ts 里 createMorningBriefingJobWithGate 生成的 candidate.type 一致:
+    // 统一用下划线 "morning_briefing"(与 proactive_log 落库值口径一致,见 Trivial 3 修复)
     const job = createMorningBriefingJobWithGate({
       morningHour: 7,
       gateStateProvider: () =>
         makeState({
           recentlySent: [
-            { type: "morning-briefing", content: "已发过", sentAt: nowMs - 1000 },
+            { type: "morning_briefing", content: "已发过", sentAt: nowMs - 1000 },
           ],
         }),
       nowProvider: () => now,

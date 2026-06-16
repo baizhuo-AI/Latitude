@@ -167,12 +167,26 @@ describe("分发:chatBackend=deepseek-api → 走 API 引擎(行为不变)", () 
   });
 
   it("chatAgentCall 走 API(假 deepseek),不碰 CC / Codex 适配器", async () => {
+    // chatAgentCall 依赖 HTTP provider 的 function calling / tool_calls JSON,
+    // forceApi:true 让它即使 chatBackend=claude-cli 也钉死走 API 引擎。
     engine.script = [{ content: "agent 最终答复", model: "deepseek-chat" }];
     const result = await chatAgentCall([{ role: "user", content: "在吗" }]);
     expect(result.content).toBe("agent 最终答复");
     expect(engine.received).toHaveLength(1);
     expect(ccCalls).toHaveLength(0);
     expect(codexCalls).toHaveLength(0);
+  });
+
+  it("chatAgentCall 即使 chatBackend=claude-cli 也走 API(forceApi 钉死)", async () => {
+    // 回归防护:chatAgentCall 的 agent loop 依赖 HTTP provider 的 function calling,
+    // forceApi:true 确保即便用户把对话后端切到 claude-cli,agent loop 依然走 API 引擎。
+    // (对话发送本身由 chatStore.sendMessage 的 sendViaCli 路径处理,不经 chatAgentCall)
+    chatBackend = "claude-cli";
+    engine.script = [{ content: "强制 API 答复", model: "deepseek-chat" }];
+    const result = await chatAgentCall([{ role: "user", content: "测试强制 API" }]);
+    expect(result.content).toBe("强制 API 答复");
+    expect(engine.received).toHaveLength(1); // API 被调
+    expect(ccCalls).toHaveLength(0); // CC 没被调,因为 forceApi:true
   });
 });
 
