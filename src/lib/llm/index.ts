@@ -24,7 +24,10 @@ import { useGoalsStore, type Goal } from "../goalsStore";
 import i18n from "../i18n";
 import { composePersonaPrompt } from "../persona/personaSpec";
 import { buildMemorySection } from "../memorySection";
-import type { Lang } from "../settings";
+import type { Lang, ChatBackend } from "../settings";
+import type { EngineAdapter } from "../engine/types";
+import { makeApiAdapter } from "../engine/apiAdapter";
+import { makeClaudeCodeAdapter } from "../engine/claudeCodeAdapter";
 
 /** 近期纪要注入的天数上限(近 7 天)。 */
 const RECENT_DIGEST_DAYS = 7;
@@ -79,44 +82,75 @@ export function getProviderName(): string {
   return getProvider().name;
 }
 
+/* ---------- 引擎分发(EngineAdapter seam)---------- */
+/**
+ * 按 chatBackend 选一条引擎适配器(Phase 4 Task 4.3:把「孤岛」接进生产链)。
+ *
+ * 背景:apiAdapter / claudeCodeAdapter 都实现统一的 EngineAdapter,但此前收口层
+ * (callBrain)直连 getProvider().chat(...),适配器是孤岛。这里让收口层改为面向
+ * EngineAdapter,按对话后端选实现,从而让主动引擎 / 简报(走 generateOnce)也能用 CC。
+ *
+ * 选择规则(真相源:readSettingsSnapshot().chatBackend —— 多窗口直读 localStorage):
+ *   - claude-cli                → claudeCodeAdapter(无状态驱动本地 claude,经 cli_agent 路径)
+ *   - deepseek-api              → apiAdapter(包现有 HTTP provider,行为不变)
+ *   - codex-cli / kiro-cli      → 暂用 apiAdapter 兜底(这两条 CLI 适配器不在 Task 4.3 范围;
+ *                                 它们的对话仍由 chatStore.sendMessage 的 CLI 分流处理,不经此分发)
+ *
+ * @param forceApi 钉死走 API 引擎(无视 chatBackend)。结构化 JSON 任务
+ *                 (parseTask / generateTodayPlan)用 —— 它们需要 HTTP provider 的
+ *                 JSON mode + 结构化输出,CC CLI 给不了;且这些是工作台触发的非对话任务,
+ *                 不该被「对话后端」开关切走。
+ */
+function selectEngine(opts: { forceApi?: boolean } = {}): EngineAdapter {
+  if (opts.forceApi) return makeApiAdapter();
+  const backend: ChatBackend = readSettingsSnapshot().chatBackend;
+  if (backend === "claude-cli") return makeClaudeCodeAdapter();
+  // deepseek-api(默认)与暂不支持分发的 codex/kiro 都回到 API 适配器(包现有 provider)。
+  return makeApiAdapter();
+}
+
 /* ---------- 单一收口层(Brain seam)---------- */
 /**
  * 所有「大脑调用」的唯一非流式收口。
  *
  * 为什么要这层(评审要求 + Phase 4 铺路):
  *   重构前 parseTask / generateTodayPlan / chatAgentCall 各自 getProvider().chat(...),
- *   provider 调用点散落四处。收成一个 callBrain 后,Phase 4 要抽统一适配器、加重试、
+ *   provider 调用点散落四处。收成一个 callBrain 后,Phase 4 抽统一适配器、加重试、
  *   加可观测、做模型路由,只改这一处即可,不必到处找。
+ *
+ * Task 4.3:收口层不再直连 getProvider,而是经 selectEngine() 选 EngineAdapter
+ *   (按 chatBackend:claude-cli→CC,deepseek-api→API)。这样 generateOnce(主动引擎/
+ *   简报)能切到 CC;结构化任务用 forceApi 钉死走 API。
  *
  * 无状态(C1):每次调用都由调用方传入完整 messages(系统提示词 + 历史),
  *   本层不持有任何会话状态、不依赖引擎侧 session/resume。
  *
  * @param messages 完整上下文(含 system),调用方负责拼好
- * @param opts     ChatOptions + recordAs:
- *                 - recordAs 给定 → 记一条 usage(feature=该值);
- *                 - recordAs 省略 → 不记 usage(裸调用 generateOnce 用)
+ * @param opts     ChatOptions + recordAs + forceApi:
+ *                 - recordAs 给定 → 记一条 usage(feature=该值);省略 → 不记(裸调 generateOnce 用)
+ *                 - forceApi 给定 → 钉死走 API 引擎(结构化 JSON 任务用),无视 chatBackend
  */
 async function callBrain(
   messages: ChatMessage[],
-  opts: ChatOptions & { recordAs?: string } = {}
+  opts: ChatOptions & { recordAs?: string; forceApi?: boolean } = {}
 ): Promise<ChatResult> {
-  const provider = getProvider();
-  const { recordAs, ...chatOpts } = opts;
-  const result = await provider.chat(messages, chatOpts);
-  if (recordAs) recordUsage(provider, result.usage, recordAs, result.model);
+  const { recordAs, forceApi, ...chatOpts } = opts;
+  const engine = selectEngine({ forceApi });
+  const result = await engine.generate(messages, chatOpts);
+  if (recordAs) recordUsage(engine, result.usage, recordAs, result.model);
   return result;
 }
 
 /** 流式收口(对应 callBrain 的 SSE 版);Chat 流式对话走这里。 */
 async function callBrainStream(
   messages: ChatMessage[],
-  opts: ChatOptions & { recordAs?: string },
+  opts: ChatOptions & { recordAs?: string; forceApi?: boolean },
   handlers: StreamHandlers
 ): Promise<ChatResult> {
-  const provider = getProvider();
-  const { recordAs, ...chatOpts } = opts;
-  const result = await provider.chatStream(messages, chatOpts, handlers);
-  if (recordAs) recordUsage(provider, result.usage, recordAs, result.model);
+  const { recordAs, forceApi, ...chatOpts } = opts;
+  const engine = selectEngine({ forceApi });
+  const result = await engine.generateStream(messages, chatOpts, handlers);
+  if (recordAs) recordUsage(engine, result.usage, recordAs, result.model);
   return result;
 }
 
@@ -197,13 +231,14 @@ export async function parseTask(input: string): Promise<ParseTaskResult> {
   }
 
   try {
-    // 收口到 callBrain;recordAs 让它顺手记 usage(feature=parseTask)
+    // 收口到 callBrain;recordAs 让它顺手记 usage(feature=parseTask)。
+    // forceApi:解析任务要 JSON mode + 结构化输出,钉死走 API 引擎,不被 chatBackend 切到 CC。
     const result = await callBrain(
       [
         { role: "system", content: PARSE_TASK_SYSTEM },
         { role: "user", content: input }
       ],
-      { temperature: 0.2, responseFormat: "json", maxTokens: 400, recordAs: "parseTask" }
+      { temperature: 0.2, responseFormat: "json", maxTokens: 400, recordAs: "parseTask", forceApi: true }
     );
 
     const json = JSON.parse(result.content) as Partial<ParseTaskResult> & {
@@ -297,12 +332,13 @@ export async function generateTodayPlan(todos: Todo[]): Promise<void> {
     }));
 
     try {
+      // forceApi:排今日要 JSON mode + 结构化输出,钉死走 API 引擎,不被 chatBackend 切到 CC。
       const result = await callBrain(
         [
           { role: "system", content: PLAN_SYSTEM + telosContextSection() },
           { role: "user", content: JSON.stringify(list) }
         ],
-        { temperature: 0.3, responseFormat: "json", maxTokens: 1200, recordAs: "generateTodayPlan" }
+        { temperature: 0.3, responseFormat: "json", maxTokens: 1200, recordAs: "generateTodayPlan", forceApi: true }
       );
       const parsed = JSON.parse(result.content) as
         | { plan?: Array<{ id?: string; scheduledTime?: string }> }
@@ -364,17 +400,20 @@ function formatGoal(g: Goal): string {
 /**
  * 记录一次 LLM 调用的 usage(异步,不阻塞主流程,失败不影响业务)
  * actualModel 优先,反映 ChatOptions.model 覆盖后的实际 model(比如 chat 切到 deepseek-reasoner)
+ *
+ * engine 参数只用到 name/model 两个字段(结构化形参):LLMProvider 与 EngineAdapter
+ * 都满足,故 Task 4.3 收口层切到 EngineAdapter 后无需改这里的逻辑。
  */
 function recordUsage(
-  provider: LLMProvider,
+  engine: { name: string; model: string },
   usage: LLMUsage | undefined,
   feature: string,
   actualModel?: string
 ) {
   if (!usage) return;
   void dbInsertUsage({
-    provider: provider.name,
-    model: actualModel ?? provider.model,
+    provider: engine.name,
+    model: actualModel ?? engine.model,
     promptTokens: usage.promptTokens,
     completionTokens: usage.completionTokens,
     totalTokens: usage.totalTokens,
