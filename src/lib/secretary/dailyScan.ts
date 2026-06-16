@@ -23,6 +23,7 @@ import {
 } from "../db";
 import type { ScheduledJob } from "./scheduler";
 import type { Lang } from "../settings";
+import { runMemoryDedup } from "./memoryHygiene";
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,14 @@ export async function runDailyScan(dateKey: string, lang: Lang = "zh"): Promise<
 
   // 4. upsert 进 daily_digest(同天重跑覆盖)
   await dbUpsertDailyDigest(dateKey, summary);
+
+  // 5. Task 2.4:日终去重归并记忆事实(静默降级,失败不影响纪要写入)
+  try {
+    await runMemoryDedup(lang);
+  } catch (err) {
+    // runMemoryDedup 内部已做静默降级,这里兜底防意外异常扩散
+    console.warn("[DailyScan] runMemoryDedup failed (non-critical):", err);
+  }
 }
 
 // ─── 调度任务工厂 ──────────────────────────────────────────────────────────
