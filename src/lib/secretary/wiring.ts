@@ -256,16 +256,24 @@ export async function runStartupBackfill(now: number = Date.now()): Promise<Back
 //            computeInMeeting / buildLoadSignals / buildGateEnv 全是 f(输入[, now]) 纯函数
 //            (体内不读 Date.now()/Math.random()),时间从参数注入,便于确定性单测(铁律2)。
 
-/** 候选 kind ↔ proactive.events 开关键 的映射(过滤被关掉的类) */
-const KIND_TO_EVENT_KEY: Record<ProactiveCandidate["kind"], keyof ProactiveEvents> = {
+/**
+ * 候选 kind ↔ proactive.events 开关键 的映射(过滤被关掉的类)。
+ *
+ * 只映射"受 ProactiveEvents 开关控制"的类型。
+ * 没有对应开关的类型(如 activity_capture,有自己独立的 activityCapture.enabled 开关)
+ * 不在此 map 里——filterCandidatesByEvents 对未出现的 kind 直接放行。
+ */
+const KIND_TO_EVENT_KEY: Partial<Record<ProactiveCandidate["kind"], keyof ProactiveEvents>> = {
   meeting_soon: "meetingSoon",
   deadline_near: "deadlineNear",
   task_stuck: "taskStuck",
   just_completed: "justCompleted",
+  // activity_capture 有独立开关(proactive.activityCapture.enabled),不受 events 四开关控制
 };
 
 /**
  * 纯函数:按事件开关过滤候选——某 kind 对应开关关闭则整类滤掉。
+ * 没有对应 events 开关的 kind(如 activity_capture)直接放行。
  * 不原地改入参(返回新数组)。
  *
  * @param candidates 触发层候选
@@ -275,7 +283,11 @@ export function filterCandidatesByEvents(
   candidates: ProactiveCandidate[],
   events: ProactiveEvents
 ): ProactiveCandidate[] {
-  return candidates.filter((c) => events[KIND_TO_EVENT_KEY[c.kind]]);
+  return candidates.filter((c) => {
+    const key = KIND_TO_EVENT_KEY[c.kind];
+    if (key === undefined) return true; // 无对应 events 开关 → 放行
+    return events[key];
+  });
 }
 
 /**

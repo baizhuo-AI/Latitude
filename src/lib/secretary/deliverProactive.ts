@@ -102,6 +102,11 @@ const KIND_HINT: Record<CandidateKind, Record<Lang, string>> = {
     zh: "用户刚完成一件事,给一句简短的正反馈,可顺势问下一步,别夸张。",
     en: "The user just finished something. Give brief positive feedback; optionally ask about next steps. Don't overdo it.",
   },
+  // 活动捕获:问一句"过去这阵在忙啥"——轻松自然,一句话即可(M3 会做更完整的对话标记)
+  activity_capture: {
+    zh: "到活动记录的时间了,自然地问一句用户最近在忙什么,语气轻松,一句话就够。",
+    en: "Time for an activity check-in. Casually ask what the user has been working on. Keep it light, one sentence.",
+  },
 };
 
 /**

@@ -2,15 +2,16 @@ import { create } from "zustand";
 import i18n from "./i18n";
 import type { PersonaSpec } from "./persona/personaSpec";
 import { DEFAULT_PERSONA_KEY } from "./persona/personaSpec";
-import type { ProactiveConfig, ProactiveEvents } from "./secretary/proactiveConfig";
+import type { ProactiveConfig, ProactiveEvents, ActivityCaptureConfig } from "./secretary/proactiveConfig";
 import { defaultProactiveConfig } from "./secretary/proactiveConfig";
 
 /**
- * setProactive 的入参:除 events 外都是 Partial<ProactiveConfig> 的普通字段,
- * events 允许只带变动的开关(Partial<ProactiveEvents>),由 store 深合并补齐。
+ * setProactive 的入参:除 events / activityCapture 外都是 Partial<ProactiveConfig> 的普通字段,
+ * events / activityCapture 允许只带变动的字段,由 store 深合并补齐。
  */
-export type ProactivePatch = Partial<Omit<ProactiveConfig, "events">> & {
+export type ProactivePatch = Partial<Omit<ProactiveConfig, "events" | "activityCapture">> & {
   events?: Partial<ProactiveEvents>;
+  activityCapture?: Partial<ActivityCaptureConfig>;
 };
 
 /**
@@ -250,12 +251,16 @@ function readStored(): SettingsState {
         bitableProjectFieldId: parsed.feishu?.bitableProjectFieldId
       },
       persona: parsed.persona ? { ...def.persona, ...parsed.persona } : def.persona,
-      // proactive:嵌套合并;events 再深一层合并(老存档缺字段时补默认,避免 undefined)
+      // proactive:嵌套合并;events / activityCapture 再深一层合并(老存档缺字段时补默认,避免 undefined)
       proactive: parsed.proactive
         ? {
             ...def.proactive,
             ...parsed.proactive,
-            events: { ...def.proactive.events, ...(parsed.proactive.events ?? {}) }
+            events: { ...def.proactive.events, ...(parsed.proactive.events ?? {}) },
+            activityCapture: {
+              ...def.proactive.activityCapture,
+              ...(parsed.proactive.activityCapture ?? {}),
+            },
           }
         : def.proactive,
       // Task 4.6a 隐私 + 成本:布尔字段浅合并,旧存档无此字段时回退 defaults
@@ -398,11 +403,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
   setProactive: (patch) => {
     const cur = get().proactive;
-    // events 单独深合并:UI 只改某一个事件开关时,不会把其他开关抹成 undefined
+    // events / activityCapture 单独深合并:UI 只改某一个字段时,不会把其他字段抹成 undefined
     const proactive: ProactiveConfig = {
       ...cur,
       ...patch,
-      events: { ...cur.events, ...(patch.events ?? {}) }
+      events: { ...cur.events, ...(patch.events ?? {}) },
+      activityCapture: { ...cur.activityCapture, ...(patch.activityCapture ?? {}) },
     };
     set({ proactive });
     persist({ ...get(), proactive });

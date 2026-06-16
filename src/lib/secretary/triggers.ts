@@ -69,6 +69,13 @@ const PRIORITY_DEADLINE = 70;
 const PRIORITY_STUCK = 40;
 /** 刚完成:低(正反馈,可有可无) */
 const PRIORITY_JUST_COMPLETED = 30;
+/**
+ * 活动捕获:中等(65)——高于"任务搁置"(40)和"刚完成"(30),低于"会议将至"(80+)和"ddl 临近"(70)。
+ * gentle 姿态地板 50:activity_capture 在 gentle 下默认可过线(65 > 50);
+ * 这避免了它在温和模式下被直接挡住(因为用户开启活动捕获是主动选择,应该能看到)。
+ * M2 gate 里"随克制"模式可在候选 type 层额外调制,本层只定优先级基准。
+ */
+export const ACTIVITY_CAPTURE_PRIORITY = 65;
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -77,7 +84,8 @@ export type CandidateKind =
   | "meeting_soon"
   | "deadline_near"
   | "task_stuck"
-  | "just_completed";
+  | "just_completed"
+  | "activity_capture";
 
 /**
  * 一条主动消息候选。
@@ -142,6 +150,10 @@ const RENDER: Record<CandidateKind, Record<Lang, (p: TitleParams) => string>> = 
   just_completed: {
     zh: (p) => `刚完成:${p.title}`,
     en: (p) => `Just completed: ${p.title}`,
+  },
+  activity_capture: {
+    zh: (_p) => "活动记录:过去这段时间在忙什么?",
+    en: (_p) => "Activity capture: what have you been working on?",
   },
 };
 
@@ -374,6 +386,91 @@ export function collectCandidates(
   // priority 降序稳定排序
   candidates.sort((a, b) => b.priority - a.priority);
   return candidates;
+}
+
+// ─── D. 活动捕获触发(全合 M1) ────────────────────────────────────────────────
+
+/**
+ * 活动捕获触发的运行时配置。
+ *
+ * 调用方(3.7 owner 窗口)在心跳时从真相源组装后传入,函数体内不读 store / Date.now()。
+ * 工作时段(workStart/workEnd)来自 reminder.workStart/workEnd(全局唯一真相源);
+ * pausedUntil 来自 gateState.pausedUntil(别烦我的共享字段)。
+ * 两者都不在子配置 ActivityCaptureConfig 里重复存,这里运行时注入。
+ */
+export interface ActivityCaptureRunConfig {
+  /** 活动捕获总开关(来自 proactive.activityCapture.enabled) */
+  enabled: boolean;
+  /** 提醒间隔(分钟)(来自 proactive.activityCapture.intervalMin) */
+  intervalMin: number;
+  /** 工作时段起始小时(来自 reminder.workStart,全局唯一真相源) */
+  workStart: number;
+  /** 工作时段结束小时,开区间 [workStart, workEnd)(来自 reminder.workEnd) */
+  workEnd: number;
+  /** 别烦我截止(ms);来自 gateState.pausedUntil。undefined = 未暂停 */
+  pausedUntil: number | undefined;
+}
+
+/**
+ * 纯判断:此刻是否应触发活动捕获。移植自 reminder.ts 的 shouldFireReminder 逻辑。
+ *
+ * 规则(与 shouldFireReminder 对齐):
+ *   1. 开关必须为 true
+ *   2. 当前小时在工作时段 [workStart, workEnd) 内(结束为开区间)
+ *   3. 未暂停(pausedUntil 未定义,或 nowMs > pausedUntil)
+ *   4. 距上次触发 >= intervalMin * 60_000(lastFiredMs=0 视为"从未触发",间隔已远超)
+ *
+ * ⚠️ 函数体内绝不读 Date.now();now / lastFiredMs 均由调用方注入。给定入参输出完全确定。
+ *
+ * @param cfg         活动捕获运行时配置(工作时段 + 间隔 + pausedUntil + 开关)
+ * @param now         当前时刻(注入)
+ * @param lastFiredMs 上次触发时间戳(ms);0 表示从未触发
+ */
+export function shouldRunActivityCapture(
+  cfg: ActivityCaptureRunConfig,
+  now: Date,
+  lastFiredMs: number
+): boolean {
+  if (!cfg.enabled) return false;
+  const hour = now.getHours();
+  if (hour < cfg.workStart || hour >= cfg.workEnd) return false; // 工作时段外
+  const nowMs = now.getTime();
+  if (cfg.pausedUntil !== undefined && nowMs <= cfg.pausedUntil) return false; // 暂停中
+  if (nowMs - lastFiredMs < cfg.intervalMin * 60 * 1000) return false; // 间隔未到
+  return true;
+}
+
+/**
+ * 活动捕获触发:依 shouldRunActivityCapture 决定是否产候选。
+ *
+ * 产出至多 1 条 `activity_capture` 候选。
+ * refId 固定为 "activity_capture"(无实体 id,仅作去重键;去重窗口由 gate 控制)。
+ *
+ * ⚠️ 本步(M1)只产候选;未接入 collectCandidates 管线(M2 才接)、未触发投递。
+ *    collectCandidates 调用方(3.7)在 M2 把 detectActivityCapture 的产出合进去。
+ *
+ * @param cfg         活动捕获运行时配置
+ * @param now         当前时刻(注入)
+ * @param lastFiredMs 上次触发时间戳(ms)
+ */
+export function detectActivityCapture(
+  cfg: ActivityCaptureRunConfig,
+  now: Date,
+  lastFiredMs: number
+): ProactiveCandidate[] {
+  if (!shouldRunActivityCapture(cfg, now, lastFiredMs)) return [];
+  return [
+    {
+      kind: "activity_capture",
+      priority: ACTIVITY_CAPTURE_PRIORITY,
+      refId: "activity_capture",
+      title: "", // 由调用方按 lang 渲染(或下游合成层据人设生成)
+      payload: {
+        intervalMin: cfg.intervalMin,
+        triggeredAt: now.getTime(),
+      },
+    },
+  ];
 }
 
 // ─── 内部辅助 ─────────────────────────────────────────────────────────────────

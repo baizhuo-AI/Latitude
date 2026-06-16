@@ -53,6 +53,12 @@ export const DEFAULT_MORNING_HOUR = 7;
 /** 默认半天打扰预算:与 gateProactive 的 HALF_DAY_BUDGET_DEFAULT 对齐 */
 export const DEFAULT_BUDGET_PER_HALF_DAY = 3;
 
+/**
+ * 活动捕获默认间隔(分钟):继承 reminder.intervalMin 的语义(默认 120min)。
+ * 调用方可在 ProactiveConfig.activityCapture.intervalMin 里覆盖。
+ */
+export const DEFAULT_ACTIVITY_CAPTURE_INTERVAL_MIN = 120;
+
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
 /** 懒人三档主动姿态 */
@@ -76,6 +82,36 @@ export interface ProactiveEvents {
   justCompleted: boolean;
 }
 
+/**
+ * 活动捕获策略档位(解"规律性 vs 克制"张力):
+ *   - "gentle":随秘书克制模式 — 忙时/别烦我时不催,与秘书其余触发共用节奏调制。
+ *   - "scheduled":按时硬提醒 — 跳过"忙时"调制,只认工作时段 + 别烦我(pausedUntil)。
+ *
+ * M1 只定义此字段 + 默认值。M2 在 gateProactive 里据此决定是否跳过忙时调制。
+ */
+export type ActivityCaptureMode = "gentle" | "scheduled";
+
+/**
+ * 活动捕获子配置(进 ProactiveConfig.activityCapture)。
+ *
+ * 语义继承:
+ *   - enabled:活动捕获总开关(默认关,用户主动开启);工作时段沿用 reminder.workStart/workEnd。
+ *   - intervalMin:提醒间隔(分钟),继承 reminder.intervalMin 的语义(默认 120)。
+ *   - activityCaptureMode:策略档 — 随克制(默认)/ 按时硬提醒(M2 在 gate 实施)。
+ *
+ * ⚠️ 工作时段(workStart/workEnd)和 pausedUntil 不在本子配置里 — 它们是全局唯一真相源
+ *    (reminder.workStart/workEnd + gateState.pausedUntil),不重复存以防漂移。
+ *    shouldRunActivityCapture 由调用方注入这两个值(ActivityCaptureRunConfig)。
+ */
+export interface ActivityCaptureConfig {
+  /** 活动捕获总开关(默认 false,用户主动开启) */
+  enabled: boolean;
+  /** 提醒间隔(分钟),继承 reminder 语义 */
+  intervalMin: number;
+  /** 策略档:随克制(gentle)/ 按时硬提醒(scheduled) */
+  activityCaptureMode: ActivityCaptureMode;
+}
+
 /** 主动姿态完整配置(进 SettingsState.proactive) */
 export interface ProactiveConfig {
   /** 懒人三档 */
@@ -90,6 +126,20 @@ export interface ProactiveConfig {
   channel: ProactiveChannel;
   /** 四类事件触发开关 */
   events: ProactiveEvents;
+  /**
+   * 活动捕获子配置(定时提醒×主动提醒全合 M1)。
+   * 包含:开关 / 间隔 / 策略档。工作时段 + pausedUntil 沿用全局唯一真相源,不在此重复。
+   */
+  activityCapture: ActivityCaptureConfig;
+}
+
+/** 活动捕获子配置默认值 */
+export function defaultActivityCaptureConfig(): ActivityCaptureConfig {
+  return {
+    enabled: false, // 默认关闭,用户主动开启,避免一上来就双重打扰
+    intervalMin: DEFAULT_ACTIVITY_CAPTURE_INTERVAL_MIN,
+    activityCaptureMode: "gentle",
+  };
 }
 
 /** 某档位映射出的基础行为(modeDefaults 的产物) */
@@ -123,7 +173,7 @@ export interface ProactiveStance {
 
 // ─── 默认配置(给 settings.defaults() 复用) ───────────────────────────────────
 
-/** 默认主动配置:温和(gentle)、晨报 07:00、渠道仅聊天、四类事件全开 */
+/** 默认主动配置:温和(gentle)、晨报 07:00、渠道仅聊天、四类事件全开、活动捕获默认关 */
 export function defaultProactiveConfig(): ProactiveConfig {
   return {
     mode: "gentle",
@@ -137,6 +187,7 @@ export function defaultProactiveConfig(): ProactiveConfig {
       taskStuck: true,
       justCompleted: true,
     },
+    activityCapture: defaultActivityCaptureConfig(),
   };
 }
 

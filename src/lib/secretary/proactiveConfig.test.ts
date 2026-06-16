@@ -87,6 +87,7 @@ describe("resolveProactiveStance — config → 生效姿态(纯)", () => {
       budgetPerHalfDay: 3,
       channel: "chat",
       events: { meetingSoon: true, deadlineNear: true, taskStuck: true, justCompleted: true },
+      activityCapture: { enabled: false, intervalMin: 120, activityCaptureMode: "gentle" },
       ...over,
     };
   }

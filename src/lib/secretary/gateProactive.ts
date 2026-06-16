@@ -63,6 +63,9 @@ export const COOLDOWN_BY_KIND_MS: Record<CandidateKind, number> = {
   deadline_near: 30 * 60 * 1000, // 30min
   task_stuck: 12 * 60 * 60 * 1000, // 12h
   just_completed: 2 * 60 * 60 * 1000, // 2h
+  // 活动捕获:冷却与 intervalMin 挂钩(调用方配置);这里给默认 120min(与 DEFAULT_ACTIVITY_CAPTURE_INTERVAL_MIN 一致)。
+  // M2 在 gate 策略里可据 activityCaptureMode 进一步调制。
+  activity_capture: 120 * 60 * 1000, // 120min 默认
 };
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
