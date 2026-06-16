@@ -18,7 +18,7 @@
  *     gate 去重窗口 + backfill 的 lastSentAt 三重护栏覆盖,无需异步查 DB。
  */
 
-import { createScheduler, type Scheduler } from "./scheduler";
+import { createScheduler, type Scheduler, type ScheduledJob } from "./scheduler";
 import { createDailyScanJob } from "./dailyScan";
 import { createMorningBriefingJobWithGate } from "./gate";
 import type { GateState } from "./gate";
@@ -26,10 +26,35 @@ import { backfillOnStartup, type BackfillResult } from "./startupBackfill";
 import {
   dbGetLastProactiveSentAt,
   dbListMessagesOnDate,
+  dbListTodos,
+  dbListCalendarEvents,
+  type CalendarEvent,
 } from "../db";
-import { useSettingsStore } from "../settings";
+import { useSettingsStore, readSettingsSnapshot } from "../settings";
 import type { Lang } from "../settings";
 import { WIN_MAIN } from "../windowLayout";
+import {
+  collectCandidates,
+  shouldHeartbeat,
+  type ProactiveCandidate,
+  type HeartbeatConfig,
+  type TriggerSnapshot,
+} from "./triggers";
+import { computeLoad, type LoadAssessment, type LoadSignals } from "./loadSignals";
+import {
+  gateProactive,
+  defaultGateOptions,
+  type GateEnv,
+  type GateOptions,
+} from "./gateProactive";
+import { loadGateState } from "./gateState";
+import { deliverProactive } from "./deliverProactive";
+import {
+  resolveProactiveStance,
+  type ProactiveEvents,
+  type ProactiveStance,
+} from "./proactiveConfig";
+import type { Todo } from "../store";
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
 
@@ -109,6 +134,7 @@ export function buildGateStateProvider(): () => GateState {
  * 给定调度器,注册秘书的所有定时任务:
  *   - daily-scan:日终(22:00+)生成当日纪要
  *   - morning-briefing:晨间(07:00+)投递简报(带 gate 防骚扰闸门)
+ *   - proactive-heartbeat:工作时段内按心跳间隔跑一轮主动巡检(Task 3.7,见下)
  *
  * 抽成独立函数便于单测断言"注册了哪些 job"。
  *
@@ -124,6 +150,8 @@ export function registerSecretaryJobs(scheduler: Scheduler, lang: Lang): void {
       gateStateProvider: buildGateStateProvider(),
     })
   );
+  // Task 3.7:主动引擎心跳——触发→负荷→闸门→合成→投递→打点,只在 owner 窗口跑
+  scheduler.registerJob(createProactiveHeartbeatJob());
 }
 
 // ─── 副作用:启动调度器(单 owner 窗口调用) ──────────────────────────────────
@@ -215,4 +243,260 @@ export async function runStartupBackfill(now: number = Date.now()): Promise<Back
     console.warn("[secretary/wiring] runStartupBackfill 异常,跳过补发:", err);
     return { didBackfill: false };
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Task 3.7:主动引擎接线 —— 触发→负荷→闸门→合成→投递→打点 的 owner 编排 + 心跳 job
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 全链路只在【单一 owner 窗口】跑(同 reminder / daily-scan;scheduler owner 锁兜底)。
+// 真相源:配置走 readSettingsSnapshot(直读 localStorage,跨窗口安全),数据直读 DB,
+//        GateState 由 loadGateState 从 proactive_log 派生(跨重启)。
+// 纯函数边界:filterCandidatesByEvents / applyLoadToGateOptions / buildHeartbeatConfig /
+//            computeInMeeting / buildLoadSignals / buildGateEnv 全是 f(输入[, now]) 纯函数
+//            (体内不读 Date.now()/Math.random()),时间从参数注入,便于确定性单测(铁律2)。
+
+/** 候选 kind ↔ proactive.events 开关键 的映射(过滤被关掉的类) */
+const KIND_TO_EVENT_KEY: Record<ProactiveCandidate["kind"], keyof ProactiveEvents> = {
+  meeting_soon: "meetingSoon",
+  deadline_near: "deadlineNear",
+  task_stuck: "taskStuck",
+  just_completed: "justCompleted",
+};
+
+/**
+ * 纯函数:按事件开关过滤候选——某 kind 对应开关关闭则整类滤掉。
+ * 不原地改入参(返回新数组)。
+ *
+ * @param candidates 触发层候选
+ * @param events     四类事件开关(来自 stance.events)
+ */
+export function filterCandidatesByEvents(
+  candidates: ProactiveCandidate[],
+  events: ProactiveEvents
+): ProactiveCandidate[] {
+  return candidates.filter((c) => events[KIND_TO_EVENT_KEY[c.kind]]);
+}
+
+/**
+ * 纯函数:把 3.3 负荷评估的 delta 套到完整闸门 opts 上。
+ *
+ *   - priorityFloor += priorityFloorDelta(夹紧到 >= 0:地板不为负)
+ *   - budgetPerHalfDay += budgetDelta(夹紧到 >= 1:至少留 1 条额度,否则等于变相 off)
+ *
+ * 其余字段透传。不原地改入参 base(返回新对象)。
+ *
+ * @param base       基准 opts(通常来自 stance:priorityFloor / budgetPerHalfDay 已按档位定好)
+ * @param assessment 负荷评估(computeLoad 产物)
+ */
+export function applyLoadToGateOptions(
+  base: GateOptions,
+  assessment: LoadAssessment
+): GateOptions {
+  return {
+    ...base,
+    priorityFloor: Math.max(0, base.priorityFloor + assessment.priorityFloorDelta),
+    budgetPerHalfDay: Math.max(1, base.budgetPerHalfDay + assessment.budgetDelta),
+  };
+}
+
+/** 心跳配置从真相源(reminder 工作时段 + proactive 心跳间隔)组装 */
+function buildHeartbeatConfig(stance: ProactiveStance): HeartbeatConfig {
+  const reminder = readSettingsSnapshot().reminder;
+  return {
+    workStart: reminder?.workStart ?? 9,
+    workEnd: reminder?.workEnd ?? 22,
+    intervalMs: stance.heartbeatMin * 60 * 1000,
+  };
+}
+
+/**
+ * 纯函数:now 时刻是否有定时事件正在进行(startTs <= now < endTs)。
+ * 用于完整闸门「会议中静默」。cancelled / 全天(无 startTs)/ 无 endTs 不计。
+ *
+ * @param events 日历事件(直读 DB 的快照)
+ * @param now    当前时刻(注入)
+ */
+export function computeInMeeting(events: CalendarEvent[], now: Date): boolean {
+  const nowMs = now.getTime();
+  for (const ev of events) {
+    if (ev.status === "cancelled") continue;
+    if (ev.startTs === undefined || ev.endTs === undefined) continue;
+    if (ev.startTs * 1000 <= nowMs && nowMs < ev.endTs * 1000) return true;
+  }
+  return false;
+}
+
+/** 本地日期键 YYYY-MM-DD(与 triggers / loadSignals 口径一致) */
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+/**
+ * 纯函数:从 DB 快照(全部 todo + 全部 event)派生 3.3 负荷信号。
+ *
+ *   - meetingCount:今天(scheduledDate===今天)非全天、未取消的事件数(日程密度)
+ *   - scheduledTodoCount / completedTodoCount:今天排程任务的总数 / 已完成数
+ *   - procrastinatedCount:标 isProcrastinated 的未完成任务数(推迟/积压代理信号)
+ *
+ * @param todos      全部 todo(dbListTodos)
+ * @param events     全部 event(dbListCalendarEvents)
+ * @param now        当前时刻(注入,算今天日期键)
+ * @param workStart  工作时段起(给 LoadSignals 透传;computeLoad 用 workEnd 判加班)
+ * @param workEnd    工作时段止
+ */
+export function buildLoadSignals(
+  todos: Todo[],
+  events: CalendarEvent[],
+  now: Date,
+  workStart: number,
+  workEnd: number
+): LoadSignals {
+  const todayKey = localDateKey(now);
+
+  let meetingCount = 0;
+  for (const ev of events) {
+    if (ev.status === "cancelled") continue;
+    if (ev.isAllDay) continue;
+    if (ev.scheduledDate === todayKey) meetingCount += 1;
+  }
+
+  let scheduledTodoCount = 0;
+  let completedTodoCount = 0;
+  let procrastinatedCount = 0;
+  for (const t of todos) {
+    if (t.scheduledDate === todayKey) {
+      scheduledTodoCount += 1;
+      if (t.status === "done") completedTodoCount += 1;
+    }
+    if (t.isProcrastinated && t.status !== "done" && t.status !== "dropped") {
+      procrastinatedCount += 1;
+    }
+  }
+
+  return {
+    workStart,
+    workEnd,
+    meetingCount,
+    scheduledTodoCount,
+    completedTodoCount,
+    procrastinatedCount,
+  };
+}
+
+/** 组装完整闸门 env(工作时段 + now 时刻是否在会 / 专注) */
+function buildGateEnv(
+  workStart: number,
+  workEnd: number,
+  inMeeting: boolean,
+  inFocus: boolean
+): GateEnv {
+  return { workStart, workEnd, inMeeting, inFocus };
+}
+
+/**
+ * 跑一轮主动巡检(owner 窗口在心跳到点时调)。串起整条主动链路:
+ *
+ *   1. 读姿态(readSettingsSnapshot().proactive → resolveProactiveStance):
+ *      stance.enabled=false(off 档)→ 整轮不跑,直接返回(省 DB)。
+ *   2. 直读 DB 真相源:全部 todo + 全部 calendar_events(打包成触发快照)。
+ *   3. 触发(3.1):collectCandidates 产候选(纯,now 注入)。
+ *   4. 事件开关过滤(filterCandidatesByEvents):用户关掉的类整类丢弃。
+ *   5. 负荷(3.3):buildLoadSignals + computeLoad → 评估档 + delta + tonePhrase。
+ *   6. 闸门(3.2,带持久化):loadGateState(从 proactive_log 派生,跨重启)+
+ *      applyLoadToGateOptions(套负荷 delta) + computeInMeeting/buildGateEnv → gateProactive。
+ *      gateProactive 至多放行一条(温和:绝不一次糊一脸)。
+ *   7. 投递(3.4):deliverProactive(放行候选, { channel: stance.channel, tonePhrase })。
+ *      合成→按渠道投递(聊天必走 + 通知/弹窗可选)→打点 proactive_log(打点在 deliver 内置)。
+ *
+ * 全程不抛:任何异常吞掉并静默跳过本轮(绝不影响 app / 调度循环)。pausedUntil(别烦我)、
+ * 工作时段、负荷、预算、冷却、去重全在 gateProactive 里把关——本函数只负责取数据 + 串链路。
+ *
+ * @param now 当前时刻(ms,注入;由 createProactiveHeartbeatJob.run 传 Date.now(),测试可注入)
+ */
+export async function runProactiveHeartbeat(now: number = Date.now()): Promise<void> {
+  try {
+    const nowDate = new Date(now);
+    const snapshot = readSettingsSnapshot();
+    const stance = resolveProactiveStance(snapshot.proactive);
+
+    // 1. 总闸:off → 不跑(连 DB 都不查)
+    if (!stance.enabled) return;
+
+    const lang: Lang = snapshot.lang ?? "zh";
+    const workStart = snapshot.reminder?.workStart ?? 9;
+    const workEnd = snapshot.reminder?.workEnd ?? 22;
+
+    // 2. 直读 DB 真相源(并行)
+    const [todos, events] = await Promise.all([dbListTodos(), dbListCalendarEvents()]);
+
+    // 3. 触发:产候选
+    const triggerSnapshot: TriggerSnapshot = { todos, events };
+    const candidates = collectCandidates(triggerSnapshot, nowDate, lang);
+
+    // 4. 事件开关过滤
+    const filtered = filterCandidatesByEvents(candidates, stance.events);
+    if (filtered.length === 0) return; // 无候选 → 省去后续 DB/闸门开销
+
+    // 5. 负荷评估
+    const signals = buildLoadSignals(todos, events, nowDate, workStart, workEnd);
+    const load = computeLoad(signals, nowDate, lang);
+
+    // 6. 闸门(带持久化 GateState + 负荷 delta + 环境事实)
+    const gateState = await loadGateState(snapshot.reminder?.pausedUntil, nowDate);
+    const baseOpts: GateOptions = {
+      ...defaultGateOptions(),
+      priorityFloor: stance.priorityFloor,
+      budgetPerHalfDay: stance.budgetPerHalfDay,
+    };
+    const opts = applyLoadToGateOptions(baseOpts, load);
+    const inMeeting = computeInMeeting(events, nowDate);
+    // inFocus 暂无真相源信号(专注态未接入),保守 false——懂状态安全版:信号稀疏不臆断
+    const env = buildGateEnv(workStart, workEnd, inMeeting, false);
+
+    const decision = gateProactive(filtered, gateState, env, nowDate, opts);
+    if (decision.sent.length === 0) return; // 闸门全拒 → 本轮不投
+
+    // 7. 投递(放行候选;deliver 内置合成 + 打点)
+    const chosen = decision.sent[0];
+    await deliverProactive(chosen, {
+      lang,
+      channel: stance.channel,
+      tonePhrase: load.tonePhrase,
+    });
+  } catch (err) {
+    console.warn("[secretary/wiring] runProactiveHeartbeat 异常,跳过本轮巡检:", err);
+  }
+}
+
+/**
+ * 创建主动引擎「心跳巡检」调度任务(Task 3.7)。
+ *
+ * shouldRun:用 triggers.shouldHeartbeat(纯,时间注入)——工作时段内 + 距上次 >= 心跳间隔。
+ *   心跳间隔从真相源 proactive.heartbeatMin 读(用户在设置里可调)。
+ *   工作时段从 reminder.workStart/workEnd 读(唯一真相源,不另造)。
+ *   ctx.lastRan(scheduler 持久化的上次运行时刻)即「上次心跳」。
+ *
+ * run:调 runProactiveHeartbeat(Date.now()) 跑完整链路(off 档由 run 内部短路)。
+ *
+ * ⚠️ off 档不在 shouldRun 拦——shouldRun 仍按心跳节拍返回 true,但 run 进 runProactiveHeartbeat
+ *    后第一步就因 stance.enabled=false 返回,不产生任何投递。这样用户从 off 切回 gentle/active
+ *    时无需重启调度器即可恢复(配置走真相源,run 时实时读)。
+ */
+export function createProactiveHeartbeatJob(): ScheduledJob {
+  return {
+    id: "proactive-heartbeat",
+
+    shouldRun(now: number, ctx: { lastRan: number | undefined }): boolean {
+      const stance = resolveProactiveStance(readSettingsSnapshot().proactive);
+      const cfg = buildHeartbeatConfig(stance);
+      return shouldHeartbeat(cfg, ctx.lastRan, new Date(now));
+    },
+
+    async run(): Promise<void> {
+      await runProactiveHeartbeat(Date.now());
+    },
+  };
 }
