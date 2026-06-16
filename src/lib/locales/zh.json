@@ -351,7 +351,13 @@
     "channelAll": "全部",
     "channelHint": "对话气泡始终会有(可回复);其它是额外叠加的提醒方式。",
     "times": "次",
-    "minutesUnit": "分钟"
+    "minutesUnit": "分钟",
+    "snooze": "别烦我",
+    "snoozeHint": "临时静音主动提醒一段时间,到点自动恢复(与上方「定时提醒」共用同一暂停开关)。",
+    "snooze1h": "静音 1 小时",
+    "snoozeToday": "静音到今晚",
+    "snoozedUntil": "已静音至 {{time}}",
+    "snoozeResume": "立即恢复"
   },
   "settings": {
     "title": "设置",

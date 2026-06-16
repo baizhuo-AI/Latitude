@@ -351,7 +351,13 @@
     "channelAll": "All",
     "channelHint": "A chat bubble always appears (so you can reply); others are extra alerts on top.",
     "times": "times",
-    "minutesUnit": "min"
+    "minutesUnit": "min",
+    "snooze": "Don't bug me",
+    "snoozeHint": "Temporarily mute proactive nudges; auto-resumes when the timer ends (shares the same pause switch as the Reminder section above).",
+    "snooze1h": "Mute for 1 hour",
+    "snoozeToday": "Mute until tonight",
+    "snoozedUntil": "Muted until {{time}}",
+    "snoozeResume": "Resume now"
   },
   "settings": {
     "title": "Settings",

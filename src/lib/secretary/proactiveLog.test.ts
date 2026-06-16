@@ -27,6 +27,7 @@ interface ProactiveLogEntry {
   sent_at: string;
   content_preview: string;
   replied_at: string | null;
+  dismissed_at: string | null;
 }
 
 // proactive_log 内存表
@@ -56,6 +57,7 @@ vi.mock("../db", async (importOriginal) => {
         sent_at: now,
         content_preview: entry.contentPreview,
         replied_at: null,
+        dismissed_at: null,
       });
     }),
     dbMarkProactiveReplied: vi.fn(async (convId: string, repliedAt: string) => {
@@ -64,6 +66,17 @@ vi.mock("../db", async (importOriginal) => {
           _proactiveLogs.set(key, { ...entry, replied_at: repliedAt });
         }
       }
+    }),
+    dbMarkProactiveDismissed: vi.fn(async (convId: string, dismissedAt: string) => {
+      for (const [key, entry] of _proactiveLogs) {
+        if (entry.conv_id === convId && entry.dismissed_at === null) {
+          _proactiveLogs.set(key, { ...entry, dismissed_at: dismissedAt });
+        }
+      }
+    }),
+    dbDeleteConversation: vi.fn(async (id: string) => {
+      _conversations.delete(id);
+      _messages.delete(id);
     }),
     dbGetProactiveStats: vi.fn(async (sinceDays: number) => {
       const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
@@ -98,7 +111,6 @@ vi.mock("../db", async (importOriginal) => {
     dbListTodosOnDate: vi.fn(async () => []),
     dbUpdateMessageContent: vi.fn(async () => undefined),
     dbTouchConversation: vi.fn(async () => undefined),
-    dbDeleteConversation: vi.fn(async () => undefined),
     dbUpdateConversationTitle: vi.fn(async () => undefined),
     dbInsertUsage: vi.fn(async () => undefined),
   };
@@ -174,6 +186,7 @@ import { useChatStore } from "../chatStore";
 import {
   dbLogProactiveSent as dbLogMock,
   dbMarkProactiveReplied as dbMarkMock,
+  dbMarkProactiveDismissed as dbDismissMock,
 } from "../db";
 import { composeMorningBriefing } from "./composeProactive";
 
@@ -466,5 +479,92 @@ describe("chatStore.sendMessage — 主动消息对话回复打点", () => {
     expect(threw).toBe(false);
     // loading 状态应该恢复
     expect(useChatStore.getState().loading).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 6. chatStore.deleteConv — 删未回复的主动消息对话 = 显式 dismiss(Task 3.5)
+// ════════════════════════════════════════════════════════════════════════════
+describe("chatStore.deleteConv — 删未回复主动消息对话 → 记 dismiss", () => {
+  function seedProactiveConv(convId: string) {
+    const now = new Date().toISOString();
+    _conversations.set(convId, { id: convId, title: "晨间简报", createdAt: now, updatedAt: now });
+    _messages.set(convId, [
+      { id: `m_${convId}`, convId, role: "assistant", content: "早上好！", createdAt: now },
+    ]);
+  }
+
+  it("删未回复的主动消息对话 → dbMarkProactiveDismissed 被调用(删库前)", async () => {
+    const convId = "conv_dismiss_1";
+    seedProactiveConv(convId);
+    await dbLogProactiveSent({ type: "morning_briefing", convId, contentPreview: "早上好！" });
+    vi.mocked(dbDismissMock).mockClear();
+
+    // 设进 store 内存态(deleteConv 操作 conversations 列表)
+    useChatStore.setState({
+      conversations: [{ id: convId, title: "晨间简报", createdAt: "", updatedAt: "" }],
+      messagesByConv: { [convId]: [] },
+    });
+
+    await useChatStore.getState().deleteConv(convId);
+
+    expect(vi.mocked(dbDismissMock)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dbDismissMock)).toHaveBeenCalledWith(convId, expect.any(String));
+  });
+
+  it("删普通对话(无 proactive_log)→ dbMarkProactiveDismissed 不被调用", async () => {
+    const convId = "conv_normal_del";
+    const now = new Date().toISOString();
+    _conversations.set(convId, { id: convId, title: "普通", createdAt: now, updatedAt: now });
+    _messages.set(convId, []);
+    vi.mocked(dbDismissMock).mockClear();
+
+    useChatStore.setState({
+      conversations: [{ id: convId, title: "普通", createdAt: "", updatedAt: "" }],
+      messagesByConv: { [convId]: [] },
+    });
+
+    await useChatStore.getState().deleteConv(convId);
+
+    expect(vi.mocked(dbDismissMock)).not.toHaveBeenCalled();
+  });
+
+  it("删【已回复】的主动消息对话 → 不记 dismiss(已互动,无需降频信号)", async () => {
+    const convId = "conv_replied_del";
+    seedProactiveConv(convId);
+    await dbLogProactiveSent({ type: "morning_briefing", convId, contentPreview: "早上好！" });
+    await dbMarkProactiveReplied(convId, new Date().toISOString()); // 已回复 → 不再 unreplied
+    vi.mocked(dbDismissMock).mockClear();
+
+    useChatStore.setState({
+      conversations: [{ id: convId, title: "晨间简报", createdAt: "", updatedAt: "" }],
+      messagesByConv: { [convId]: [] },
+    });
+
+    await useChatStore.getState().deleteConv(convId);
+
+    expect(vi.mocked(dbDismissMock)).not.toHaveBeenCalled();
+  });
+
+  it("dbMarkProactiveDismissed 失败时 deleteConv 仍完成(不被拖垮)", async () => {
+    const convId = "conv_dismiss_fail";
+    seedProactiveConv(convId);
+    await dbLogProactiveSent({ type: "morning_briefing", convId, contentPreview: "早上好！" });
+    vi.mocked(dbDismissMock).mockRejectedValueOnce(new Error("DB 写入失败"));
+
+    useChatStore.setState({
+      conversations: [{ id: convId, title: "晨间简报", createdAt: "", updatedAt: "" }],
+      messagesByConv: { [convId]: [] },
+    });
+
+    let threw = false;
+    try {
+      await useChatStore.getState().deleteConv(convId);
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+    // 对话仍被删除(降级不拦主流程)
+    expect(useChatStore.getState().conversations.find((c) => c.id === convId)).toBeUndefined();
   });
 });

@@ -17,12 +17,26 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useSettingsStore } from "../../lib/settings";
+import { emitSync } from "../../lib/syncBus";
 import type {
   ProactiveMode,
   ProactiveChannel,
   ProactiveEvents,
 } from "../../lib/secretary/proactiveConfig";
 import { cn } from "../../lib/utils";
+
+/** 今晚 23:59:59.999 的时间戳(ms),供「静音到今晚」用。 */
+function endOfTodayTs(): number {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+/** 把暂停截止时间戳格式化成 HH:MM(本地时区),用于「已静音至 …」展示。 */
+function formatPausedUntil(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 // ─── 公共样式 ────────────────────────────────────────────────────────────────
 const numInputCls = cn(
@@ -126,8 +140,23 @@ export function ProactiveSettings() {
   const setProactive = useSettingsStore((s) => s.setProactive);
   // 静默时段沿用 reminder 工作时段(只读展示,引导去 reminder 改)
   const reminder = useSettingsStore((s) => s.reminder);
+  // 「别烦我」复用 reminder.pausedUntil 这一唯一真相源(铁律:不另造字段)
+  const setReminder = useSettingsStore((s) => s.setReminder);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // 当前是否处于「别烦我」静音中(读 store 内存态即可,本面板在主窗,改也在主窗)
+  const paused = reminder.pausedUntil != null && Date.now() < reminder.pausedUntil;
+
+  /**
+   * 写「别烦我」截止时间到 reminder.pausedUntil(唯一真相源),并 emitSync 让对话窗 /
+   * 浮窗即时感知(主动逻辑闸门走 readSettingsSnapshot 直读 localStorage,setReminder 已落库;
+   * emitSync 只为触发其它窗口的 UI / 监听者重新读取)。
+   */
+  function snoozeUntil(ms: number | undefined) {
+    setReminder({ pausedUntil: ms });
+    emitSync("reminder");
+  }
 
   // 当前档说明
   const modeHint =
@@ -156,6 +185,41 @@ export function ProactiveSettings() {
             { value: "active", label: t("proactive.modeActive") },
           ]}
         />
+      </Row>
+
+      {/* 别烦我(临时静音,复用 reminder.pausedUntil 唯一真相源) */}
+      <Row label={t("proactive.snooze")} hint={t("proactive.snoozeHint")}>
+        {paused ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+              {t("proactive.snoozedUntil", { time: formatPausedUntil(reminder.pausedUntil!) })}
+            </span>
+            <button
+              type="button"
+              onClick={() => snoozeUntil(undefined)}
+              className="px-2.5 py-1 rounded-md text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+            >
+              {t("proactive.snoozeResume")}
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => snoozeUntil(Date.now() + 60 * 60 * 1000)}
+              className="px-2.5 py-1 rounded-md text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              {t("proactive.snooze1h")}
+            </button>
+            <button
+              type="button"
+              onClick={() => snoozeUntil(endOfTodayTs())}
+              className="px-2.5 py-1 rounded-md text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              {t("proactive.snoozeToday")}
+            </button>
+          </div>
+        )}
       </Row>
 
       {/* 高级设置展开 */}

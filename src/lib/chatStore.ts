@@ -10,6 +10,7 @@ import {
   dbUpdateMessageContent,
   dbHasUnrepliedProactive,
   dbMarkProactiveReplied,
+  dbMarkProactiveDismissed,
   type ChatMessageRow,
   type ConversationRow
 } from "./db";
@@ -191,6 +192,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   deleteConv: async (id) => {
+    // Task 3.5(R1 降频):删一个【从未回复过】的主动消息对话 = 用户显式 dismiss。
+    // 这是比"没回复(ignored)"更强的负反馈信号,记到 proactive_log.dismissed_at,
+    // 供日终 dismissDowngrade 评估。删库前先标记(删后 has-unreplied 查不到了)。
+    // 静默降级:打点失败不拦删除主流程(与回复打点一致)。
+    try {
+      const hasUnreplied = await dbHasUnrepliedProactive(id);
+      if (hasUnreplied) {
+        await dbMarkProactiveDismissed(id, new Date().toISOString());
+      }
+    } catch (err) {
+      console.warn("[chatStore] 标记主动消息 dismiss 失败,忽略:", err);
+    }
+
     await dbDeleteConversation(id);
     set((s) => {
       const next = { ...s.messagesByConv };

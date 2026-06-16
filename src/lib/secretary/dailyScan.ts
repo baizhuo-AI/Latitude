@@ -20,10 +20,17 @@ import {
   dbUpsertDailyDigest,
   dbListMessagesOnDate,
   dbListTodosOnDate,
+  dbListProactiveOutcomesSince,
 } from "../db";
 import type { ScheduledJob } from "./scheduler";
 import type { Lang } from "../settings";
+import { readSettingsSnapshot, useSettingsStore } from "../settings";
 import { runMemoryDedup } from "./memoryHygiene";
+import {
+  evaluateDismissDowngrade,
+  DOWNGRADE_LOOKBACK_MS,
+  type ProactiveOutcome,
+} from "./dismissDowngrade";
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
 
@@ -152,6 +159,53 @@ export async function runDailyScan(dateKey: string, lang: Lang = "zh"): Promise<
     // runMemoryDedup 内部已做静默降级,这里兜底防意外异常扩散
     console.warn("[DailyScan] runMemoryDedup failed (non-critical):", err);
   }
+
+  // 6. Task 3.5(R1 命门):dismiss 降频评估——连续无视主动消息 → 自动降一档主动姿态。
+  //    在单 owner 窗口(dailyScan 只在主窗注册)跑;失败静默降级,不影响纪要写入。
+  try {
+    await runDismissDowngrade(Date.now());
+  } catch (err) {
+    console.warn("[DailyScan] runDismissDowngrade failed (non-critical):", err);
+  }
+}
+
+// ─── dismiss 降频接线(Task 3.5) ─────────────────────────────────────────────
+
+/**
+ * 跑一次「dismiss 降频」评估:连续 N 次主动消息被无视 → 自动降一档(active→gentle→off)。
+ *
+ * 这是接线层(纯逻辑在 dismissDowngrade.ts):
+ *   1. 从真相源读当前主动姿态档(readSettingsSnapshot().proactive.mode,直读 localStorage)。
+ *   2. 已是 "off" → 无可再降,直接返回(连 DB 都不查,省事)。
+ *   3. 采集回看窗口内的主动消息结局(dbListProactiveOutcomesSince),按发送时间升序。
+ *   4. 调纯函数 evaluateDismissDowngrade(outcomes, mode, now) 判定。
+ *   5. 若建议降档 → setProactive({ mode }) 落库(主窗 store + localStorage 真相源)。
+ *      consumers(gateProactive / 巡检)走 readSettingsSnapshot 直读 localStorage,
+ *      故落库即生效,无需额外跨窗事件;本面板在主窗,store set 直接刷新 UI。
+ *
+ * ⚠️ 单 owner:本函数由 runDailyScan 调,而 dailyScan job 只在主窗注册(wiring.ts),
+ *    scheduler 内部另有 owner 锁兜底,不会多窗口重复降档。
+ *
+ * @param now 当前时刻(ms,注入,透传给纯函数——铁律2 时间注入,便于确定性测试)
+ */
+export async function runDismissDowngrade(now: number): Promise<void> {
+  const mode = readSettingsSnapshot().proactive.mode;
+
+  // 已关:无可再降,且不必查库
+  if (mode === "off") return;
+
+  const since = now - DOWNGRADE_LOOKBACK_MS;
+  const rows = await dbListProactiveOutcomesSince(since);
+  // DB 行(ProactiveOutcomeRow)结构即 ProactiveOutcome,直接喂纯函数
+  const outcomes: ProactiveOutcome[] = rows;
+
+  const decision = evaluateDismissDowngrade(outcomes, mode, now);
+  if (!decision.downgraded) return;
+
+  useSettingsStore.getState().setProactive({ mode: decision.suggestedMode });
+  console.info(
+    `[DailyScan] dismiss 降频:连续 ${decision.trailingIgnored} 次无视 → 主动姿态 ${mode} → ${decision.suggestedMode}`
+  );
 }
 
 // ─── 调度任务工厂 ──────────────────────────────────────────────────────────

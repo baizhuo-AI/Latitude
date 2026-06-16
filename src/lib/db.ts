@@ -1,5 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { Todo, Priority, TodoStatus } from "./store";
+import { outcomeKindFromRow } from "./secretary/dismissDowngrade";
 
 /**
  * SQLite 单例
@@ -215,7 +216,8 @@ CREATE TABLE IF NOT EXISTS proactive_log (
   sent_at         TEXT NOT NULL,
   content_preview TEXT NOT NULL DEFAULT '',
   replied_at      TEXT,
-  ref_id          TEXT NOT NULL DEFAULT ''
+  ref_id          TEXT NOT NULL DEFAULT '',
+  dismissed_at    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_proactive_log_conv ON proactive_log(conv_id);
@@ -311,6 +313,13 @@ async function migrate(db: Database): Promise<void> {
   if (proCols.size > 0 && !proCols.has("ref_id")) {
     await db.execute("ALTER TABLE proactive_log ADD COLUMN ref_id TEXT NOT NULL DEFAULT ''");
     console.info("[db] migrated: added proactive_log.ref_id column");
+  }
+  // V12: proactive_log 加 dismissed_at（dismiss 降频采集，Task 3.5）
+  // 「连续 N 次无视 → 自动降档」需要区分 dismissed(用户显式关掉)与 ignored(没回也没关)。
+  // 旧库该列缺失 → ALTER 补；旧日志 dismissed_at NULL，采集时回落为 ignored（语义正确）。
+  if (proCols.size > 0 && !proCols.has("dismissed_at")) {
+    await db.execute("ALTER TABLE proactive_log ADD COLUMN dismissed_at TEXT");
+    console.info("[db] migrated: added proactive_log.dismissed_at column");
   }
 }
 
@@ -2017,6 +2026,73 @@ export async function dbListProactiveLogSince(sinceMs: number): Promise<Proactiv
     const ms = Date.parse(r.sent_at);
     if (Number.isNaN(ms)) continue;
     out.push({ type: r.type, refId: r.ref_id ?? "", sentAtMs: ms });
+  }
+  return out;
+}
+
+/**
+ * 标记某对话的主动消息日志为"已 dismiss(用户显式关掉)"(Task 3.5)。
+ *
+ * 与 dbMarkProactiveReplied 平行:按 conv_id 匹配 dismissed_at IS NULL 的行,
+ * 只标记还未 dismiss 的条目(保留首次 dismiss 时间)。无匹配时静默。
+ *
+ * 用途:对话窗 / 浮窗里用户对某条主动消息点了"关闭/不感兴趣"时调用,
+ *      作为 dismissDowngrade 的强信号(优于"没回复"的弱信号 ignored)。
+ *
+ * 注:replied_at 与 dismissed_at 互不抵触。若用户先回复再关,outcomeKindFromRow
+ *    仍判 replied(回复优先);只关不回则判 dismissed。
+ *
+ * @param convId      对话 id
+ * @param dismissedAt dismiss 时间(ISO 时间戳)
+ */
+export async function dbMarkProactiveDismissed(
+  convId: string,
+  dismissedAt: string
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE proactive_log
+     SET dismissed_at = $1
+     WHERE conv_id = $2 AND dismissed_at IS NULL`,
+    [dismissedAt, convId]
+  );
+}
+
+/** dbListProactiveOutcomesSince 返回的单条结局(给 dismissDowngrade 评估用) */
+export interface ProactiveOutcomeRow {
+  /** 结局类型:replied(回复)/ dismissed(显式关)/ ignored(没回也没关) */
+  kind: "replied" | "dismissed" | "ignored";
+  /** 发送时间戳(ms) */
+  sentAtMs: number;
+}
+
+/**
+ * 取 sinceMs(含)之后发送的所有主动消息结局,按发送时间【升序】(旧→新),
+ * 供 dismissDowngrade.evaluateDismissDowngrade 算"连续 N 次无视 → 降档"(Task 3.5)。
+ *
+ * 每行据 replied_at / dismissed_at 两列映射成结局类型(outcomeKindFromRow 集中逻辑)。
+ * 时区口径同其他查询:sent_at 存 UTC ISO,把 sinceMs 转 ISO 做字符串比较;脏 sent_at 跳过。
+ *
+ * @param sinceMs 截止毫秒时间戳(早于此的不取)
+ */
+export async function dbListProactiveOutcomesSince(
+  sinceMs: number
+): Promise<ProactiveOutcomeRow[]> {
+  const db = await getDb();
+  const cutoff = new Date(sinceMs).toISOString();
+  const rows = await db.select<
+    Array<{ replied_at: string | null; dismissed_at: string | null; sent_at: string }>
+  >(
+    `SELECT replied_at, dismissed_at, sent_at FROM proactive_log
+     WHERE sent_at >= $1
+     ORDER BY sent_at ASC`,
+    [cutoff]
+  );
+  const out: ProactiveOutcomeRow[] = [];
+  for (const r of rows) {
+    const ms = Date.parse(r.sent_at);
+    if (Number.isNaN(ms)) continue;
+    out.push({ kind: outcomeKindFromRow(r.replied_at, r.dismissed_at), sentAtMs: ms });
   }
   return out;
 }
