@@ -1,7 +1,10 @@
 //! OpenAI Codex CLI adapter
 //!
-//! 调用：codex exec --json [resume <session-id>] "<prompt>"
+//! 调用：codex exec --json "<prompt>"
 //! 输出：JSONL，事件类型见下方 CodexEvent。
+//!
+//! **无状态（铁律①）**：不用 `codex exec resume <sid>`，不持有/回传 session。每轮的完整
+//! 上下文（人设 + 记忆 + 历史 + 当前消息）由 app 拼进 `req.prompt`。thread_id 不解析、不存。
 //!
 //! MCP：Codex 的 MCP 配置在 ~/.codex/config.toml 或通过 `codex mcp add`，
 //! 是用户全局/项目配置，Daybreak 不擅自改。MVP 第一版让用户自己一次性配好
@@ -18,11 +21,9 @@ use tokio::sync::mpsc::Sender;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 enum CodexEvent {
+    /// 线程开始（含 thread_id；无状态适配器不解析，仅占位以正确分流）
     #[serde(rename = "thread.started")]
-    ThreadStarted {
-        #[serde(default)]
-        thread_id: Option<String>,
-    },
+    ThreadStarted,
     #[serde(rename = "turn.started")]
     TurnStarted,
     #[serde(rename = "turn.completed")]
@@ -69,11 +70,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
     let mut cmd = Command::new(&bin);
     cmd.env("PATH", super::enhanced_path());
     cmd.arg("exec").arg("--json");
-
-    // Codex resume 是子命令而非 flag：codex exec resume <sid> "prompt"
-    if let Some(sid) = &req.session_id {
-        cmd.arg("resume").arg(sid);
-    }
     cmd.arg(&req.prompt);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -87,8 +83,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
         .ok_or_else(|| "codex stdout 不可用".to_string())?;
     let mut reader = BufReader::new(stdout).lines();
 
-    let mut last_session_id: Option<String> = None;
-
     while let Ok(Some(line)) = reader.next_line().await {
         if line.trim().is_empty() {
             continue;
@@ -98,10 +92,8 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
             Err(_) => continue,
         };
         match ev {
-            CodexEvent::ThreadStarted { thread_id } => {
-                if thread_id.is_some() {
-                    last_session_id = thread_id;
-                }
+            CodexEvent::ThreadStarted => {
+                // 无状态：不解析 thread_id（铁律①）
             }
             CodexEvent::ItemStarted { item } | CodexEvent::ItemCompleted { item } => {
                 match item {
@@ -148,10 +140,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
     }
 
     let _ = child.wait().await;
-    let _ = tx
-        .send(ChatEvent::Done {
-            session_id: last_session_id,
-        })
-        .await;
+    let _ = tx.send(ChatEvent::Done).await;
     Ok(())
 }

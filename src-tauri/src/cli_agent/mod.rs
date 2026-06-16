@@ -3,11 +3,16 @@
 //! 无需重复实现 agent loop。
 //!
 //! 模块结构：
-//! - claude.rs / codex.rs / kiro.rs：三家 adapter，各自 spawn 命令、解析输出、维护 session
+//! - claude.rs / codex.rs / kiro.rs：三家 adapter，各自 spawn 命令、解析输出，**无状态**
 //! - 本文件：统一的 ChatEvent / ChatRequest 类型 + 两个 Tauri command（send / detect）
 //!
 //! 每个 adapter 把自家的输出（claude 的 stream-json、codex 的 JSONL、kiro 的纯文本）
 //! 解析成统一的 ChatEvent，前端只认一种事件格式。Kiro 因无 JSON 输出，所有内容统一作为 Text。
+//!
+//! **无状态约束（Phase 4 铁律①）**：适配器不依赖 CLI 自身的 session / resume，每轮由 app
+//! 把〔人设 + 记忆 + 历史 + 当前消息〕完整拼进 `ChatRequest.prompt` 注入。app 是唯一的会话
+//! 状态持有者；CLI 当哑引擎，一轮算一轮。因此这里**不再有 session_id**：请求不带、Done
+//! 事件不回传。记忆只走 MCP 记忆工具落 app 自有库，不靠引擎会话续上下文。
 
 pub mod claude;
 pub mod codex;
@@ -29,8 +34,8 @@ pub enum ChatEvent {
     ToolCallStart { name: String },
     /// 工具调用结束
     ToolCallEnd { name: String, ok: bool },
-    /// 整轮结束。session_id 给前端存起来，下次发送时回传以接续上下文。
-    Done { session_id: Option<String> },
+    /// 整轮结束。无状态适配器不回传 session（铁律①）：上下文由 app 每轮注入，不靠引擎续接。
+    Done,
     /// 出错（CLI 没装、登录失效、解析失败等）
     Error { message: String },
 }
@@ -38,11 +43,9 @@ pub enum ChatEvent {
 /// 一次对话请求（前端 chatStore 发起，Tauri command 转给 adapter）
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatRequest {
-    /// 用户当前消息
+    /// 本轮要喂给 CLI 的**完整 prompt**：app 已把〔人设 + 记忆 + 历史 + 当前用户消息〕
+    /// 拼成单段文本注入（铁律①，无状态）。适配器原样转给 CLI，不再持有/接续任何会话。
     pub prompt: String,
-    /// 接续会话的 id；首次为空，Done 事件返回 id 后前端持有，下次回传
-    #[serde(default)]
-    pub session_id: Option<String>,
     /// 本机 MCP server 的 URL + token；adapter 启动时生成 mcp config 让 CLI 连进来，
     /// 这样 CLI 可调你已有的 16 个工具管待办（claude/codex/kiro 都支持 MCP）
     #[serde(default)]

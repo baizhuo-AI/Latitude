@@ -1,12 +1,13 @@
 //! AWS Kiro CLI adapter
 //!
-//! 调用：kiro-cli chat --no-interactive --trust-all-tools [--resume-id <id>] "<prompt>"
+//! 调用：kiro-cli chat --no-interactive --trust-all-tools "<prompt>"
 //! 输出：**纯文本流**（Kiro CLI headless 模式不提供结构化 JSON 输出）。
+//!
+//! **无状态（铁律①）**：不用 `--resume-id`，每轮的完整上下文（人设 + 记忆 + 历史 +
+//! 当前消息）由 app 拼进 `req.prompt`。Kiro 本就无可靠 session 输出，正好契合无状态约束。
 //!
 //! 限制（MVP 第一版的取舍）：
 //! - 输出是纯文本，**无法精细区分思考过程 / 工具调用 / 最终答复**，全部作为 Text 流给前端
-//! - **session_id 无可靠提取机制**（Kiro 不在 chat 输出里写 session id），所以这一版每次都是新会话；
-//!   接续靠用户在设置里手动填 session_id（后续优化：解析 --list-sessions 或 stderr）
 //! - **必须有 KIRO_API_KEY 环境变量**：MVP 依赖系统环境继承，后续可在 Daybreak 设置里
 //!   让用户填，spawn 时通过 .env() 注入
 //! - MCP 配置走 Kiro IDE / CLI 共享的全局配置，需用户自己一次性配好 daybreak MCP
@@ -25,10 +26,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
     cmd.arg("chat")
         .arg("--no-interactive")
         .arg("--trust-all-tools");
-
-    if let Some(sid) = &req.session_id {
-        cmd.arg("--resume-id").arg(sid);
-    }
     cmd.arg(&req.prompt);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -52,7 +49,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
     }
 
     let _ = child.wait().await;
-    // 见模块头部注释：Kiro 无可靠 session_id 输出，这一版返回 None（每次新会话）
-    let _ = tx.send(ChatEvent::Done { session_id: None }).await;
+    let _ = tx.send(ChatEvent::Done).await;
     Ok(())
 }

@@ -15,6 +15,7 @@ import {
   type ConversationRow
 } from "./db";
 import { chatAgentCall, buildChatSystemPrompt } from "./llm";
+import { buildCliPrompt } from "./cliPrompt";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "./settings";
@@ -50,9 +51,6 @@ interface ChatStore {
   stop: () => void;
 }
 
-/** 内置对话用 CLI 后端时，各会话的 CLI session id（in-memory，重启丢失；MVP 简化）*/
-const cliSessionByConv = new Map<string, string>();
-
 interface CliHandlers {
   onText: (t: string) => void;
   onThinking: (t: string) => void;
@@ -65,19 +63,22 @@ type CliKind = "claude" | "codex" | "kiro";
  * 走本地 CLI（Claude Code / Codex / Kiro）发一轮对话。
  * spawn 子进程在 Tauri 后端，事件流通过 Tauri event "cli-agent-event" 实时回到前端。
  * 工具能力靠 CLI 自己连本机 MCP server（端口 42800），复用已有的 16 个工具。
+ *
+ * 无状态约束（Phase 4 铁律①）：CLI 当哑引擎，不用 --resume / resume / --resume-id，
+ * 不持有也不回传 session。每轮的完整上下文〔人设 + 记忆 + 历史 + 当前消息〕由调用方
+ * （见下面 send 里的 buildCliPrompt）拼成单段 prompt 注入。app 是唯一的会话状态持有者，
+ * 续接靠 app 注入历史，不靠引擎自身会话；记忆只走 MCP 记忆工具落 app 自有库。
  */
 async function sendViaCli(
   kind: CliKind,
   prompt: string,
-  sessionId: string | undefined,
   handlers: CliHandlers
-): Promise<{ content: string; sessionId: string | undefined }> {
+): Promise<{ content: string }> {
   // 拿 MCP 接入信息，让 CLI 启动时连进来管待办（拿不到就退化为纯聊天）
   type ConnInfo = { url: string; token: string };
   const conn = await invoke<ConnInfo>("mcp_connection_info").catch(() => null);
 
   let content = "";
-  let lastSessionId: string | undefined = sessionId;
   let resolveDone!: () => void;
   let rejectDone!: (e: Error) => void;
   const donePromise = new Promise<void>((res, rej) => {
@@ -86,12 +87,13 @@ async function sendViaCli(
   });
 
   // 事件载荷类型（与 Rust 端 ChatEvent 对齐：tag=type，snake_case）
+  // 无状态后 done 不再带 session_id（铁律①）。
   type Ev =
     | { type: "thinking"; text: string }
     | { type: "text"; text: string }
     | { type: "tool_call_start"; name: string }
     | { type: "tool_call_end"; name: string; ok: boolean }
-    | { type: "done"; session_id: string | null }
+    | { type: "done" }
     | { type: "error"; message: string };
 
   const unlisten = await listen<Ev>("cli-agent-event", (e) => {
@@ -111,7 +113,6 @@ async function sendViaCli(
         // MVP 暂不单独显示结束（前端 UI 后续可加工具卡片）
         break;
       case "done":
-        lastSessionId = ev.session_id ?? lastSessionId;
         resolveDone();
         break;
       case "error":
@@ -125,7 +126,6 @@ async function sendViaCli(
       kind,
       req: {
         prompt,
-        sessionId,
         mcpUrl: conn?.url,
         mcpToken: conn?.token,
       },
@@ -135,7 +135,7 @@ async function sendViaCli(
     unlisten();
   }
 
-  return { content, sessionId: lastSessionId };
+  return { content };
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -308,16 +308,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         });
         final = result.content;
       } else {
-        // 路线 B：本地 CLI（claude/codex/kiro），走用户订阅；工具能力靠 CLI 连本机 MCP server
+        // 路线 B：本地 CLI（claude/codex/kiro），走用户订阅；工具能力靠 CLI 连本机 MCP server。
+        // 无状态（铁律①）：CLI 当哑引擎，不用 --resume。每轮都把〔人设 + 记忆 + 历史 +
+        // 当前消息〕拼成完整 prompt 注入，续接靠 app 注入历史而非引擎自身会话。这样 CLI
+        // 引擎拿到的上下文与 API 引擎（chatAgentCall 的 history）等价。
         const kind: CliKind =
           backend === "claude-cli" ? "claude" : backend === "codex-cli" ? "codex" : "kiro";
-        const sid = cliSessionByConv.get(convId!);
-        // 首次（无 session）把 system prompt 拼到 prompt 前，让 CLI 知道当前 todos / Telos 上下文；
-        // 后续 resume 时 CLI 已持有上下文，只发当前消息
-        const fullPrompt = sid
-          ? trimmed
-          : `${await buildChatSystemPrompt()}\n\n---\n\n${trimmed}`;
-        const result = await sendViaCli(kind, fullPrompt, sid, {
+        const fullPrompt = buildCliPrompt(
+          await buildChatSystemPrompt(),
+          history,
+          trimmed
+        );
+        const result = await sendViaCli(kind, fullPrompt, {
           onText: (t) => set((s) => ({ streaming: s.streaming + t })),
           onThinking: (t) => set((s) => ({ streamingReasoning: s.streamingReasoning + t })),
           onToolCall: (name) =>
@@ -326,7 +328,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             })),
         });
         final = result.content;
-        if (result.sessionId) cliSessionByConv.set(convId!, result.sessionId);
       }
     } catch (err) {
       console.error("[chatStore] send failed:", err);
