@@ -160,12 +160,33 @@ function countSentInCurrentHalfDay(recentlySent: SentRecord[], nowMs: number): n
 }
 
 /**
+ * 判断候选是否为 activity_capture 的"按时硬提醒"(scheduled)模式。
+ *
+ * 从候选 payload.activityCaptureMode 读取(由 triggers.detectActivityCapture 在 M2 写入)。
+ * 只有 activity_capture 类型且 payload 里记录了 "scheduled" 才返回 true;
+ * 其他类型、gentle/undefined 均返回 false。
+ *
+ * 内部纯辅助,不导出。
+ */
+function isScheduledActivityCapture(c: ProactiveCandidate): boolean {
+  return (
+    c.kind === "activity_capture" &&
+    (c.payload?.activityCaptureMode as string | undefined) === "scheduled"
+  );
+}
+
+/**
  * 单条候选的逐项检查(不含「一次至多一条」「预算」这类跨候选 / 跨调用的约束)。
  * 返回 undefined = 通过本条所有【针对单条】的检查;否则返回拒绝原因。
  *
  * 注意:静默(工作时段 / 会议 / 专注)与 pausedUntil 是【全局】的,
  *       但写在这里逐条返回原因便于 rejected 列表记录每条的拒因,语义不变
  *       (静默时所有候选都会拿到同一类原因)。
+ *
+ * M2 策略档扩展:
+ *   - "gentle"(默认):activity_capture 与其他候选行为一致,受会议/专注静默挡。
+ *   - "scheduled"(硬提醒):跳过「会议进行中」和「专注中」两项检查;
+ *     但【仍遵守】工作时段(quiet hours)、pausedUntil(别烦我)、预算、冷却、去重、全局间隔。
  */
 function checkSingle(
   c: ProactiveCandidate,
@@ -177,14 +198,18 @@ function checkSingle(
   const nowMs = now.getTime();
   const hour = now.getHours();
 
-  // ── 静默:工作时段外 ──
+  // ── 静默:工作时段外(硬约束,scheduled 也不跳过) ──
   if (hour < env.workStart || hour >= env.workEnd) {
     return `quiet hours: hour=${hour}, work=[${env.workStart},${env.workEnd})`;
   }
-  // ── 静默:会议进行中 ──
-  if (env.inMeeting) return "silent: meeting in progress (会议中)";
-  // ── 静默:专注中 ──
-  if (env.inFocus) return "silent: focus mode (专注中)";
+  // ── 静默:会议进行中(scheduled 模式跳过此项) ──
+  if (env.inMeeting && !isScheduledActivityCapture(c)) {
+    return "silent: meeting in progress (会议中)";
+  }
+  // ── 静默:专注中(scheduled 模式跳过此项) ──
+  if (env.inFocus && !isScheduledActivityCapture(c)) {
+    return "silent: focus mode (专注中)";
+  }
 
   // ── pausedUntil 未过(别烦我) ──
   if (gateState.pausedUntil !== undefined && nowMs <= gateState.pausedUntil) {

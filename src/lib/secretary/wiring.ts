@@ -39,6 +39,7 @@ import {
   type ProactiveCandidate,
   type HeartbeatConfig,
   type TriggerSnapshot,
+  type ActivityCaptureRunConfig,
 } from "./triggers";
 import { computeLoad, type LoadAssessment, type LoadSignals } from "./loadSignals";
 import {
@@ -446,7 +447,23 @@ export async function runProactiveHeartbeat(now: number = Date.now()): Promise<v
 
     // 3. 触发:产候选
     const triggerSnapshot: TriggerSnapshot = { todos, events };
-    const candidates = collectCandidates(triggerSnapshot, nowDate, lang);
+    // M2:activity_capture 接入 collectCandidates;activityCaptureCfg 从真相源组装后传入
+    const activityCaptureCfg: ActivityCaptureRunConfig | undefined =
+      snapshot.proactive?.activityCapture?.enabled
+        ? {
+            enabled: true,
+            intervalMin:
+              snapshot.proactive.activityCapture.intervalMin ?? 120,
+            workStart,
+            workEnd,
+            pausedUntil: snapshot.reminder?.pausedUntil,
+            activityCaptureMode:
+              snapshot.proactive.activityCapture.activityCaptureMode ?? "gentle",
+          }
+        : undefined;
+    // lastActivityFiredMs:M3 投递层完成前暂无持久化真相源,保守传 0(间隔未到则不产候选)
+    // M3 接入后改为从 proactive_log 派生(同 loadGateState 读法)
+    const candidates = collectCandidates(triggerSnapshot, nowDate, lang, activityCaptureCfg, 0);
 
     // 4. 事件开关过滤
     const filtered = filterCandidatesByEvents(candidates, stance.events);
@@ -463,6 +480,14 @@ export async function runProactiveHeartbeat(now: number = Date.now()): Promise<v
       priorityFloor: stance.priorityFloor,
       budgetPerHalfDay: stance.budgetPerHalfDay,
     };
+    // M2:activity_capture 冷却跟随用户配置的 intervalMin(不硬编码 120min 默认)
+    if (snapshot.proactive?.activityCapture?.intervalMin !== undefined) {
+      baseOpts.cooldownByKind = {
+        ...baseOpts.cooldownByKind,
+        activity_capture:
+          snapshot.proactive.activityCapture.intervalMin * 60 * 1000,
+      };
+    }
     const opts = applyLoadToGateOptions(baseOpts, load);
     const inMeeting = computeInMeeting(events, nowDate);
     // inFocus 暂无真相源信号(专注态未接入),保守 false——懂状态安全版:信号稀疏不臆断

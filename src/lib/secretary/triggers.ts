@@ -38,6 +38,7 @@
 import type { Todo } from "../store";
 import type { CalendarEvent } from "../db";
 import type { Lang } from "../settings";
+import type { ActivityCaptureMode } from "./proactiveConfig";
 import { parseScheduledTime } from "../calendar";
 
 // ─── 导出常量:窗口/阈值(测试引用这些做边界断言) ──────────────────────────
@@ -359,14 +360,18 @@ export function detectJustCompleted(
  *
  * ⚠️ 仍是纯函数:不读 Date.now() / 不读 DB / 不读 store。now 注入。
  *
- * @param snapshot 数据快照(由调用方从真相源取好)
- * @param now      当前时刻(注入)
- * @param lang     渲染 title 用的语言,默认 "zh"
+ * @param snapshot            数据快照(由调用方从真相源取好)
+ * @param now                 当前时刻(注入)
+ * @param lang                渲染 title 用的语言,默认 "zh"
+ * @param activityCaptureCfg  活动捕获运行时配置(M2 接入;不传则不产 activity_capture 候选)
+ * @param lastActivityFiredMs 上次活动捕获触发时间戳(ms);不传或 undefined 时视为 0(从未触发)
  */
 export function collectCandidates(
   snapshot: TriggerSnapshot,
   now: Date,
-  lang: Lang = "zh"
+  lang: Lang = "zh",
+  activityCaptureCfg?: ActivityCaptureRunConfig,
+  lastActivityFiredMs?: number
 ): ProactiveCandidate[] {
   const candidates: ProactiveCandidate[] = [
     ...detectMeetingSoon(snapshot.events, now),
@@ -374,6 +379,12 @@ export function collectCandidates(
     ...detectStuckTask(snapshot.todos, now),
     ...detectJustCompleted(snapshot.todos, now),
   ];
+
+  // M2:把 activity_capture 触发接入聚合管线(只在调用方传入 cfg 时才产候选)
+  if (activityCaptureCfg !== undefined) {
+    const lastFired = lastActivityFiredMs ?? 0;
+    candidates.push(...detectActivityCapture(activityCaptureCfg, now, lastFired));
+  }
 
   // 渲染 title(确定性事实性文案;最终带人设的措辞在下游合成层)
   for (const c of candidates) {
@@ -409,6 +420,12 @@ export interface ActivityCaptureRunConfig {
   workEnd: number;
   /** 别烦我截止(ms);来自 gateState.pausedUntil。undefined = 未暂停 */
   pausedUntil: number | undefined;
+  /**
+   * 策略档(M2 新增):随秘书克制(gentle,默认)/ 按时硬提醒(scheduled)。
+   * gate 据此决定是否跳过忙时/负荷调制。
+   * 来自 proactive.activityCapture.activityCaptureMode。默认 "gentle"。
+   */
+  activityCaptureMode?: ActivityCaptureMode;
 }
 
 /**
@@ -446,8 +463,7 @@ export function shouldRunActivityCapture(
  * 产出至多 1 条 `activity_capture` 候选。
  * refId 固定为 "activity_capture"(无实体 id,仅作去重键;去重窗口由 gate 控制)。
  *
- * ⚠️ 本步(M1)只产候选;未接入 collectCandidates 管线(M2 才接)、未触发投递。
- *    collectCandidates 调用方(3.7)在 M2 把 detectActivityCapture 的产出合进去。
+ * M2 新增:把 activityCaptureMode 放进 payload,供 gateProactive 据此决定是否跳过忙时调制。
  *
  * @param cfg         活动捕获运行时配置
  * @param now         当前时刻(注入)
@@ -468,6 +484,8 @@ export function detectActivityCapture(
       payload: {
         intervalMin: cfg.intervalMin,
         triggeredAt: now.getTime(),
+        // M2:策略档传给 gate,让其决定是否跳过忙时/负荷调制
+        activityCaptureMode: cfg.activityCaptureMode ?? "gentle",
       },
     },
   ];
