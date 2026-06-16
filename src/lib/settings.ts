@@ -2,6 +2,16 @@ import { create } from "zustand";
 import i18n from "./i18n";
 import type { PersonaSpec } from "./persona/personaSpec";
 import { DEFAULT_PERSONA_KEY } from "./persona/personaSpec";
+import type { ProactiveConfig, ProactiveEvents } from "./secretary/proactiveConfig";
+import { defaultProactiveConfig } from "./secretary/proactiveConfig";
+
+/**
+ * setProactive 的入参:除 events 外都是 Partial<ProactiveConfig> 的普通字段,
+ * events 允许只带变动的开关(Partial<ProactiveEvents>),由 store 深合并补齐。
+ */
+export type ProactivePatch = Partial<Omit<ProactiveConfig, "events">> & {
+  events?: Partial<ProactiveEvents>;
+};
 
 /**
  * 应用偏好设置
@@ -111,10 +121,17 @@ export interface SettingsState {
    * 默认=资深幕僚预设;用户可在 Settings 里切换/自定义(Task 1.2 做 UI)
    */
   persona: PersonaSpec;
+  /**
+   * AI 秘书主动姿态配置(Task 3.4)
+   * 懒人三档(关/温和/积极)+ 高玩字段(心跳/晨报/打扰预算/事件开关/渠道)。
+   * 默认温和(gentle);静默时段沿用 reminder.workStart/workEnd(不在此重复存)。
+   */
+  proactive: ProactiveConfig;
 }
 
-// re-export PersonaSpec 让消费方不用另外 import persona 模块
+// re-export PersonaSpec / ProactiveConfig 让消费方不用另外 import 子模块
 export type { PersonaSpec };
+export type { ProactiveConfig };
 
 const STORAGE_KEY = "daybreak.settings";
 
@@ -153,8 +170,18 @@ function defaults(): SettingsState {
     },
     shortcuts: { toggleChatbar: "Alt+Space", toggleTodo: "", showWorkbench: "" },
     feishu: { activeRegion: null, bitableEnabled: false },
-    persona: { presetKey: DEFAULT_PERSONA_KEY }
+    persona: { presetKey: DEFAULT_PERSONA_KEY },
+    // 主动姿态默认温和(gentle)——见 defaultProactiveConfig
+    proactive: defaultProactiveConfig()
   };
+}
+
+/**
+ * 仅供测试:暴露 defaults() 的当前值快照,让 secretary 配置测试断言「默认温和」
+ * 等不依赖 localStorage 的纯默认。生产代码请用 readSettingsSnapshot / useSettingsStore。
+ */
+export function defaultSettingsForTest(): SettingsState {
+  return defaults();
 }
 
 function detectInitialLang(): Lang {
@@ -195,7 +222,15 @@ function readStored(): SettingsState {
         bitableEnabled: parsed.feishu?.bitableEnabled ?? def.feishu.bitableEnabled,
         bitableProjectFieldId: parsed.feishu?.bitableProjectFieldId
       },
-      persona: parsed.persona ? { ...def.persona, ...parsed.persona } : def.persona
+      persona: parsed.persona ? { ...def.persona, ...parsed.persona } : def.persona,
+      // proactive:嵌套合并;events 再深一层合并(老存档缺字段时补默认,避免 undefined)
+      proactive: parsed.proactive
+        ? {
+            ...def.proactive,
+            ...parsed.proactive,
+            events: { ...def.proactive.events, ...(parsed.proactive.events ?? {}) }
+          }
+        : def.proactive
     };
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
@@ -274,6 +309,8 @@ interface SettingsStore extends SettingsState {
   setBitableConfig: (patch: Partial<FeishuPrefs>) => void;
   /** Task 1.1: 更新人设配置 */
   setPersona: (patch: Partial<PersonaSpec>) => void;
+  /** Task 3.4: 更新主动姿态配置(events 单独深合并,patch.events 只需带变动的开关) */
+  setProactive: (patch: ProactivePatch) => void;
   reset: () => void;
 }
 
@@ -325,6 +362,17 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const persona = { ...get().persona, ...patch };
     set({ persona });
     persist({ ...get(), persona });
+  },
+  setProactive: (patch) => {
+    const cur = get().proactive;
+    // events 单独深合并:UI 只改某一个事件开关时,不会把其他开关抹成 undefined
+    const proactive: ProactiveConfig = {
+      ...cur,
+      ...patch,
+      events: { ...cur.events, ...(patch.events ?? {}) }
+    };
+    set({ proactive });
+    persist({ ...get(), proactive });
   },
   reset: () => {
     const d = defaults();

@@ -18,7 +18,8 @@ import {
   Command,
   ListFilter,
   Sheet,
-  UserCircle2
+  UserCircle2,
+  BellRing
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -42,6 +43,7 @@ import { CustomFieldsManager } from "../components/CustomFieldsManager";
 import { describeBitable } from "../lib/feishuBitable";
 import { PersonaPanel } from "../components/persona/PersonaPanel";
 import { AboutYouPanel } from "../components/memory/AboutYouPanel";
+import { ProactiveSettings } from "../components/secretary/ProactiveSettings";
 
 /**
  * Settings 页 — App 偏好的全部入口
@@ -161,6 +163,17 @@ export function SettingsPage() {
             description={t("persona.sectionDesc")}
           >
             <PersonaPanel />
+          </Section>
+          </div>
+
+          {/* AI 秘书主动提醒(Task 3.4) */}
+          <div id="proactive-panel">
+          <Section
+            icon={<BellRing className="w-4 h-4" />}
+            title={t("proactive.sectionTitle")}
+            description={t("proactive.sectionDesc")}
+          >
+            <ProactiveSettings />
           </Section>
           </div>
 
