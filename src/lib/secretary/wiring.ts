@@ -30,6 +30,24 @@ import {
   dbListCalendarEvents,
   type CalendarEvent,
 } from "../db";
+
+// M3:activity_capture 最近一次投递时间戳前缀(供 lastActivityFiredMs 派生)
+const ACTIVITY_CAPTURE_TYPE_PREFIX = "activity_capture";
+
+/**
+ * 查询 activity_capture 最近一次投递时间戳(ms)。
+ * 从 proactive_log 派生,无记录时返回 0。
+ * M3:替换 runProactiveHeartbeat 里硬编码传 0 的 lastActivityFiredMs。
+ */
+export async function getLastActivityCaptureMs(): Promise<number> {
+  try {
+    const sentAt = await dbGetLastProactiveSentAt(ACTIVITY_CAPTURE_TYPE_PREFIX);
+    return sentAt ?? 0;
+  } catch (err) {
+    console.warn("[secretary/wiring] getLastActivityCaptureMs 失败,回落 0:", err);
+    return 0;
+  }
+}
 import { useSettingsStore, readSettingsSnapshot } from "../settings";
 import type { Lang } from "../settings";
 import { WIN_MAIN } from "../windowLayout";
@@ -461,9 +479,9 @@ export async function runProactiveHeartbeat(now: number = Date.now()): Promise<v
               snapshot.proactive.activityCapture.activityCaptureMode ?? "gentle",
           }
         : undefined;
-    // lastActivityFiredMs:M3 投递层完成前暂无持久化真相源,保守传 0(间隔未到则不产候选)
-    // M3 接入后改为从 proactive_log 派生(同 loadGateState 读法)
-    const candidates = collectCandidates(triggerSnapshot, nowDate, lang, activityCaptureCfg, 0);
+    // M3:lastActivityFiredMs 从 proactive_log 派生(不再保守传 0)
+    const lastActivityFiredMs = await getLastActivityCaptureMs();
+    const candidates = collectCandidates(triggerSnapshot, nowDate, lang, activityCaptureCfg, lastActivityFiredMs);
 
     // 4. 事件开关过滤
     const filtered = filterCandidatesByEvents(candidates, stance.events);

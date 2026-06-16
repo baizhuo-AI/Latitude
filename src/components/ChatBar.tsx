@@ -12,11 +12,12 @@ import { onSync } from "../lib/syncBus";
  * 识别规则(按 id 前缀):
  *   - "brief" → composeMorningBriefing 投递的晨间简报对话
  *   - "pa"    → deliverProactive 投递的事件触发主动消息对话
+ *   - "ac"    → activity_capture 投递的活动捕获对话(M3 新增)
  *
  * 不查 DB:前缀是唯一确定性标记,避免异步 DB 查询带来的竞态。
  */
 function isProactiveConvId(id: string): boolean {
-  return id.startsWith("brief") || id.startsWith("pa");
+  return id.startsWith("brief") || id.startsWith("pa") || id.startsWith("ac");
 }
 
 /**

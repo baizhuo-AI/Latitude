@@ -140,7 +140,9 @@
     "save": "保存",
     "deleteField": "删除字段",
     "deleteFieldConfirm": "删除「{{name}}」将清除所有待办上该字段的值，确认删除？",
-    "empty": "暂无自定义字段，点击上方按钮新建"
+    "empty": "暂无自定义字段，点击上方按钮新建",
+    "createOption": "新建「{{label}}」",
+    "valuePlaceholder": "选择或输入新建…"
   },
   "newTask": {
     "title": "新建待办",
@@ -243,7 +245,9 @@
     "deleteConfirm": "删除这条记录?",
     "deleted": "已删除",
     "loadMore": "加载更多",
-    "noMore": "没有更多了"
+    "noMore": "没有更多了",
+    "quickLogPlaceholder": "记一笔刚才做了什么(回车提交)",
+    "quickLogBtn": "记录"
   },
   "telos": {
     "title": "Telos · 长期目标",

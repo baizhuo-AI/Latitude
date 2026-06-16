@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Clock, Trash2 } from "lucide-react";
+import { Clock, Trash2, PenLine } from "lucide-react";
 import { useActivityStore, type ActivityRecord } from "../lib/activityStore";
 import { cn } from "../lib/utils";
 import { toast } from "../lib/toast";
@@ -74,13 +74,34 @@ export function ActivitiesPage() {
   const activities = useActivityStore((s) => s.activities);
   const loaded = useActivityStore((s) => s.loaded);
   const removeActivity = useActivityStore((s) => s.removeActivity);
+  const addActivity = useActivityStore((s) => s.addActivity);
   const hydrateActivities = useActivityStore((s) => s.hydrate);
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  // 快捷记一笔
+  const [quickDraft, setQuickDraft] = useState("");
+  const [quickSubmitting, setQuickSubmitting] = useState(false);
+  const quickInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!loaded) void hydrateActivities();
   }, [loaded, hydrateActivities]);
+
+  async function handleQuickLog() {
+    const text = quickDraft.trim();
+    if (!text || quickSubmitting) return;
+    setQuickSubmitting(true);
+    try {
+      await addActivity(text);
+      setQuickDraft("");
+      toast.success(t("floating.activityLogged"));
+    } catch (err) {
+      console.error("[ActivitiesPage] quick log failed:", err);
+      toast.error(t("floating.activityFailed"));
+    } finally {
+      setQuickSubmitting(false);
+    }
+  }
 
   const visible = activities.slice(0, visibleCount);
   const hasMore = activities.length > visibleCount;
@@ -105,12 +126,43 @@ export function ActivitiesPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         <Clock className="h-5 w-5 text-text-muted" />
         <h1 className="text-lg font-semibold text-text">{t("activities.title")}</h1>
         <span className="ml-auto text-xs text-text-faint">
           {activities.length} {activities.length === 1 ? "record" : "records"}
         </span>
+      </div>
+
+      {/* 快捷记一笔入口:不想等秘书问就在这里直接填 */}
+      <div className="mb-6 flex items-center gap-2 rounded-lg border border-border/60 bg-bg-elevated px-3 py-2">
+        <PenLine className="h-4 w-4 flex-shrink-0 text-text-faint" aria-hidden="true" />
+        <input
+          ref={quickInputRef}
+          type="text"
+          value={quickDraft}
+          onChange={(e) => setQuickDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void handleQuickLog();
+            }
+          }}
+          placeholder={t("activities.quickLogPlaceholder")}
+          disabled={quickSubmitting}
+          className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-faint disabled:opacity-60"
+        />
+        <button
+          type="button"
+          onClick={() => void handleQuickLog()}
+          disabled={!quickDraft.trim() || quickSubmitting}
+          className={cn(
+            "flex-shrink-0 rounded px-2 py-0.5 text-xs font-medium transition-colors",
+            "bg-accent text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          )}
+        >
+          {quickSubmitting ? "…" : t("activities.quickLogBtn")}
+        </button>
       </div>
 
       {grouped.length === 0 ? (

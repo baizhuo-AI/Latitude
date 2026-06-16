@@ -140,7 +140,9 @@
     "save": "Save",
     "deleteField": "Delete field",
     "deleteFieldConfirm": "Deleting \"{{name}}\" will clear this field from all tasks. Confirm?",
-    "empty": "No custom fields yet. Click above to create one."
+    "empty": "No custom fields yet. Click above to create one.",
+    "createOption": "Create \"{{label}}\"",
+    "valuePlaceholder": "Select or type…"
   },
   "newTask": {
     "title": "New task",
@@ -243,7 +245,9 @@
     "deleteConfirm": "Delete this record?",
     "deleted": "Deleted",
     "loadMore": "Load more",
-    "noMore": "No more records"
+    "noMore": "No more records",
+    "quickLogPlaceholder": "Jot down what you just did (Enter to submit)",
+    "quickLogBtn": "Log"
   },
   "telos": {
     "title": "Telos · Long-term goals",

@@ -11,9 +11,14 @@ import {
   dbHasUnrepliedProactive,
   dbMarkProactiveReplied,
   dbMarkProactiveDismissed,
+  dbGetProactiveTypeForConv,
+  dbInsertActivity,
+  dbInsertMemoryFact,
   type ChatMessageRow,
   type ConversationRow
 } from "./db";
+import type { ActivityRecord } from "./db";
+import { newActivityId } from "./activityStore";
 import { chatAgentCall, buildChatSystemPrompt } from "./llm";
 import { buildCliPrompt } from "./cliPrompt";
 import { mcpUrlFrom, type McpConnInfo } from "./mcpConn";
@@ -267,6 +272,37 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     } catch (err) {
       console.warn("[chatStore] 标记主动消息已回复失败,忽略:", err);
+    }
+
+    // M3:activity_capture 回写
+    // 若该对话是 activity_capture 类型,把用户回复写入 activity_log + 提炼一条记忆事实。
+    // 安全范式(同 Task 1.7):try/catch 包裹,失败不拖垮 sendMessage。
+    try {
+      const proactiveType = await dbGetProactiveTypeForConv(convId!);
+      if (proactiveType === "activity_capture") {
+        const now = new Date().toISOString();
+        const actRec: ActivityRecord = {
+          id: newActivityId(),
+          content: trimmed,
+          occurredAt: now, // 用当前时刻作为活动发生时间(用户刚回答"最近在忙啥")
+          createdAt: now,
+        };
+        await dbInsertActivity(actRec);
+
+        // 顺带提炼一条记忆事实:让秘书了解用户最近在做什么
+        // 轻量:直接把回复内容作为 ongoing 事实落库,不再调 LLM
+        await dbInsertMemoryFact({
+          category: "ongoing",
+          content: trimmed,
+          source: "told",
+          durability: "transient",
+          pinned: false,
+          // 7 天后过期(活动信息是阶段性的,不宜永久保留)
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      }
+    } catch (err) {
+      console.warn("[chatStore] activity_capture 回写 activity_log/记忆 失败,忽略:", err);
     }
 
     // 占位 assistant 消息(content 后续覆写)

@@ -2031,6 +2031,25 @@ export async function dbListProactiveLogSince(sinceMs: number): Promise<Proactiv
 }
 
 /**
+ * 查询某对话在 proactive_log 里记录的 type(用于 chatStore 识别 activity_capture 对话)。
+ *
+ * M3:chatStore.sendMessage 回写时,通过此函数判断是否是 activity_capture 对话。
+ * 比 conv.id 前缀检查更稳健(真相源是 proactive_log.type,而非 id 命名约定)。
+ *
+ * 没有记录时返回 undefined(普通对话)。
+ *
+ * @param convId 对话 id
+ */
+export async function dbGetProactiveTypeForConv(convId: string): Promise<string | undefined> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ type: string }>>(
+    `SELECT type FROM proactive_log WHERE conv_id = $1 LIMIT 1`,
+    [convId]
+  );
+  return rows[0]?.type ?? undefined;
+}
+
+/**
  * 标记某对话的主动消息日志为"已 dismiss(用户显式关掉)"(Task 3.5)。
  *
  * 与 dbMarkProactiveReplied 平行:按 conv_id 匹配 dismissed_at IS NULL 的行,
