@@ -19,7 +19,9 @@ import {
   ListFilter,
   Sheet,
   UserCircle2,
-  BellRing
+  BellRing,
+  AlertTriangle,
+  CheckCircle2
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -29,6 +31,7 @@ import {
   type FeishuRegion,
   type ShortcutsConfig
 } from "../lib/settings";
+import { evaluateModelTier } from "../lib/llm/modelTier";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useThemeStore, type ThemeMode } from "../lib/theme";
@@ -1164,23 +1167,71 @@ function ProviderKeyEditor({
         </div>
       </Field>
       <Field label={t("settings.llm.model")}>
-        <input
-          type="text"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          onBlur={commit}
-          placeholder={cfg.model ?? ""}
-          className={cn(
-            "w-72 px-3 py-1.5 rounded-lg text-sm outline-none transition-colors font-mono",
-            "bg-zinc-50 dark:bg-zinc-950",
-            "border border-zinc-200 dark:border-zinc-700",
-            "focus:border-indigo-500",
-            "text-zinc-900 dark:text-zinc-100",
-            "placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
-          )}
-        />
+        <div className="flex flex-col gap-1.5">
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            onBlur={commit}
+            placeholder={cfg.model ?? ""}
+            className={cn(
+              "w-72 px-3 py-1.5 rounded-lg text-sm outline-none transition-colors font-mono",
+              "bg-zinc-50 dark:bg-zinc-950",
+              "border border-zinc-200 dark:border-zinc-700",
+              "focus:border-indigo-500",
+              "text-zinc-900 dark:text-zinc-100",
+              "placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+            )}
+          />
+          {/* 推荐档位标注 + 低于推荐档时的软性引导(R3 弱模型地板)。
+              判定走纯函数 evaluateModelTier;实时随输入变化,unknown 不打扰。 */}
+          <ModelTierHint provider={provider} model={model} />
+        </div>
       </Field>
     </>
+  );
+}
+
+/**
+ * 推荐档位提示(Task 3.6)。
+ * 三态(纯函数 evaluateModelTier 判定):
+ *   - recommended:绿色「已是推荐档」+ 始终显示推荐档名,正反馈。
+ *   - below      :橙色软性提示「低于推荐档,建议用 X」,引导但不拦截。
+ *   - unknown    :只显示推荐档名(灰),不报警——温和姿态,不误判用户挂的新/强/代理模型。
+ */
+function ModelTierHint({
+  provider,
+  model
+}: {
+  provider: Exclude<ProviderName, "mock">;
+  model: string;
+}) {
+  const { t } = useTranslation();
+  const verdict = evaluateModelTier(provider, model);
+
+  if (verdict.status === "below") {
+    return (
+      <div className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400 max-w-72 leading-relaxed">
+        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <span>{t("settings.llm.tierBelow", { model: verdict.recommendedModel })}</span>
+      </div>
+    );
+  }
+
+  if (verdict.status === "recommended") {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+        <span>{t("settings.llm.tierOk")}</span>
+      </div>
+    );
+  }
+
+  // unknown:不报警,仅给出推荐档名供参考(灰)
+  return (
+    <span className="text-xs text-zinc-400 dark:text-zinc-500">
+      {t("settings.llm.recommendedTier", { model: verdict.recommendedModel })}
+    </span>
   );
 }
 

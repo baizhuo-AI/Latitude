@@ -408,7 +408,10 @@
       "provider": "提供商",
       "providerMock": "Mock(无 AI)",
       "apiKey": "API Key",
-      "model": "模型"
+      "model": "模型",
+      "recommendedTier": "推荐档:{{model}}",
+      "tierBelow": "当前模型低于推荐档,秘书的回话质量可能打折。建议用 {{model}}。",
+      "tierOk": "已是推荐档,体验最佳。"
     },
     "usage": {
       "title": "用量",

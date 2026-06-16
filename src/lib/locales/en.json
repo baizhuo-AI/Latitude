@@ -408,7 +408,10 @@
       "provider": "Provider",
       "providerMock": "Mock (no AI)",
       "apiKey": "API Key",
-      "model": "Model"
+      "model": "Model",
+      "recommendedTier": "Recommended tier: {{model}}",
+      "tierBelow": "This model is below the recommended tier — reply quality may suffer. Consider {{model}}.",
+      "tierOk": "On the recommended tier — best experience."
     },
     "usage": {
       "title": "Usage",
