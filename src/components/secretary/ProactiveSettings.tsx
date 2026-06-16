@@ -17,7 +17,6 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useSettingsStore } from "../../lib/settings";
-import { emitSync } from "../../lib/syncBus";
 import type {
   ProactiveMode,
   ProactiveChannel,
@@ -149,13 +148,16 @@ export function ProactiveSettings() {
   const paused = reminder.pausedUntil != null && Date.now() < reminder.pausedUntil;
 
   /**
-   * 写「别烦我」截止时间到 reminder.pausedUntil(唯一真相源),并 emitSync 让对话窗 /
-   * 浮窗即时感知(主动逻辑闸门走 readSettingsSnapshot 直读 localStorage,setReminder 已落库;
-   * emitSync 只为触发其它窗口的 UI / 监听者重新读取)。
+   * 写「别烦我」截止时间到 reminder.pausedUntil(唯一真相源)。
+   *
+   * 不跨窗广播:主动逻辑闸门走 readSettingsSnapshot 直读 localStorage,setReminder 已落库即生效;
+   * 本面板与闸门同在主窗、读同一个 store,不需要同步事件。
+   * ⚠️ 切忌 emitSync("reminder")——该主题语义是「提醒刚触发」(reminder.ts:fireReminder),
+   * 唯一订阅方 TodoFloat 收到后会弹「记一句刚才在做什么」并抢焦点;在此 emit 会让用户
+   * 点『别烦我』反被烦(R1 防骚扰命门)。若日后确需让其它窗口感知暂停态,另起独立 SyncTopic。
    */
   function snoozeUntil(ms: number | undefined) {
     setReminder({ pausedUntil: ms });
-    emitSync("reminder");
   }
 
   // 当前档说明
