@@ -277,3 +277,50 @@ describe("分发:结构化任务钉死 API(不被 chatBackend 切到 CC)", () =>
     expect(engine.received[0].opts.responseFormat).toBe("json");
   });
 });
+
+describe("分发:结构化任务钉死 API(chatBackend=codex-cli 也不被切到 Codex)", () => {
+  // 与上面 claude-cli 对称的兜底:codex-cli 后端下,parseTask / generateTodayPlan 这类
+  // JSON 任务仍必须走 API 引擎(forceApi 覆盖),不被切到 Codex CLI(否则 JSON mode 丢失)。
+  beforeEach(() => {
+    chatBackend = "codex-cli"; // 即便对话后端切到 Codex
+  });
+
+  it("parseTask 仍走 API 引擎,不碰 CC / Codex(forceApi)", async () => {
+    engine.script = [
+      {
+        content: JSON.stringify({ title: "买菜", priority: "low", tags: [] }),
+        model: "deepseek-chat",
+      },
+    ];
+    const parsed = await parseTask("顺便买个菜");
+    expect(parsed.title).toBe("买菜");
+    expect(parsed.parsed).toBe(true);
+    expect(engine.received).toHaveLength(1); // API 被调
+    expect(ccCalls).toHaveLength(0); // CC 没被调
+    expect(codexCalls).toHaveLength(0); // Codex 没被调
+    expect(engine.received[0].opts.responseFormat).toBe("json");
+  });
+
+  it("generateTodayPlan 仍走 API 引擎,不碰 CC / Codex(forceApi)", async () => {
+    engine.script = [
+      {
+        content: JSON.stringify({ plan: [{ id: "t1", scheduledTime: "09:00-10:00" }] }),
+        model: "deepseek-chat",
+      },
+    ];
+    await generateTodayPlan([
+      {
+        id: "t1",
+        title: "写方案",
+        priority: "high",
+        tags: [],
+        status: "todo",
+        createdAt: Date.now(),
+      } as never,
+    ]);
+    expect(engine.received).toHaveLength(1);
+    expect(ccCalls).toHaveLength(0);
+    expect(codexCalls).toHaveLength(0);
+    expect(engine.received[0].opts.responseFormat).toBe("json");
+  });
+});

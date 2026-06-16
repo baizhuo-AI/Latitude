@@ -38,6 +38,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { buildCliPrompt } from "../cliPrompt";
+import { mcpUrlFrom, type McpConnInfo } from "../mcpConn";
 import type {
   EngineAdapter,
   EngineCapabilities,
@@ -54,12 +55,6 @@ const ENGINE_NAME = "claude-code";
  * usage 记录与能力位兜底(不影响实际跑哪个模型)。
  */
 const ENGINE_MODEL = "claude-code";
-
-/** 本机 MCP server 接入信息(与 Rust 端 mcp_connection_info 返回对齐)。 */
-interface McpConnInfo {
-  url: string;
-  token: string;
-}
 
 /** cli-agent-event 事件载荷(与 Rust 端 ChatEvent 对齐:tag=type,snake_case)。 */
 type CliEvent =
@@ -108,7 +103,10 @@ function serializeMessages(messages: EngineMessage[]): string {
  */
 async function runClaude(prompt: string, handlers: RunHandlers): Promise<string> {
   // 现取 MCP 接入信息(跟随真相源);拿不到就退化为纯聊天。
+  // 注意:mcp_connection_info 返回 {port, token, command},**没有 url** —— url 必须从 port 拼
+  // (见 ../mcpConn 的 mcpUrlFrom)。早先直读 conn.url 会得 undefined,导致 MCP 从不注入(4.3/4.4 复审)。
   const conn = await invoke<McpConnInfo>("mcp_connection_info").catch(() => null);
+  const mcpUrl = mcpUrlFrom(conn);
 
   let content = "";
   let resolveDone!: () => void;
@@ -149,7 +147,7 @@ async function runClaude(prompt: string, handlers: RunHandlers): Promise<string>
       kind: "claude",
       req: {
         prompt,
-        mcpUrl: conn?.url,
+        mcpUrl,
         mcpToken: conn?.token,
       },
     });

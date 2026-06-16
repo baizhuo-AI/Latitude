@@ -49,7 +49,9 @@ let sendCalls: SendCall[];
 let scriptedEvents: Ev[];
 let listenCallback: ((e: { payload: Ev }) => void) | null;
 let unlistenSpy: ReturnType<typeof vi.fn>;
-let mcpConnInfo: { url: string; token: string } | null;
+// 必须与 Rust 端 connect.rs::ConnectionInfo 的真实结构一致:{port, token, command},**没有 url**
+// (回归锚:旧代码读 conn?.url 会永远 undefined,MCP 从不注入 → codex 静默退化纯聊天)。
+let mcpConnInfo: { port: number; token: string; command: string } | null;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
@@ -96,7 +98,12 @@ beforeEach(() => {
   scriptedEvents = [];
   listenCallback = null;
   unlistenSpy = vi.fn();
-  mcpConnInfo = { url: "http://127.0.0.1:42800/mcp", token: "tok-abc" };
+  // 真实结构:port + token + command(connect.rs::ConnectionInfo),无 url。
+  mcpConnInfo = {
+    port: 42800,
+    token: "tok-abc",
+    command: "codex ...",
+  };
 });
 
 describe("makeCodexAdapter — 标识与能力位", () => {
@@ -148,12 +155,23 @@ describe("makeCodexAdapter — kind 分流 + 无状态注入 + MCP 透传", () =
     expect(iSecond).toBeGreaterThan(iAns);
   });
 
-  it("MCP 透传:把 mcp_connection_info 的 url/token 传给 cli_agent_send", async () => {
+  it("MCP 透传:从 {port, token} 拼出真实 url 传给 cli_agent_send(回归:url 非 undefined)", async () => {
     scriptedEvents = [{ type: "text", text: "x" }, { type: "done" }];
     const adapter = makeCodexAdapter();
     await adapter.generate([{ role: "user", content: "hi" }]);
+    // 关键回归断言:url 必须由 port 拼出、且非 undefined(旧代码读 conn?.url → undefined,MCP 从不注入)。
+    expect(sendCalls[0].mcpUrl).toBeDefined();
     expect(sendCalls[0].mcpUrl).toBe("http://127.0.0.1:42800/mcp");
     expect(sendCalls[0].mcpToken).toBe("tok-abc");
+  });
+
+  it("MCP 透传:端口不同则 url 跟随端口(证明是按 port 拼,不是写死)", async () => {
+    mcpConnInfo = { port: 51000, token: "tok-xyz", command: "..." };
+    scriptedEvents = [{ type: "text", text: "x" }, { type: "done" }];
+    const adapter = makeCodexAdapter();
+    await adapter.generate([{ role: "user", content: "hi" }]);
+    expect(sendCalls[0].mcpUrl).toBe("http://127.0.0.1:51000/mcp");
+    expect(sendCalls[0].mcpToken).toBe("tok-xyz");
   });
 
   it("MCP 拿不到时降级:不传 url/token,仍能跑(纯聊天)", async () => {

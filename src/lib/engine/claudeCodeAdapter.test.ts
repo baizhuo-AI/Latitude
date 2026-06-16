@@ -11,7 +11,11 @@
  * 验收维度(对齐 Task 4.3 目标 1 + 铁律①):
  *   ① 无状态注入:每轮把〔system + 历史 + 当前消息〕序列化进单段 prompt(buildCliPrompt 同款),
  *      不带 sessionId/resume,两次 generate 互不影响。
- *   ② MCP 透传:把 mcp_connection_info 的 url/token 传给 cli_agent_send,让 CLI 连本机 MCP。
+ *   ② MCP 透传:从 mcp_connection_info 的 {port, token} 拼出 http://127.0.0.1:<port>/mcp 这条
+ *      真实 url(后端 connect.rs / server.rs 的约定),把 url+token 传给 cli_agent_send,让 CLI
+ *      连本机 MCP。【回归锚:4.3/4.4 复审发现 mcp_connection_info 实际不返回 url 字段,旧代码读
+ *      conn?.url 永远 undefined → MCP 从不注入。桩必须按真实结构 {port, token, command} 返回,
+ *      断言适配器把 url 拼成非 undefined 的正确值,才能抓住这个 bug。】
  *   ③ 流格式转换:CLI 的 text→onToken、thinking→onReasoningToken、tool_call_start→(可观测),
  *      done→onDone;最终 EngineResult.content 为所有 text 累积。
  *   ④ generate(非流式)也累积 content 返回(内部复用同一条事件流,只是不对外吐 token)。
@@ -50,8 +54,10 @@ let sendCalls: SendCall[];
 let scriptedEvents: Ev[];
 let listenCallback: ((e: { payload: Ev }) => void) | null;
 let unlistenSpy: ReturnType<typeof vi.fn>;
-// mcp_connection_info 的返回(null 表示拿不到,适配器应降级为不传 MCP)
-let mcpConnInfo: { url: string; token: string } | null;
+// mcp_connection_info 的返回(null 表示拿不到,适配器应降级为不传 MCP)。
+// 必须与 Rust 端 connect.rs::ConnectionInfo 的真实结构一致:{port, token, command},**没有 url**
+// (回归锚:旧代码读 conn?.url 会永远 undefined,MCP 从不注入)。
+let mcpConnInfo: { port: number; token: string; command: string } | null;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
@@ -99,7 +105,12 @@ beforeEach(() => {
   scriptedEvents = [];
   listenCallback = null;
   unlistenSpy = vi.fn();
-  mcpConnInfo = { url: "http://127.0.0.1:42800/mcp", token: "tok-abc" };
+  // 真实结构:port + token + command(connect.rs::ConnectionInfo),无 url。
+  mcpConnInfo = {
+    port: 42800,
+    token: "tok-abc",
+    command: "claude mcp add ...",
+  };
 });
 
 describe("makeClaudeCodeAdapter — 标识与能力位", () => {
@@ -148,12 +159,23 @@ describe("makeClaudeCodeAdapter — 无状态注入 + MCP 透传", () => {
     expect(iSecond).toBeGreaterThan(iAns);
   });
 
-  it("MCP 透传:把 mcp_connection_info 的 url/token 传给 cli_agent_send", async () => {
+  it("MCP 透传:从 {port, token} 拼出真实 url 传给 cli_agent_send(回归:url 非 undefined)", async () => {
     scriptedEvents = [{ type: "text", text: "x" }, { type: "done" }];
     const adapter = makeClaudeCodeAdapter();
     await adapter.generate([{ role: "user", content: "hi" }]);
+    // 关键回归断言:url 必须由 port 拼出、且非 undefined(旧代码读 conn?.url → undefined,MCP 从不注入)。
+    expect(sendCalls[0].mcpUrl).toBeDefined();
     expect(sendCalls[0].mcpUrl).toBe("http://127.0.0.1:42800/mcp");
     expect(sendCalls[0].mcpToken).toBe("tok-abc");
+  });
+
+  it("MCP 透传:端口不同则 url 跟随端口(证明是按 port 拼,不是写死)", async () => {
+    mcpConnInfo = { port: 51000, token: "tok-xyz", command: "..." };
+    scriptedEvents = [{ type: "text", text: "x" }, { type: "done" }];
+    const adapter = makeClaudeCodeAdapter();
+    await adapter.generate([{ role: "user", content: "hi" }]);
+    expect(sendCalls[0].mcpUrl).toBe("http://127.0.0.1:51000/mcp");
+    expect(sendCalls[0].mcpToken).toBe("tok-xyz");
   });
 
   it("MCP 拿不到时降级:不传 url/token,仍能跑(纯聊天)", async () => {

@@ -16,6 +16,7 @@ import {
 } from "./db";
 import { chatAgentCall, buildChatSystemPrompt } from "./llm";
 import { buildCliPrompt } from "./cliPrompt";
+import { mcpUrlFrom, type McpConnInfo } from "./mcpConn";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "./settings";
@@ -74,9 +75,12 @@ async function sendViaCli(
   prompt: string,
   handlers: CliHandlers
 ): Promise<{ content: string }> {
-  // 拿 MCP 接入信息，让 CLI 启动时连进来管待办（拿不到就退化为纯聊天）
-  type ConnInfo = { url: string; token: string };
-  const conn = await invoke<ConnInfo>("mcp_connection_info").catch(() => null);
+  // 拿 MCP 接入信息，让 CLI 启动时连进来管待办（拿不到就退化为纯聊天）。
+  // 注意：mcp_connection_info 返回 {port, token, command}，**没有 url** —— url 必须从 port 拼
+  // （见 ./mcpConn 的 mcpUrlFrom）。早先这里读 conn.url 会得 undefined，导致 MCP 从不注入、
+  // CLI 静默退化纯聊天（4.3/4.4 复审 blocking bug）。
+  const conn = await invoke<McpConnInfo>("mcp_connection_info").catch(() => null);
+  const mcpUrl = mcpUrlFrom(conn);
 
   let content = "";
   let resolveDone!: () => void;
@@ -126,7 +130,7 @@ async function sendViaCli(
       kind,
       req: {
         prompt,
-        mcpUrl: conn?.url,
+        mcpUrl,
         mcpToken: conn?.token,
       },
     });
