@@ -410,24 +410,6 @@
       "disabled": "Shortcut disabled",
       "failed": "Failed to set (combo may be taken)"
     },
-    "reminder": {
-      "title": "Reminders",
-      "description": "Periodically nudge you to jot down what you just did, building a real log of where your time goes.",
-      "enabled": "Enable",
-      "on": "On",
-      "off": "Off",
-      "interval": "Interval",
-      "minutes": "min",
-      "channel": "Notify via",
-      "channelFloating": "Floating",
-      "channelNotification": "System",
-      "channelBoth": "Both",
-      "workHours": "Active hours",
-      "pause": "Pause",
-      "pause1h": "Pause 1h",
-      "pauseToday": "Mute today",
-      "resume": "Resume"
-    },
     "appearance": {
       "title": "Appearance",
       "lang": "Language",

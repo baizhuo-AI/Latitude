@@ -410,24 +410,6 @@
       "disabled": "已禁用快捷键",
       "failed": "设置失败(组合键可能被占用)"
     },
-    "reminder": {
-      "title": "定时提醒",
-      "description": "每隔一段时间提醒你记一句「刚才在做什么」,积累真实的时间去向。",
-      "enabled": "开启提醒",
-      "on": "开",
-      "off": "关",
-      "interval": "提醒间隔",
-      "minutes": "分钟",
-      "channel": "提醒方式",
-      "channelFloating": "悬浮窗",
-      "channelNotification": "系统通知",
-      "channelBoth": "两者",
-      "workHours": "工作时段(小时)",
-      "pause": "暂停",
-      "pause1h": "暂停 1 小时",
-      "pauseToday": "今天不再提醒",
-      "resume": "恢复提醒"
-    },
     "appearance": {
       "title": "外观",
       "lang": "语言",

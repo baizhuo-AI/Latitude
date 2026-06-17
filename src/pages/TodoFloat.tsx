@@ -6,7 +6,6 @@ import {
   Loader2,
   X,
   CheckCircle2,
-  Clock,
   ChevronDown
 } from "lucide-react";
 import { newTodoId, useTodoStore, type Todo } from "../lib/store";
@@ -25,12 +24,11 @@ import { toast } from "../lib/toast";
  *
  * 内容:
  *  - 顶部:拖动抓手 + 标题 + 关闭按钮;Cmd+K 风格自然语言输入(记待办)
- *  - 提醒记录态:收到主窗口 emitSync("reminder") 时浮现"刚才在做什么?"输入,走 addActivity
  *  - 中间:今日 active 任务列表
  *  - 今日活动流水:可折叠,看当日记的活动
  *  - 底部:进度统计
  *
- * 数据同步:订阅 BroadcastChannel 的 "todos" / "activities" / "reminder" topic。
+ * 数据同步:订阅 BroadcastChannel 的 "todos" / "activities" topic。
  */
 
 type Scope = "today" | "week" | "all";
@@ -71,18 +69,13 @@ export function TodoFloat() {
   const toggleComplete = useTodoStore((s) => s.toggleComplete);
   const activities = useActivityStore((s) => s.activities);
   const hydrateActivities = useActivityStore((s) => s.hydrate);
-  const addActivity = useActivityStore((s) => s.addActivity);
 
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [reminderActive, setReminderActive] = useState(false);
-  const [activityValue, setActivityValue] = useState("");
-  const [activitySubmitting, setActivitySubmitting] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [scope, setScope] = useState<Scope>("today");
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const activityInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void hydrate();
@@ -96,15 +89,6 @@ export function TodoFloat() {
     const off = onSync("activities", () => void hydrateActivities());
     return off;
   }, [hydrateActivities]);
-
-  // 收到主窗口的提醒信号 → 进记录态 + 聚焦
-  useEffect(() => {
-    const off = onSync("reminder", () => {
-      setReminderActive(true);
-      setTimeout(() => activityInputRef.current?.focus(), 60);
-    });
-    return off;
-  }, []);
 
   // 浮窗 transparent(见 tauri.conf.json):给 <html> 挂 .is-floating 让背景透明,圆角才透出桌面
   useEffect(() => {
@@ -165,24 +149,6 @@ export function TodoFloat() {
       toast.error(t("floating.addFailed"));
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  // 记录态:提交"刚才做了什么",走 addActivity(纯文本,不调 AI),与记待办分开
-  async function handleActivitySubmit() {
-    const v = activityValue.trim();
-    if (!v || activitySubmitting) return;
-    setActivitySubmitting(true);
-    try {
-      await addActivity(v);
-      setActivityValue("");
-      setReminderActive(false);
-      toast.success(t("floating.activityLogged"));
-    } catch (err) {
-      console.error("[Floating] log activity failed:", err);
-      toast.error(t("floating.activityFailed"));
-    } finally {
-      setActivitySubmitting(false);
     }
   }
 
@@ -270,52 +236,8 @@ export function TodoFloat() {
         </div>
       </header>
 
-      {/* 列表区(提醒记录态卡片在顶) */}
+      {/* 列表区 */}
       <div className="scrollbar-thin flex-1 overflow-y-auto">
-        {reminderActive && (
-          <div className="m-2 rounded-lg border border-accent/40 bg-accent/5 p-2.5">
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-accent">
-              <Clock className="h-3 w-3" />
-              {t("floating.activityPrompt")}
-            </div>
-            <input
-              ref={activityInputRef}
-              value={activityValue}
-              onChange={(e) => setActivityValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !activitySubmitting) {
-                  e.preventDefault();
-                  void handleActivitySubmit();
-                }
-              }}
-              disabled={activitySubmitting}
-              placeholder={t("floating.activityPlaceholder")}
-              className={cn(
-                "w-full rounded-md px-2 py-1.5 text-sm outline-none transition-colors",
-                "border border-transparent bg-bg-elevated focus:border-accent",
-                "text-text placeholder:text-text-faint"
-              )}
-            />
-            <div className="mt-1.5 flex justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={() => setReminderActive(false)}
-                className="rounded px-2 py-0.5 text-[11px] text-text-faint transition-colors hover:text-text"
-              >
-                {t("floating.activitySkip")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleActivitySubmit()}
-                disabled={activitySubmitting}
-                className="rounded bg-accent px-2 py-0.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {t("floating.activityLog")}
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="space-y-0.5 px-2.5 py-2.5">
           {visible.length === 0 ? (
             <div className="px-3 py-12 text-center text-xs text-text-faint">
