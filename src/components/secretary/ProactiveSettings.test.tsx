@@ -53,19 +53,47 @@ let _reminder: {
   pausedUntil?: number;
 };
 
-const _proactive = {
-  mode: "gentle" as const,
-  heartbeatMin: 90,
-  morningHour: 7,
-  budgetPerHalfDay: 3,
-  channel: "chat" as const,
+// 可动态替换:个别用例(活动记录开关展开)需要把 enabled 切成 true
+let _proactive: {
+  mode: "off" | "gentle" | "active";
+  heartbeatMin: number;
+  morningHour: number;
+  budgetPerHalfDay: number;
+  channel: "chat" | "notification" | "float" | "all";
   events: {
-    meetingSoon: true,
-    deadlineNear: true,
-    taskStuck: true,
-    justCompleted: true,
-  },
+    meetingSoon: boolean;
+    deadlineNear: boolean;
+    taskStuck: boolean;
+    justCompleted: boolean;
+  };
+  activityCapture: {
+    enabled: boolean;
+    intervalMin: number;
+    activityCaptureMode: "gentle" | "scheduled";
+  };
 };
+
+/** 每个用例的默认 proactive 态(活动记录默认关)。 */
+function defaultProactiveState(): typeof _proactive {
+  return {
+    mode: "gentle",
+    heartbeatMin: 90,
+    morningHour: 7,
+    budgetPerHalfDay: 3,
+    channel: "chat",
+    events: {
+      meetingSoon: true,
+      deadlineNear: true,
+      taskStuck: true,
+      justCompleted: true,
+    },
+    activityCapture: {
+      enabled: false,
+      intervalMin: 120,
+      activityCaptureMode: "gentle",
+    },
+  };
+}
 
 vi.mock("../../lib/settings", () => ({
   useSettingsStore: (selector?: (s: unknown) => unknown) => {
@@ -84,6 +112,7 @@ describe("ProactiveSettings — 别烦我 snooze", () => {
     vi.clearAllMocks();
     // 默认未暂停:显示「静音 1h / 静音到今晚」两个按钮
     _reminder = { workStart: 9, workEnd: 18, pausedUntil: undefined };
+    _proactive = defaultProactiveState();
   });
 
   // ── 写真相源:四个入口都落 reminder.pausedUntil ──────────────────────────────
@@ -147,6 +176,64 @@ describe("ProactiveSettings — 别烦我 snooze", () => {
     fireEvent.click(screen.getByText("proactive.modeActive"));
 
     expect(setProactiveSpy).toHaveBeenCalledWith({ mode: "active" });
+    expect(emitSyncSpy).not.toHaveBeenCalledWith("reminder");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 活动记录子项 + 工作时段编辑(定时×主动全合 M4:配置统一)
+// ════════════════════════════════════════════════════════════════════════════
+describe("ProactiveSettings — 活动记录子项 (M4)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _reminder = { workStart: 9, workEnd: 18, pausedUntil: undefined };
+    _proactive = defaultProactiveState();
+  });
+
+  /** 活动记录子项在高级区里 —— 先展开高级设置。 */
+  function renderAndExpand() {
+    render(<ProactiveSettings />);
+    fireEvent.click(screen.getByText("proactive.advancedShow"));
+  }
+
+  it("开活动记录开关 → 调 setProactive({ activityCapture: { enabled: true } })", () => {
+    renderAndExpand();
+    // 默认关:点「开」
+    fireEvent.click(screen.getByText("proactive.activityCaptureOn"));
+    expect(setProactiveSpy).toHaveBeenCalledWith({ activityCapture: { enabled: true } });
+  });
+
+  it("活动记录开启时显示间隔 + 策略档;关闭时不显示", () => {
+    // 关闭态:不渲染间隔/策略档标签
+    render(<ProactiveSettings />);
+    fireEvent.click(screen.getByText("proactive.advancedShow"));
+    expect(screen.queryByText("proactive.activityCaptureInterval")).toBeNull();
+    expect(screen.queryByText("proactive.activityCaptureMode")).toBeNull();
+  });
+
+  it("活动记录开启时:能改策略档为「按时硬提醒」(scheduled)", () => {
+    _proactive = { ...defaultProactiveState(), activityCapture: { enabled: true, intervalMin: 120, activityCaptureMode: "gentle" } };
+    renderAndExpand();
+    fireEvent.click(screen.getByText("proactive.activityCaptureModeScheduled"));
+    expect(setProactiveSpy).toHaveBeenCalledWith({
+      activityCapture: { activityCaptureMode: "scheduled" },
+    });
+  });
+
+  it("工作时段可编辑:改起始小时 → 调 setReminder({ workStart })", () => {
+    renderAndExpand();
+    // 工作时段两个 number 输入(起 / 止);取第一个改成 7
+    const inputs = screen.getAllByRole("spinbutton");
+    // 找到值为 9 的那个(workStart 默认 9)
+    const startInput = inputs.find((el) => (el as HTMLInputElement).value === "9");
+    expect(startInput).toBeTruthy();
+    fireEvent.change(startInput!, { target: { value: "7" } });
+    expect(setReminderSpy).toHaveBeenCalledWith({ workStart: 7 });
+  });
+
+  it("改活动记录任何子项都不 emitSync(\"reminder\")(防 TodoFloat 误弹)", () => {
+    renderAndExpand();
+    fireEvent.click(screen.getByText("proactive.activityCaptureOn"));
     expect(emitSyncSpy).not.toHaveBeenCalledWith("reminder");
   });
 });

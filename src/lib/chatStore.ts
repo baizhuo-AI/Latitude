@@ -262,47 +262,49 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }));
 
-    // 主动消息回复打点(Task 1.7):
-    // 若该对话有未回复的 proactive_log 记录,标记为已回复。
-    // 用 await + try/catch:保证打点在 LLM 调用前完成,同时失败不拖垮 sendMessage。
+    // 主动消息「首次回复」处理(Task 1.7 打点 + M3 回写,M4 收口去重):
+    //
+    // 一条主动消息只应被回写一次。早先(M3)回写块只看"这条对话是不是 activity_capture 类型",
+    // 不看"是不是首次回复",导致用户在同一条对话里多轮往返时每句都重复写 activity_log/记忆
+    // (污染时间线 + 记忆)。M4 把【标记已回复】与【回写活动/记忆】收敛到同一个 has-unreplied
+    // 门后:dbHasUnrepliedProactive(convId) 为 true(=本条主动消息还没被任何回复"消费过")时才进。
+    // 首次进门后 dbMarkProactiveReplied 立即把它标记掉,后续回复 has-unreplied=false → 整段跳过。
+    //
+    // 安全范式:await + try/catch,保证打点在 LLM 调用前完成,且任何失败都不拖垮 sendMessage。
     try {
       const hasUnreplied = await dbHasUnrepliedProactive(convId!);
       if (hasUnreplied) {
+        // 1. 打点:标记该主动消息已回复(Task 1.7)。先标记,防后续回复重复进门。
         await dbMarkProactiveReplied(convId!, userMsg.createdAt);
+
+        // 2. activity_capture 回写(M3):仅当这条主动消息是活动捕获类型时,
+        //    把用户的这"首次回复"写入 activity_log + 提炼一条 ongoing 记忆事实。
+        const proactiveType = await dbGetProactiveTypeForConv(convId!);
+        if (proactiveType === "activity_capture") {
+          const now = new Date().toISOString();
+          const actRec: ActivityRecord = {
+            id: newActivityId(),
+            content: trimmed,
+            occurredAt: now, // 用当前时刻作为活动发生时间(用户刚回答"最近在忙啥")
+            createdAt: now,
+          };
+          await dbInsertActivity(actRec);
+
+          // 顺带提炼一条记忆事实:让秘书了解用户最近在做什么
+          // 轻量:直接把回复内容作为 ongoing 事实落库,不再调 LLM
+          await dbInsertMemoryFact({
+            category: "ongoing",
+            content: trimmed,
+            source: "told",
+            durability: "transient",
+            pinned: false,
+            // 7 天后过期(活动信息是阶段性的,不宜永久保留)
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          });
+        }
       }
     } catch (err) {
-      console.warn("[chatStore] 标记主动消息已回复失败,忽略:", err);
-    }
-
-    // M3:activity_capture 回写
-    // 若该对话是 activity_capture 类型,把用户回复写入 activity_log + 提炼一条记忆事实。
-    // 安全范式(同 Task 1.7):try/catch 包裹,失败不拖垮 sendMessage。
-    try {
-      const proactiveType = await dbGetProactiveTypeForConv(convId!);
-      if (proactiveType === "activity_capture") {
-        const now = new Date().toISOString();
-        const actRec: ActivityRecord = {
-          id: newActivityId(),
-          content: trimmed,
-          occurredAt: now, // 用当前时刻作为活动发生时间(用户刚回答"最近在忙啥")
-          createdAt: now,
-        };
-        await dbInsertActivity(actRec);
-
-        // 顺带提炼一条记忆事实:让秘书了解用户最近在做什么
-        // 轻量:直接把回复内容作为 ongoing 事实落库,不再调 LLM
-        await dbInsertMemoryFact({
-          category: "ongoing",
-          content: trimmed,
-          source: "told",
-          durability: "transient",
-          pinned: false,
-          // 7 天后过期(活动信息是阶段性的,不宜永久保留)
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        });
-      }
-    } catch (err) {
-      console.warn("[chatStore] activity_capture 回写 activity_log/记忆 失败,忽略:", err);
+      console.warn("[chatStore] 主动消息首次回复处理(打点/回写)失败,忽略:", err);
     }
 
     // 占位 assistant 消息(content 后续覆写)

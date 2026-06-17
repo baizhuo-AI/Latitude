@@ -21,6 +21,7 @@ import type {
   ProactiveMode,
   ProactiveChannel,
   ProactiveEvents,
+  ActivityCaptureMode,
 } from "../../lib/secretary/proactiveConfig";
 import { cn } from "../../lib/utils";
 
@@ -172,6 +173,10 @@ export function ProactiveSettings() {
     setProactive({ events: { [key]: !proactive.events[key] } });
   }
 
+  // 活动记录子项(定时×主动全合 M4):退役老 reminder 定时器后,活动记录改由
+  // 主动引擎的 activity_capture 触发类型接手。这里是它唯一的设置入口(开关 / 间隔 / 策略档)。
+  const activityCapture = proactive.activityCapture;
+
   const off = proactive.mode === "off";
 
   return (
@@ -285,12 +290,89 @@ export function ProactiveSettings() {
             </div>
           </Row>
 
-          {/* 静默时段(只读,指向 reminder) */}
+          {/* 静默时段 = 工作时段(唯一真相源 reminder.workStart/workEnd)。
+              M4 起这里可直接编辑——老「定时提醒」设置区已随活动提醒退役一并移除,
+              工作时段的唯一编辑入口收敛到此(整个主动引擎 + 活动记录都读它)。 */}
           <Row label={t("proactive.quietHours")} hint={t("proactive.quietHoursHint")}>
-            <span className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
-              {String(reminder.workStart).padStart(2, "0")}:00 – {String(reminder.workEnd).padStart(2, "0")}:00
-            </span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={reminder.workStart}
+                onChange={(e) => setReminder({ workStart: clampInt(e.target.value, 0, 23, 9) })}
+                className={numInputCls}
+                aria-label={t("proactive.quietHoursStart")}
+              />
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">–</span>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={reminder.workEnd}
+                onChange={(e) => setReminder({ workEnd: clampInt(e.target.value, 0, 23, 22) })}
+                className={numInputCls}
+                aria-label={t("proactive.quietHoursEnd")}
+              />
+            </div>
           </Row>
+
+          {/* 活动记录(M4:由 activity_capture 接手老 reminder 的定时提醒) */}
+          <div className="space-y-3 pt-1 border-t border-zinc-200 dark:border-zinc-800">
+            <Row label={t("proactive.activityCapture")} hint={t("proactive.activityCaptureHint")}>
+              <Segment<"on" | "off">
+                value={activityCapture.enabled ? "on" : "off"}
+                onChange={(v) => setProactive({ activityCapture: { enabled: v === "on" } })}
+                options={[
+                  { value: "off", label: t("proactive.activityCaptureOff") },
+                  { value: "on", label: t("proactive.activityCaptureOn") },
+                ]}
+              />
+            </Row>
+
+            {activityCapture.enabled && (
+              <>
+                {/* 间隔 */}
+                <Row
+                  label={t("proactive.activityCaptureInterval")}
+                  hint={t("proactive.activityCaptureIntervalHint")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={5}
+                      max={480}
+                      value={activityCapture.intervalMin}
+                      onChange={(e) =>
+                        setProactive({
+                          activityCapture: { intervalMin: clampInt(e.target.value, 5, 480, 120) },
+                        })
+                      }
+                      className={numInputCls}
+                    />
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                      {t("proactive.minutesUnit")}
+                    </span>
+                  </div>
+                </Row>
+
+                {/* 策略档:随秘书克制(gentle)/ 按时硬提醒(scheduled) */}
+                <Row
+                  label={t("proactive.activityCaptureMode")}
+                  hint={t("proactive.activityCaptureModeHint")}
+                >
+                  <Segment<ActivityCaptureMode>
+                    value={activityCapture.activityCaptureMode}
+                    onChange={(v) => setProactive({ activityCapture: { activityCaptureMode: v } })}
+                    options={[
+                      { value: "gentle", label: t("proactive.activityCaptureModeGentle") },
+                      { value: "scheduled", label: t("proactive.activityCaptureModeScheduled") },
+                    ]}
+                  />
+                </Row>
+              </>
+            )}
+          </div>
 
           {/* 事件开关 */}
           <div className="space-y-2">

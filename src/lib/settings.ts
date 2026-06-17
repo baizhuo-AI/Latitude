@@ -218,6 +218,76 @@ function detectInitialLang(): Lang {
   return nav.toLowerCase().startsWith("en") ? "en" : "zh";
 }
 
+/**
+ * 合并 proactive 配置 + 老 reminder → activityCapture 的一次性迁移(定时×主动全合 M4)。
+ *
+ * 背景:M4 退役老 reminder 的"活动记录"定时器,改由 activity_capture 接手。开过老提醒的
+ * 用户(reminder.enabled / 设过 reminder.intervalMin),升级后应等价地由 activity_capture 接管。
+ *
+ * 迁移规则(兜底安全、幂等):
+ *   1. 幂等护栏:存档里【已有】 proactive.activityCapture(用户已在新 schema 下保存过)→
+ *      一律以存档为准,reminder 不再覆盖它。这样升级后用户在新 UI 改的设置不会被反复回滚。
+ *   2. 仅当存档【没有】 activityCapture(纯老用户)时,用 reminder 的值初始化 activityCapture:
+ *        activityCapture.enabled    ← reminder.enabled
+ *        activityCapture.intervalMin ← reminder.intervalMin
+ *      activityCaptureMode 老 schema 无此概念,取默认 gentle。
+ *
+ * ⚠️ 共享字段(workStart/workEnd/pausedUntil)是整个主动引擎的唯一真相源,留在 reminder 里,
+ *    本迁移绝不读写/搬走它们 —— 只读 reminder 的 enabled/intervalMin。
+ *
+ * @param parsedProactive 存档里的 proactive(可能整块缺失,或缺 activityCapture)
+ * @param parsedReminder  存档里的 reminder(用于纯老用户的迁移源)
+ * @param def             defaults() 的当前快照(补缺字段)
+ */
+function mergeProactiveWithMigration(
+  parsedProactive: Partial<ProactiveConfig> | undefined,
+  parsedReminder: Partial<ReminderConfig> | undefined,
+  def: SettingsState
+): ProactiveConfig {
+  // 整块没存过 proactive:纯老用户(或全新用户)。activityCapture 从 reminder 迁移(老用户)
+  // 或落默认(全新用户,parsedReminder 也为空时 ?? 兜底到 def 默认值)。
+  if (!parsedProactive) {
+    return {
+      ...def.proactive,
+      activityCapture: migrateActivityCaptureFromReminder(parsedReminder, def),
+    };
+  }
+  // 存过 proactive,但可能缺 activityCapture(老 schema 的 proactive,没有这个子配置)。
+  const activityCapture: ActivityCaptureConfig = parsedProactive.activityCapture
+    ? // 幂等护栏:已在新 schema 下保存过 activityCapture → 以存档为准(补缺字段)
+      { ...def.proactive.activityCapture, ...parsedProactive.activityCapture }
+    : // 老 schema 的 proactive 没有 activityCapture → 从 reminder 迁移
+      migrateActivityCaptureFromReminder(parsedReminder, def);
+  return {
+    ...def.proactive,
+    ...parsedProactive,
+    events: { ...def.proactive.events, ...(parsedProactive.events ?? {}) },
+    activityCapture,
+  };
+}
+
+/**
+ * 从老 reminder 配置派生 activityCapture(纯老用户的迁移源)。
+ * reminder 缺字段时回退默认值(全新用户走这条也安全)。
+ */
+function migrateActivityCaptureFromReminder(
+  parsedReminder: Partial<ReminderConfig> | undefined,
+  def: SettingsState
+): ActivityCaptureConfig {
+  return {
+    enabled:
+      typeof parsedReminder?.enabled === "boolean"
+        ? parsedReminder.enabled
+        : def.proactive.activityCapture.enabled,
+    intervalMin:
+      typeof parsedReminder?.intervalMin === "number"
+        ? parsedReminder.intervalMin
+        : def.proactive.activityCapture.intervalMin,
+    // 老 schema 无策略档概念,取默认 gentle
+    activityCaptureMode: def.proactive.activityCapture.activityCaptureMode,
+  };
+}
+
 function readStored(): SettingsState {
   if (typeof window === "undefined") return defaults();
   try {
@@ -251,18 +321,10 @@ function readStored(): SettingsState {
         bitableProjectFieldId: parsed.feishu?.bitableProjectFieldId
       },
       persona: parsed.persona ? { ...def.persona, ...parsed.persona } : def.persona,
-      // proactive:嵌套合并;events / activityCapture 再深一层合并(老存档缺字段时补默认,避免 undefined)
-      proactive: parsed.proactive
-        ? {
-            ...def.proactive,
-            ...parsed.proactive,
-            events: { ...def.proactive.events, ...(parsed.proactive.events ?? {}) },
-            activityCapture: {
-              ...def.proactive.activityCapture,
-              ...(parsed.proactive.activityCapture ?? {}),
-            },
-          }
-        : def.proactive,
+      // proactive:嵌套合并 + 老 reminder → activityCapture 一次性迁移(M4)。
+      // 见 mergeProactiveWithMigration:已存过 activityCapture 以存档为准(幂等护栏),
+      // 纯老用户/老 schema 则用 reminder.{enabled,intervalMin} 初始化 activityCapture。
+      proactive: mergeProactiveWithMigration(parsed.proactive, parsed.reminder, def),
       // Task 4.6a 隐私 + 成本:布尔字段浅合并,旧存档无此字段时回退 defaults
       localOnlyBrain: typeof parsed.localOnlyBrain === "boolean" ? parsed.localOnlyBrain : def.localOnlyBrain,
       noSensitiveMemory: typeof parsed.noSensitiveMemory === "boolean" ? parsed.noSensitiveMemory : def.noSensitiveMemory,

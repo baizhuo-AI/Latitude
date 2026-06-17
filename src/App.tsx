@@ -11,7 +11,6 @@ import { useFieldStore } from "./lib/fieldStore";
 import { useChatStore } from "./lib/chatStore";
 import { onSync, bridgeDataChangedToSync, type SyncTopic } from "./lib/syncBus";
 import { setupOnlineReplay } from "./lib/calendarSync";
-import { startReminderScheduler } from "./lib/reminder";
 import { startSecretaryScheduler, runStartupBackfill } from "./lib/secretary/wiring";
 import { windowRole } from "./lib/windowLayout";
 import { useSettingsStore } from "./lib/settings";
@@ -82,14 +81,12 @@ function MainWindow() {
   // 离线期间入队的本地日历变更:联网恢复时自动 flush 回写飞书。
   useEffect(() => setupOnlineReplay(), []);
 
-  // 间歇式时间日志:提醒调度只在工作台主窗起一份(悬浮窗不起)。
-  useEffect(() => {
-    const stop = startReminderScheduler();
-    return stop;
-  }, []);
-
-  // AI 秘书调度器(日终纪要 + 晨间简报):同 reminder,只在工作台主窗起一份(单 owner)。
-  // 卸载时 stop(),停 tick 并释放 owner 锁。
+  // AI 秘书调度器(日终纪要 + 晨间简报 + 主动巡检,含活动捕获 activity_capture)。
+  // 只在工作台主窗起一份(单 owner)。卸载时 stop(),停 tick 并释放 owner 锁。
+  //
+  // 注:老的"间歇式时间日志"独立提醒定时器(reminder.ts 的 setInterval)已于"定时×主动全合 M4"
+  //     退役——活动记录改由主动引擎的 activity_capture 触发类型接手(尊重别烦我/静默/忙时档),
+  //     不再单起一个不看忙闲的裸定时器,避免与秘书消息双重打扰。
   useEffect(() => {
     const stop = startSecretaryScheduler();
     return stop;

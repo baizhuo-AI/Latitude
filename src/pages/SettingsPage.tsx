@@ -12,7 +12,6 @@ import {
   Download,
   Upload,
   Trash2,
-  Bell,
   Plug,
   CalendarClock,
   Command,
@@ -118,14 +117,8 @@ export function SettingsPage() {
             </Field>
           </Section>
 
-          {/* 定时提醒 */}
-          <Section
-            icon={<Bell className="w-4 h-4" />}
-            title={t("settings.reminder.title")}
-            description={t("settings.reminder.description")}
-          >
-            <ReminderSettings />
-          </Section>
+          {/* 定时提醒已并入下方「主动提醒」面板的「活动记录」子项(定时×主动全合 M4)——
+              工作时段 / 别烦我 / 间隔 / 策略档统一在那里设,这里不再单列定时提醒区。 */}
 
           {/* 快捷键 */}
           <Section
@@ -1245,140 +1238,6 @@ function ModelTierHint({
     <span className="text-xs text-zinc-400 dark:text-zinc-500">
       {t("settings.llm.recommendedTier", { model: verdict.recommendedModel })}
     </span>
-  );
-}
-
-/* ---------- 定时提醒设置 ---------- */
-
-const reminderInputCls = cn(
-  "w-16 px-2 py-1 rounded-md text-sm text-center outline-none transition-colors tabular-nums",
-  "bg-zinc-50 dark:bg-zinc-950",
-  "border border-zinc-200 dark:border-zinc-700",
-  "focus:border-indigo-500",
-  "text-zinc-900 dark:text-zinc-100"
-);
-
-function clampInt(raw: string, min: number, max: number, fallback: number): number {
-  const n = parseInt(raw, 10);
-  if (Number.isNaN(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
-}
-
-/** 今天 23:59:59 的时间戳(ms),给"今天不再提醒"用 */
-function endOfTodayTs(): number {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
-}
-
-function ReminderSettings() {
-  const { t } = useTranslation();
-  const reminder = useSettingsStore((s) => s.reminder);
-  const setReminder = useSettingsStore((s) => s.setReminder);
-  const paused = reminder.pausedUntil != null && Date.now() < reminder.pausedUntil;
-
-  return (
-    <>
-      <Field label={t("settings.reminder.enabled")}>
-        <SegmentControl<"on" | "off">
-          value={reminder.enabled ? "on" : "off"}
-          onChange={(v) => setReminder({ enabled: v === "on" })}
-          options={[
-            { value: "on", label: t("settings.reminder.on") },
-            { value: "off", label: t("settings.reminder.off") }
-          ]}
-        />
-      </Field>
-
-      {reminder.enabled && (
-        <>
-          <Field label={t("settings.reminder.interval")}>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                min={5}
-                max={480}
-                value={reminder.intervalMin}
-                onChange={(e) =>
-                  setReminder({ intervalMin: clampInt(e.target.value, 5, 480, 120) })
-                }
-                className={reminderInputCls}
-              />
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                {t("settings.reminder.minutes")}
-              </span>
-            </div>
-          </Field>
-
-          <Field label={t("settings.reminder.channel")}>
-            <SegmentControl<"floating" | "notification" | "both">
-              value={reminder.channel}
-              onChange={(v) => setReminder({ channel: v })}
-              options={[
-                { value: "floating", label: t("settings.reminder.channelFloating") },
-                { value: "notification", label: t("settings.reminder.channelNotification") },
-                { value: "both", label: t("settings.reminder.channelBoth") }
-              ]}
-            />
-          </Field>
-
-          <Field label={t("settings.reminder.workHours")}>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                min={0}
-                max={23}
-                value={reminder.workStart}
-                onChange={(e) =>
-                  setReminder({ workStart: clampInt(e.target.value, 0, 23, 9) })
-                }
-                className={reminderInputCls}
-              />
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">–</span>
-              <input
-                type="number"
-                min={0}
-                max={23}
-                value={reminder.workEnd}
-                onChange={(e) =>
-                  setReminder({ workEnd: clampInt(e.target.value, 0, 23, 22) })
-                }
-                className={reminderInputCls}
-              />
-            </div>
-          </Field>
-
-          <Field label={t("settings.reminder.pause")}>
-            {paused ? (
-              <button
-                type="button"
-                onClick={() => setReminder({ pausedUntil: undefined })}
-                className="px-2.5 py-1 rounded-md text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
-              >
-                {t("settings.reminder.resume")}
-              </button>
-            ) : (
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setReminder({ pausedUntil: Date.now() + 60 * 60 * 1000 })}
-                  className="px-2.5 py-1 rounded-md text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                >
-                  {t("settings.reminder.pause1h")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReminder({ pausedUntil: endOfTodayTs() })}
-                  className="px-2.5 py-1 rounded-md text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                >
-                  {t("settings.reminder.pauseToday")}
-                </button>
-              </div>
-            )}
-          </Field>
-        </>
-      )}
-    </>
   );
 }
 
