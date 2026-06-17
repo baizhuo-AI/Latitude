@@ -63,6 +63,7 @@ import { computeLoad, type LoadAssessment, type LoadSignals } from "./loadSignal
 import {
   gateProactive,
   defaultGateOptions,
+  COOLDOWN_BY_KIND_MS,
   type GateEnv,
   type GateOptions,
 } from "./gateProactive";
@@ -174,6 +175,9 @@ export function registerSecretaryJobs(scheduler: Scheduler, lang: Lang): void {
   // M5:时间敏感事件细粒度巡检——每 EVENT_SCAN_INTERVAL_MIN(15min) 检查一次
   // meeting_soon / deadline_near,修「心跳粒度 > 会议窗口」漏报问题。
   scheduler.registerJob(createProactiveEventScanJob());
+  // M-fix:activity_capture 独立节拍——按用户配置的 intervalMin 走自己的节拍。
+  // heartbeat 候选中已过滤掉 activity_capture,两 job 候选零交集。
+  scheduler.registerJob(createProactiveActivityCaptureJob());
 }
 
 // ─── 副作用:启动调度器(单 owner 窗口调用) ──────────────────────────────────
@@ -488,10 +492,13 @@ export async function runProactiveHeartbeat(now: number = Date.now()): Promise<v
 
     // 全合终审修:heartbeat 不再产 EVENT_SCAN_KINDS(meeting_soon / deadline_near)候选。
     // 这两类由 proactive-event-scan(15min 细粒度)专管。
+    // activity_capture 由 proactive-activity-capture 独立 job 专管(独立节拍)。
     // 候选分区是根治并发双发的唯一可靠手段:两 job 各自 loadGateState() 在对方
     // dbLogProactiveSent 落库前都能读到同一份空状态,仅靠 gate 去重无法防止竞态;
     // 只有让候选集零交集才能保证同 tick 并发不双发同一会议/任务。
-    const candidates = allCandidates.filter((c) => !EVENT_SCAN_KINDS.has(c.kind));
+    const candidates = allCandidates.filter(
+      (c) => !EVENT_SCAN_KINDS.has(c.kind) && c.kind !== "activity_capture"
+    );
 
     // 4. 事件开关过滤
     const filtered = filterCandidatesByEvents(candidates, stance.events);
@@ -705,6 +712,147 @@ export function createProactiveEventScanJob(): ScheduledJob {
 
     async run(): Promise<void> {
       await runProactiveEventScan(Date.now());
+    },
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// M-fix:activity_capture 独立调度 job
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 根因:activity_capture 挂在 90min 心跳上,设 30min 间隔时实际 ~90min 才问一次。
+// 修法:给 activity_capture 创建独立 job(proactive-activity-capture),
+//       按用户配置的 intervalMin 走自己的节拍。
+//       heartbeat 候选中已过滤掉 activity_capture(见上方)。
+//
+// 独立 job 编排:
+//   1. 读配置:activityCapture.enabled + intervalMin + workStart/workEnd
+//   2. shouldRun:工作时段 + 间隔(用 ctx.lastRan) + enabled
+//   3. run:直接调用 runProactiveActivityCapture(Date.now())
+//      内部:构造候选 → gate(会检查预算/冷却/pausedUntil/工作时段) → 投递
+//
+// gate 仍作为最终裁决者(scheduled 跳预算/去重已在 gateProactive 修好):
+//   - scheduled 模式:跳去重 + 跳预算,仍认工作时段+pausedUntil+冷却+全局间隔
+//   - gentle 模式:全套闸门(与其他候选一致)
+
+/**
+ * 跑一轮 activity_capture 独立巡检。
+ *
+ * 流程:
+ *   1. 读配置(readSettingsSnapshot),检查 activityCapture.enabled。
+ *   2. 构造 ActivityCaptureRunConfig(无需读 todos/events,只关心时间和间隔)。
+ *   3. 调 detectActivityCapture 产候选(纯函数,时间注入)。
+ *   4. 过 gate(loadGateState → gateProactive):做最终预算/冷却/pausedUntil 裁决。
+ *   5. 调 deliverProactive 投递(走 LLM 合成,大脑失败降级模板)。
+ *
+ * 全程不抛:任何异常吞掉并静默跳过本轮。
+ *
+ * @param now 当前时刻(ms,注入)
+ */
+export async function runProactiveActivityCapture(now: number = Date.now()): Promise<void> {
+  try {
+    const nowDate = new Date(now);
+    const snapshot = readSettingsSnapshot();
+    const stance = resolveProactiveStance(snapshot.proactive);
+
+    // 1. 总闸:off → 不跑
+    if (!stance.enabled) return;
+
+    const acConfig = snapshot.proactive?.activityCapture;
+    if (!acConfig?.enabled) return;
+
+    const lang: Lang = snapshot.lang ?? "zh";
+    const workStart = snapshot.reminder?.workStart ?? 9;
+    const workEnd = snapshot.reminder?.workEnd ?? 22;
+
+    // 2. 组装 activity_capture 运行时配置
+    const activityCaptureCfg: ActivityCaptureRunConfig = {
+      enabled: true,
+      intervalMin: acConfig.intervalMin ?? 120,
+      workStart,
+      workEnd,
+      pausedUntil: snapshot.reminder?.pausedUntil,
+      activityCaptureMode: acConfig.activityCaptureMode ?? "gentle",
+    };
+
+    // 3. 从 proactive_log 派生上次触发时间
+    const lastActivityFiredMs = await getLastActivityCaptureMs();
+
+    // 4. 产候选(纯函数)
+    const { detectActivityCapture } = await import("./triggers");
+    const candidates = detectActivityCapture(activityCaptureCfg, nowDate, lastActivityFiredMs);
+    if (candidates.length === 0) return; // 工作时段/间隔/pausedUntil 任一不满足 → 无候选
+
+    // 渲染 title
+    candidates[0].title =
+      lang === "zh" ? "活动记录:过去这段时间在忙什么?" : "Activity capture: what have you been working on?";
+
+    // 5. 过 gate(最终裁决:scheduled 跳去重+预算,gentle 全套)
+    const gateState = await loadGateState(snapshot.reminder?.pausedUntil, nowDate);
+    const baseOpts: GateOptions = {
+      ...defaultGateOptions(),
+      priorityFloor: stance.priorityFloor,
+      budgetPerHalfDay: stance.budgetPerHalfDay,
+      cooldownByKind: {
+        ...COOLDOWN_BY_KIND_MS,
+        activity_capture: (acConfig.intervalMin ?? 120) * 60 * 1000,
+      },
+    };
+    // activity_capture 不看 inMeeting(scheduled 模式),也不需要读日历
+    const env = buildGateEnv(workStart, workEnd, false, false);
+
+    const decision = gateProactive(candidates, gateState, env, nowDate, baseOpts);
+    if (decision.sent.length === 0) return;
+
+    // 6. 投递(走大脑合成,失败降级模板)
+    await deliverProactive(decision.sent[0], {
+      lang,
+      channel: stance.channel,
+      // activity_capture 不做负荷调语气(scheduled 硬提醒本意就是不看忙不忙)
+      tonePhrase: undefined,
+    });
+  } catch (err) {
+    console.warn("[secretary/wiring] runProactiveActivityCapture 异常:", err);
+  }
+}
+
+/**
+ * 创建 activity_capture 独立调度任务(M-fix)。
+ *
+ * shouldRun:
+ *   - activityCapture.enabled=false → 不跑
+ *   - 工作时段外 → 不跑
+ *   - 距上次(ctx.lastRan)< intervalMin → 不跑
+ *   - 其余 → 跑
+ *
+ * run:调 runProactiveActivityCapture(Date.now())。
+ *
+ * ⚠️ shouldRun 用 intervalMin 作为 job 级节拍控制(ctx.lastRan 是调度器记录的上次 run 时刻),
+ *    gate 内部冷却(cooldownByKind.activity_capture)是独立的第二道防线(跨重启持久化)。
+ *    两层都按 intervalMin 配置,协同工作不冲突。
+ */
+export function createProactiveActivityCaptureJob(): ScheduledJob {
+  return {
+    id: "proactive-activity-capture",
+
+    shouldRun(now: number, ctx: { lastRan: number | undefined }): boolean {
+      const snapshot = readSettingsSnapshot();
+      const ac = snapshot.proactive?.activityCapture;
+      if (!ac?.enabled) return false;
+
+      const intervalMs = (ac.intervalMin ?? 120) * 60 * 1000;
+      if (ctx.lastRan !== undefined && now - ctx.lastRan < intervalMs) return false;
+
+      const hour = new Date(now).getHours();
+      const workStart = snapshot.reminder?.workStart ?? 9;
+      const workEnd = snapshot.reminder?.workEnd ?? 22;
+      if (hour < workStart || hour >= workEnd) return false;
+
+      return true;
+    },
+
+    async run(): Promise<void> {
+      await runProactiveActivityCapture(Date.now());
     },
   };
 }

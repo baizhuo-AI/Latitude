@@ -257,7 +257,9 @@ describe("gateProactive — activity_capture scheduled 档(硬提醒:跳过忙�
     expect(d.sent).toHaveLength(1);
   });
 
-  it("scheduled + 预算耗尽 → 仍被预算挡", () => {
+  it("scheduled + 预算耗尽 → 跳过预算检查,仍放行(M-fix:固定闹钟不受半天预算限制)", () => {
+    // M-fix:scheduled activity_capture 跳过打扰预算,让它像固定闹钟一样雷打不动。
+    // 注意:会议中(inMeeting)对 scheduled 也是跳过的(在 checkSingle 中处理)。
     const now = makeDate(14, 0);
     const opts = defaultGateOptions();
     const recentlySent: SentRecord[] = [];
@@ -266,10 +268,10 @@ describe("gateProactive — activity_capture scheduled 档(硬提醒:跳过忙�
     }
     const state = makeState({ recentlySent });
     const c = makeActivityCandidate("scheduled");
-    // scheduled 仍受预算约束
+    // scheduled 跳过预算,即使预算耗尽也放行
     const d = gateProactive([c], state, makeEnv({ inMeeting: true }), now);
-    expect(d.sent).toHaveLength(0);
-    expect(d.rejected[0].reason).toMatch(/budget|预算|额度/i);
+    expect(d.sent).toHaveLength(1);
+    expect(d.sent[0].kind).toBe("activity_capture");
   });
 });
 

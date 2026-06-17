@@ -327,6 +327,79 @@ describe("deliverProactive — 聊天冒泡投递 + 打点", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// M-fix: activity_capture 走 LLM 路径 + 降级模板
+// ════════════════════════════════════════════════════════════════════════════
+describe("deliverProactive — activity_capture 走 LLM 路径", () => {
+  it("LLM 成功:投递的消息是 LLM 文案,convId 以 ac 开头", async () => {
+    const llmText = "在忙什么呢,说两句?";
+    engine.script = [{ content: llmText, model: "deepseek-chat" }];
+
+    const candidate = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      title: "活动记录:过去这段时间在忙什么?",
+      payload: { activityCaptureMode: "scheduled" },
+    });
+    const result = await deliverProactive(candidate, { lang: "zh", channel: "chat" });
+
+    expect(result?.convId).toBeTruthy();
+    expect(result?.convId.startsWith("ac")).toBe(true);
+
+    // 消息内容是 LLM 文案(不是固定模板)
+    const msgCall = vi.mocked(dbInsertMessage).mock.calls[0][0];
+    expect(msgCall.content).toBe(llmText);
+
+    // 打点 type 是 activity_capture
+    expect(proactiveLogCalls[0].type).toBe("activity_capture");
+
+    // LLM 被调用了
+    expect(engine.received).toHaveLength(1);
+  });
+
+  it("LLM 失败降级为模板:convId 仍以 ac 开头,内容是模板文案", async () => {
+    engine.chat = async () => {
+      throw new Error("LLM timeout");
+    };
+
+    const candidate = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      title: "活动记录:过去这段时间在忙什么?",
+      payload: { activityCaptureMode: "scheduled" },
+    });
+    const result = await deliverProactive(candidate, { lang: "zh", channel: "chat" });
+
+    // 降级:用模板,仍然投递
+    expect(result?.convId).toBeTruthy();
+    expect(result?.convId.startsWith("ac")).toBe(true);
+
+    const msgCall = vi.mocked(dbInsertMessage).mock.calls[0][0];
+    // 模板文案含「最近在忙啥」或「记一下」
+    expect(msgCall.content).toMatch(/忙|记|working|been up to/i);
+
+    // 打点照常
+    expect(proactiveLogCalls[0].type).toBe("activity_capture");
+  });
+
+  it("activity_capture 对话 title 是专用 title(活动记录 · ...)", async () => {
+    const llmText = "这阵子在做啥?";
+    engine.script = [{ content: llmText, model: "deepseek-chat" }];
+
+    const candidate = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      title: "活动记录",
+      payload: { activityCaptureMode: "gentle" },
+    });
+    await deliverProactive(candidate, { lang: "zh", channel: "chat" });
+
+    const convCall = vi.mocked(dbInsertConversation).mock.calls[0][0];
+    // 对话 title 应含「活动记录」
+    expect(convCall.title).toMatch(/活动记录/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // E. C6 错误降级
 // ════════════════════════════════════════════════════════════════════════════
 describe("deliverProactive — C6 错误降级(合成失败静默)", () => {

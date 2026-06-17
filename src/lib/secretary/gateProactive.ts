@@ -222,11 +222,15 @@ function checkSingle(
   }
 
   // ── 去重:同 refId 在去重窗口内已发过 ──
-  const dup = gateState.recentlySent.find(
-    (r) => r.content === c.refId && r.content !== "" && nowMs - r.sentAt <= opts.dedupWindowMs
-  );
-  if (dup) {
-    return `duplicate refId=${c.refId} sent at ${new Date(dup.sentAt).toISOString()} (dedup window)`;
+  // activity_capture 没有实体 id(refId 固定 "activity_capture"),无法用 refId 去重;
+  // 节奏靠冷却(cooldownByKind.activity_capture = intervalMin)控制,跳过去重检查。
+  if (c.kind !== "activity_capture") {
+    const dup = gateState.recentlySent.find(
+      (r) => r.content === c.refId && r.content !== "" && nowMs - r.sentAt <= opts.dedupWindowMs
+    );
+    if (dup) {
+      return `duplicate refId=${c.refId} sent at ${new Date(dup.sentAt).toISOString()} (dedup window)`;
+    }
   }
 
   // ── 按类型冷却:同 kind 距上次 <= 该类冷却 → 仍在冷却内 ──
@@ -299,7 +303,10 @@ export function gateProactive(
       rejected.push({ candidate: c, reason: "merged/deferred: one proactive per pass (合并让位)" });
       continue;
     }
-    if (budgetExhausted) {
+    // scheduled activity_capture 跳过预算检查:它是「雷打不动」的固定闹钟,
+    // 不应受每半天打扰预算上限限制。仍认:工作时段、pausedUntil、冷却、全局间隔。
+    const skipBudget = isScheduledActivityCapture(c);
+    if (budgetExhausted && !skipBudget) {
       rejected.push({
         candidate: c,
         reason: `budget exhausted: ${usedThisHalf}/${opts.budgetPerHalfDay} this half-day (预算/额度用尽)`,

@@ -290,22 +290,31 @@ export async function deliverProactive(
   const lang: Lang = opts.lang ?? s.lang ?? "zh";
   const channel: ProactiveChannel = opts.channel ?? "chat";
 
-  // activity_capture 特殊路径:用模板字符串,不调 LLM(节省 token)
-  // 对话 id 用 "ac" 前缀(区别于 "pa"),供 ChatBar/chatStore 识别
-  if (candidate.kind === "activity_capture") {
-    return deliverActivityCapture(candidate, lang, channel);
-  }
-
   // 1. 合成(C6:失败静默)
-  const text = await composeProactiveMessage(candidate, { lang, tonePhrase: opts.tonePhrase });
+  // activity_capture 走 composeProactiveMessage(大脑合成,拟人问候),
+  // 大脑失败(返回 undefined)时降级为固定模板——保证没配大脑的用户闹钟也能响。
+  let text = await composeProactiveMessage(candidate, { lang, tonePhrase: opts.tonePhrase });
+  if (text === undefined && candidate.kind === "activity_capture") {
+    // LLM 降级:大脑没配或失败时用固定模板
+    text = ACTIVITY_CAPTURE_PROMPT[lang];
+  }
   if (text === undefined) return undefined;
 
   const channels = resolveDeliveryChannels(channel);
 
   // 2. 聊天冒泡(恒走):新建对话 + assistant 消息
-  const convId = newId("pa");
+  // activity_capture 用 "ac" 前缀(chatStore writeback 依赖此前缀识别);其他用 "pa"
+  const convId = newId(candidate.kind === "activity_capture" ? "ac" : "pa");
   const now = new Date().toISOString();
-  const title = lang === "zh" ? `提醒 · ${candidate.title}` : `Nudge · ${candidate.title}`;
+  // activity_capture 用专用 title;其他类型保持原逻辑
+  const title =
+    candidate.kind === "activity_capture"
+      ? lang === "zh"
+        ? "活动记录 · 过去这段时间"
+        : "Activity Check-in"
+      : lang === "zh"
+        ? `提醒 · ${candidate.title}`
+        : `Nudge · ${candidate.title}`;
 
   const conv: ConversationRow = { id: convId, title, createdAt: now, updatedAt: now };
   await dbInsertConversation(conv);
@@ -325,7 +334,14 @@ export async function deliverProactive(
 
   // 3. 额外渠道(失败各自吞掉,不影响已投递的聊天消息)
   if (channels.notification) {
-    const notifyTitle = lang === "zh" ? "Daybreak 提醒" : "Daybreak";
+    const notifyTitle =
+      candidate.kind === "activity_capture"
+        ? lang === "zh"
+          ? "Daybreak 活动记录"
+          : "Daybreak Activity"
+        : lang === "zh"
+          ? "Daybreak 提醒"
+          : "Daybreak";
     await sendSystemNotification(notifyTitle, text);
   }
   if (channels.float) {
@@ -348,68 +364,6 @@ export async function deliverProactive(
   return { convId };
 }
 
-// ─── activity_capture 专用投递(模板路径,不调 LLM) ────────────────────────────
-
-/**
- * 活动捕获专用投递:用模板字符串投递,不调 LLM。
- *
- * 设计要点:
- *   - 对话 id 用 "ac" 前缀(与普通 "pa" 主动消息区分),供 chatStore 识别回写
- *   - proactive_log.type = "activity_capture"(真相源,chatStore 据此判断是否回写)
- *   - 多窗口:投递后 emitSync("conversations"),不直接改某窗口 store
- *   - 渠道副作用(通知/弹窗)同普通投递(失败各自吞掉)
- *
- * @param candidate activity_capture 候选(已被 gateProactive 放行)
- * @param lang      语言
- * @param channel   投递渠道
- */
-async function deliverActivityCapture(
-  candidate: ProactiveCandidate,
-  lang: Lang,
-  channel: ProactiveChannel
-): Promise<DeliverResult | undefined> {
-  const text = ACTIVITY_CAPTURE_PROMPT[lang];
-  const channels = resolveDeliveryChannels(channel);
-
-  const convId = newId("ac");
-  const now = new Date().toISOString();
-  const title =
-    lang === "zh" ? "活动记录 · 过去这段时间" : "Activity Check-in";
-
-  const conv: ConversationRow = { id: convId, title, createdAt: now, updatedAt: now };
-  await dbInsertConversation(conv);
-
-  const msg: ChatMessageRow = {
-    id: newId("m"),
-    convId,
-    role: "assistant",
-    content: text,
-    createdAt: now,
-  };
-  await dbInsertMessage(msg);
-  await dbTouchConversation(convId).catch(() => undefined);
-
-  emitSync("conversations");
-
-  // 额外渠道(失败各自吞掉)
-  if (channels.notification) {
-    const notifyTitle = lang === "zh" ? "Daybreak 活动记录" : "Daybreak Activity";
-    await sendSystemNotification(notifyTitle, text);
-  }
-  if (channels.float) {
-    await popFloatWindow();
-  }
-
-  // 打点
-  await dbLogProactiveSent({
-    type: "activity_capture",
-    convId,
-    contentPreview: text.slice(0, LOG_PREVIEW_LEN),
-    refId: candidate.refId,
-  }).catch((err) => {
-    console.warn("[deliverProactive] activity_capture 写 proactive_log 失败,忽略:", err);
-  });
-
-  console.info(`[deliverProactive] activity_capture 已投递: conv=${convId}, channel=${channel}`);
-  return { convId };
-}
+// ─── activity_capture 投递已合并进 deliverProactive 主路径 ──────────────────
+// deliverActivityCapture 函数已删除。ACTIVITY_CAPTURE_PROMPT 保留(降级模板用)。
+// isActivityCaptureConvId 保留(chatStore writeback 依赖)。

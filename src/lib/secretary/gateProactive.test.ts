@@ -394,6 +394,132 @@ describe("gateProactive — 全局最小间隔(温和频率硬底)", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// M-fix 1. activity_capture 跳过去重(bug fix)
+// ════════════════════════════════════════════════════════════════════════════
+describe("gateProactive — activity_capture 跳过去重窗口", () => {
+  it("去重窗口内已有 refId=activity_capture 的记录,冷却过了仍应放行", () => {
+    // 背景:activity_capture 没有实体 id,refId 固定 "activity_capture"
+    // 之前 bug:23h 去重窗口让一天只能发 1 次;冷却(intervalMin=2h)控制节奏才对
+    const now = makeDate(12, 0);
+    const intervalMs = 2 * 60 * 60 * 1000; // 2h 冷却
+    const sentAt = now.getTime() - intervalMs - 1; // 冷却已过(>2h 前)
+
+    const state = makeState({
+      recentlySent: [
+        // 3h 前发过 activity_capture,refId="activity_capture"(在 23h 去重窗口内)
+        sent("activity_capture", now.getTime() - 3 * 60 * 60 * 1000, "activity_capture"),
+      ],
+    });
+    const opts: GateOptions = {
+      ...defaultGateOptions(),
+      cooldownByKind: { ...defaultGateOptions().cooldownByKind, activity_capture: intervalMs },
+    };
+    const c = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      priority: 65,
+      payload: { activityCaptureMode: "gentle" },
+    });
+    const d = gateProactive([c], state, makeEnv(), now, opts);
+    // 冷却已过 + 跳过去重 → 应放行
+    expect(d.sent).toHaveLength(1);
+    expect(d.sent[0].kind).toBe("activity_capture");
+  });
+
+  it("activity_capture 冷却未过 → 仍被冷却拒(去重跳过不影响冷却检查)", () => {
+    const now = makeDate(12, 0);
+    const intervalMs = 2 * 60 * 60 * 1000;
+    const state = makeState({
+      recentlySent: [
+        // 仅 30min 前发过(冷却 2h,30min<2h → 还在冷却内)
+        sent("activity_capture", now.getTime() - 30 * 60 * 1000, "activity_capture"),
+      ],
+    });
+    const opts: GateOptions = {
+      ...defaultGateOptions(),
+      cooldownByKind: { ...defaultGateOptions().cooldownByKind, activity_capture: intervalMs },
+    };
+    const c = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      priority: 65,
+      payload: { activityCaptureMode: "gentle" },
+    });
+    const d = gateProactive([c], state, makeEnv(), now, opts);
+    expect(d.sent).toHaveLength(0);
+    expect(d.rejected[0].reason).toMatch(/cooldown|冷却/i);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// M-fix 2. scheduled activity_capture 跳过预算
+// ════════════════════════════════════════════════════════════════════════════
+describe("gateProactive — scheduled activity_capture 跳过预算", () => {
+  it("本半天预算已满(3/3),scheduled activity_capture 仍放行", () => {
+    const now = makeDate(11, 0); // 上午
+    const recentlySent: SentRecord[] = [];
+    for (let i = 0; i < HALF_DAY_BUDGET_DEFAULT; i++) {
+      recentlySent.push(sent("meeting_soon", makeMs(9, i), `am-${i}`));
+    }
+    const state = makeState({ recentlySent });
+    const c = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      priority: 65,
+      payload: { activityCaptureMode: "scheduled" },
+    });
+    const d = gateProactive([c], state, makeEnv(), now);
+    expect(d.sent).toHaveLength(1);
+    expect(d.sent[0].kind).toBe("activity_capture");
+  });
+
+  it("gentle activity_capture 仍受预算限制(只有 scheduled 豁免)", () => {
+    const now = makeDate(11, 0);
+    const recentlySent: SentRecord[] = [];
+    for (let i = 0; i < HALF_DAY_BUDGET_DEFAULT; i++) {
+      recentlySent.push(sent("meeting_soon", makeMs(9, i), `am-${i}`));
+    }
+    const state = makeState({ recentlySent });
+    const c = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      priority: 65,
+      payload: { activityCaptureMode: "gentle" },
+    });
+    const d = gateProactive([c], state, makeEnv(), now);
+    expect(d.sent).toHaveLength(0);
+    expect(d.rejected[0].reason).toMatch(/budget|预算|额度/i);
+  });
+
+  it("scheduled activity_capture 工作时段外仍被拒", () => {
+    const now = makeDate(7, 0); // 工作时段外
+    const c = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      priority: 65,
+      payload: { activityCaptureMode: "scheduled" },
+    });
+    const d = gateProactive([c], makeState(), makeEnv(), now);
+    expect(d.sent).toHaveLength(0);
+    expect(d.rejected[0].reason).toMatch(/quiet|时段/i);
+  });
+
+  it("scheduled activity_capture pausedUntil 未过 → 仍被拒", () => {
+    const now = makeDate(10, 0);
+    const c = makeCandidate({
+      kind: "activity_capture",
+      refId: "activity_capture",
+      priority: 65,
+      payload: { activityCaptureMode: "scheduled" },
+    });
+    const state = makeState({ pausedUntil: now.getTime() + 1 });
+    const d = gateProactive([c], state, makeEnv(), now);
+    expect(d.sent).toHaveLength(0);
+    expect(d.rejected[0].reason).toMatch(/pause|暂停/i);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // 7. 拒绝优先级:静默 > 其它(静默时段所有候选都不应放行)
 // ════════════════════════════════════════════════════════════════════════════
 describe("gateProactive — 综合", () => {

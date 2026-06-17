@@ -21,6 +21,12 @@ let _throwOnListMessages = false;
 // 心跳巡检读取:全部 todo + 全部 calendar_events(真相源直读 DB)
 let _fakeTodos: unknown[] = [];
 let _fakeEvents: unknown[] = [];
+// M-fix:activity_capture 配置(注入进 settingsSnapshot)
+let _activityCaptureConfig: {
+  enabled: boolean;
+  intervalMin: number;
+  activityCaptureMode: "gentle" | "scheduled";
+} | undefined = undefined;
 
 // ─── mock db ─────────────────────────────────────────────────────────────────
 vi.mock("../db", async (importOriginal) => {
@@ -66,7 +72,11 @@ function settingsSnapshot() {
       channel: "both",
       pausedUntil: _pausedUntil,
     },
-    proactive: _proactive,
+    proactive: {
+      ..._proactive,
+      // M-fix:activity_capture 配置(按需注入;undefined 表示未配置)
+      activityCapture: _activityCaptureConfig,
+    },
   };
 }
 vi.mock("../settings", () => ({
@@ -122,6 +132,9 @@ import {
   EVENT_SCAN_KINDS,
   runProactiveEventScan,
   createProactiveEventScanJob,
+  // M-fix 新增:activity_capture 独立 job
+  createProactiveActivityCaptureJob,
+  runProactiveActivityCapture,
 } from "./wiring";
 import { createScheduler, type ScheduledJob } from "./scheduler";
 import { defaultGateOptions } from "./gateProactive";
@@ -142,6 +155,7 @@ beforeEach(() => {
   _pausedUntil = undefined;
   _fakeTodos = [];
   _fakeEvents = [];
+  _activityCaptureConfig = undefined; // M-fix:默认不配置 activityCapture
   _gateState = { recentlySent: [], pausedUntil: undefined, lastProactiveSentMs: undefined };
   _proactive = {
     mode: "gentle",
@@ -231,7 +245,7 @@ describe("buildGateStateProvider", () => {
 // 4. registerSecretaryJobs — 注册集合
 // ════════════════════════════════════════════════════════════════════════════
 describe("registerSecretaryJobs", () => {
-  it("恰好注册 daily-scan + morning-briefing + proactive-heartbeat + proactive-event-scan 四个任务", () => {
+  it("注册 daily-scan + morning-briefing + proactive-heartbeat + proactive-event-scan + proactive-activity-capture 五个任务", () => {
     const registered: string[] = [];
     const scheduler = createScheduler({ windowId: "test-main" });
     const origRegister = scheduler.registerJob;
@@ -246,7 +260,8 @@ describe("registerSecretaryJobs", () => {
     expect(registered).toContain("morning-briefing");
     expect(registered).toContain("proactive-heartbeat");
     expect(registered).toContain("proactive-event-scan");
-    expect(registered).toHaveLength(4);
+    expect(registered).toContain("proactive-activity-capture");
+    expect(registered).toHaveLength(5);
   });
 
   it("注册的 morning-briefing 是带 gate 的版本(其 shouldRun 跨自然日判断)", () => {
@@ -598,9 +613,9 @@ describe("M5: createProactiveEventScanJob.shouldRun", () => {
   });
 });
 
-// ── 13. registerSecretaryJobs — 新增 proactive-event-scan 共 4 个 job ──────
+// ── 13. registerSecretaryJobs — 新增 proactive-event-scan + proactive-activity-capture 共 5 个 job ──
 describe("M5: registerSecretaryJobs 新增 proactive-event-scan", () => {
-  it("恰好注册 4 个任务:daily-scan + morning-briefing + proactive-heartbeat + proactive-event-scan", () => {
+  it("注册 5 个任务:含 daily-scan + morning-briefing + proactive-heartbeat + proactive-event-scan + proactive-activity-capture", () => {
     const registered: string[] = [];
     const scheduler = createScheduler({ windowId: "test-m5" });
     const origRegister = scheduler.registerJob;
@@ -615,7 +630,8 @@ describe("M5: registerSecretaryJobs 新增 proactive-event-scan", () => {
     expect(registered).toContain("morning-briefing");
     expect(registered).toContain("proactive-heartbeat");
     expect(registered).toContain("proactive-event-scan");
-    expect(registered).toHaveLength(4);
+    expect(registered).toContain("proactive-activity-capture");
+    expect(registered).toHaveLength(5);
   });
 });
 
@@ -873,5 +889,115 @@ describe("全合终审:并发双发回归测试 — heartbeat 不产 meeting/ddl
     expect(heartbeatKinds).not.toContain("deadline_near");
     // task_stuck(priority=40) 在 active 档(priorityFloor=30)应能过线
     expect(heartbeatKinds).toContain("task_stuck");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// M-fix:heartbeat 不产 activity_capture + 独立 job
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("M-fix: heartbeat 不产 activity_capture 候选", () => {
+  it("heartbeat 过滤后候选不含 activity_capture(即使开启了 activityCapture)", async () => {
+    // 开启 activityCapture
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "scheduled" };
+    const now = tsAt(10, 0);
+    _fakeTodos = [];
+    _fakeEvents = [];
+
+    // 跑 heartbeat:即使有 activityCapture 配置,heartbeat 候选被过滤掉 activity_capture
+    await runProactiveHeartbeat(now);
+    // 没有其他候选(todo/event 都空),所以不投递
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("heartbeat 投递时不会投递 activity_capture kind", async () => {
+    // 即使 heartbeat 内部运行了 collectCandidates(含 activityCapture 配置),
+    // 过滤后候选中不含 activity_capture
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "scheduled" };
+    _proactive = { ..._proactive, mode: "active" };
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+    _fakeTodos = [
+      { id: "stuck-1", title: "卡住任务", priority: "medium", tags: [], status: "todo", createdAt: stuckCreatedAt },
+    ];
+    _fakeEvents = [];
+
+    await runProactiveHeartbeat(now);
+    // 可能投递 task_stuck,但绝不投递 activity_capture
+    for (const call of deliverSpy.mock.calls) {
+      const [c] = call as [ProactiveCandidate, unknown];
+      expect(c.kind).not.toBe("activity_capture");
+    }
+  });
+});
+
+describe("M-fix: createProactiveActivityCaptureJob shouldRun", () => {
+  it("job id 为 proactive-activity-capture", () => {
+    const job = createProactiveActivityCaptureJob();
+    expect(job.id).toBe("proactive-activity-capture");
+  });
+
+  it("activityCapture disabled(未配置)→ shouldRun 返回 false", () => {
+    // _activityCaptureConfig 默认 undefined → disabled
+    const job = createProactiveActivityCaptureJob();
+    expect(job.shouldRun(tsAt(10, 0), { lastRan: undefined })).toBe(false);
+  });
+
+  it("工作时段外(8:59)→ shouldRun 返回 false", () => {
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "scheduled" };
+    const job = createProactiveActivityCaptureJob();
+    expect(job.shouldRun(tsAt(8, 59), { lastRan: undefined })).toBe(false);
+  });
+
+  it("间隔未到(29min < 30min)→ shouldRun 返回 false", () => {
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "scheduled" };
+    const job = createProactiveActivityCaptureJob();
+    const last = tsAt(10, 0);
+    expect(job.shouldRun(tsAt(10, 29), { lastRan: last })).toBe(false);
+  });
+
+  it("间隔已到(30min = 30min)+ 工作时段内 + enabled → shouldRun 返回 true", () => {
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "scheduled" };
+    const job = createProactiveActivityCaptureJob();
+    const last = tsAt(10, 0);
+    expect(job.shouldRun(tsAt(10, 30), { lastRan: last })).toBe(true);
+  });
+
+  it("从未运行过(lastRan=undefined)+ 工作时段内 + enabled → shouldRun 返回 true", () => {
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "gentle" };
+    const job = createProactiveActivityCaptureJob();
+    expect(job.shouldRun(tsAt(10, 0), { lastRan: undefined })).toBe(true);
+  });
+
+  it("registerSecretaryJobs 包含 proactive-activity-capture(共 5 个 job)", () => {
+    const registered: string[] = [];
+    const scheduler = createScheduler({ windowId: "test-ac" });
+    const origRegister = scheduler.registerJob;
+    scheduler.registerJob = (job: ScheduledJob) => {
+      registered.push(job.id);
+      origRegister(job);
+    };
+
+    registerSecretaryJobs(scheduler, "zh");
+
+    expect(registered).toContain("proactive-activity-capture");
+    expect(registered).toHaveLength(5);
+  });
+});
+
+describe("M-fix: runProactiveActivityCapture 编排", () => {
+  it("activityCapture disabled → 不投递", async () => {
+    // _activityCaptureConfig 默认 undefined → disabled
+    await runProactiveActivityCapture(tsAt(10, 0));
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("内部异常不抛(静默降级):loadGateState 异常时不投递也不抛", async () => {
+    _activityCaptureConfig = { enabled: true, intervalMin: 30, activityCaptureMode: "scheduled" };
+    // loadGateState 抛异常 → 整轮静默跳过
+    const gateState = await import("./gateState");
+    (gateState.loadGateState as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("gate db down"));
+    await expect(runProactiveActivityCapture(tsAt(10, 0))).resolves.toBeUndefined();
+    expect(deliverSpy).not.toHaveBeenCalled();
   });
 });
