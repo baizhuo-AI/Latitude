@@ -451,13 +451,19 @@ describe("runProactiveHeartbeat", () => {
     expect(deliverSpy).not.toHaveBeenCalled();
   });
 
-  it("有紧迫候选(会议 5min 后)、闸门放行 → deliver 被调,带 channel 透传", async () => {
-    _proactive = { ..._proactive, mode: "gentle", channel: "notification" };
-    _fakeEvents = [eventStartingInMin(tsAt(10, 0), 5)];
-    await runProactiveHeartbeat(tsAt(10, 0));
+  it("有候选(task_stuck)、闸门放行 → deliver 被调,带 channel 透传", async () => {
+    // heartbeat 不再产 meeting_soon/deadline_near(由 event-scan 专管),改用 task_stuck 验证投递路径
+    _proactive = { ..._proactive, mode: "active", channel: "notification" }; // active 档地板低,task_stuck(40) 能过线
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(); // 4 天前
+    _fakeTodos = [
+      { id: "stuck-1", title: "卡住的任务", priority: "medium", tags: [], status: "todo", createdAt: stuckCreatedAt },
+    ];
+    _fakeEvents = [];
+    await runProactiveHeartbeat(now);
     expect(deliverSpy).toHaveBeenCalledTimes(1);
     const [candidate, opts] = deliverSpy.mock.calls[0] as [ProactiveCandidate, Record<string, unknown>];
-    expect(candidate.kind).toBe("meeting_soon");
+    expect(candidate.kind).toBe("task_stuck");
     expect(opts.channel).toBe("notification");
   });
 
@@ -468,33 +474,47 @@ describe("runProactiveHeartbeat", () => {
     expect(deliverSpy).not.toHaveBeenCalled();
   });
 
-  it("候选 kind 被事件开关关掉 → 不投递", async () => {
+  it("候选 kind 被事件开关关掉 → 不投递(task_stuck + taskStuck=false)", async () => {
+    // heartbeat 只处理 task_stuck/just_completed/activity_capture;用 taskStuck 开关来验证过滤
     _proactive = {
       ..._proactive,
-      mode: "gentle",
-      events: { ..._proactive.events, meetingSoon: false },
+      mode: "active",
+      events: { ..._proactive.events, taskStuck: false },
     };
-    _fakeEvents = [eventStartingInMin(tsAt(10, 0), 5)];
-    await runProactiveHeartbeat(tsAt(10, 0));
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+    _fakeTodos = [
+      { id: "stuck-1", title: "卡住的任务", priority: "medium", tags: [], status: "todo", createdAt: stuckCreatedAt },
+    ];
+    _fakeEvents = [];
+    await runProactiveHeartbeat(now);
     expect(deliverSpy).not.toHaveBeenCalled();
   });
 
   it("闸门因 pausedUntil 拒绝 → 不投递(别烦我生效)", async () => {
-    _proactive = { ..._proactive, mode: "gentle" };
+    _proactive = { ..._proactive, mode: "active" };
     _pausedUntil = tsAt(23, 0); // 静音到今晚
     _gateState = { recentlySent: [], pausedUntil: tsAt(23, 0), lastProactiveSentMs: undefined };
-    _fakeEvents = [eventStartingInMin(tsAt(10, 0), 5)];
-    await runProactiveHeartbeat(tsAt(10, 0));
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+    _fakeTodos = [
+      { id: "stuck-1", title: "卡住的任务", priority: "medium", tags: [], status: "todo", createdAt: stuckCreatedAt },
+    ];
+    _fakeEvents = [];
+    await runProactiveHeartbeat(now);
     expect(deliverSpy).not.toHaveBeenCalled();
   });
 
   it("负荷措辞透传给 deliver(high 档 tonePhrase 注入)", async () => {
-    // 加班场景:now 21:00,workEnd 22 不算加班;改用日程稠密推 high
-    _proactive = { ..._proactive, mode: "gentle" };
+    // heartbeat 候选改用 task_stuck;三个今天的会议仍用于 buildLoadSignals(meetingCount>=3 → high)
+    _proactive = { ..._proactive, mode: "active" }; // active 档地板低,task_stuck(40) 能过线
     const now = tsAt(10, 0);
-    // 三个今天的会议(meetingCount>=3 → high),外加一个 5min 后将至的会议作候选
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+    _fakeTodos = [
+      { id: "stuck-1", title: "卡住的任务", priority: "medium", tags: [], status: "todo", createdAt: stuckCreatedAt },
+    ];
+    // 三个今天的会议推 high 负荷(meetingCount>=3),外加一个会议只用于 buildLoadSignals(不做候选)
     _fakeEvents = [
-      eventStartingInMin(now, 5, "soon"),
       { ...eventStartingInMin(now, 120, "m2"), scheduledDate: "2026-06-15" },
       { ...eventStartingInMin(now, 180, "m3"), scheduledDate: "2026-06-15" },
       { ...eventStartingInMin(now, 240, "m4"), scheduledDate: "2026-06-15" },
@@ -726,5 +746,132 @@ describe("M5: 巡检不变频 — heartbeat 仍处理 task_stuck / just_complete
     expect(heartbeatJob.shouldRun(tsAt(11, 29), { lastRan: last })).toBe(false);
     // 90min 后:到点 → true
     expect(heartbeatJob.shouldRun(tsAt(11, 30), { lastRan: last })).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 全合终审:并发双发回归测试
+// 根因:两 job 同 tick 都 shouldRun=true(lastRan 都 undefined → 冷启动),
+//       各自 collectCandidates 都产出 meeting_soon/deadline_near 候选 →
+//       各自 loadGateState 在对方 dbLogProactiveSent 落库前读到同一份空去重状态
+//       → 同一会议各投一条(双发)。
+// 修法:heartbeat 不再产 EVENT_SCAN_KINDS(meeting_soon/deadline_near)候选,
+//       两 job 候选零交集,从根本上消除并发双发可能。
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("全合终审:并发双发回归测试 — heartbeat 不产 meeting/ddl 候选", () => {
+  it("[并发场景] heartbeat 的候选集不含 meeting_soon(同 tick 两 job 都 shouldRun=true 时不双发)", async () => {
+    // 场景:冷启动,两 job 的 lastRan 都 undefined → shouldRun 都 true
+    // 但 heartbeat 候选不应含 meeting_soon/deadline_near
+    _proactive = { ..._proactive, mode: "gentle" };
+    const now = tsAt(10, 0);
+
+    // 设置一个 20min 内将至的会议(在 MEETING_SOON_WINDOW_MS=30min 内)
+    _fakeEvents = [eventStartingInMin(now, 20)];
+    _fakeTodos = [];
+
+    // 并发时双发复现:两个函数同时用相同的空 gateState 跑
+    // heartbeat 不应该产 meeting_soon —— 这是关键断言
+    // 我们借助 deliverSpy 来验证:先跑 event-scan,再跑 heartbeat,
+    // heartbeat 不应再次投递(即它的候选里没有 meeting_soon)
+    await runProactiveEventScan(now);
+    expect(deliverSpy).toHaveBeenCalledTimes(1);
+    const [firstCandidate] = deliverSpy.mock.calls[0] as [ProactiveCandidate, Record<string, unknown>];
+    expect(firstCandidate.kind).toBe("meeting_soon"); // event-scan 正常产
+
+    // 重置 deliverSpy 后跑 heartbeat(gateState 未变 —— 模拟并发时 loadGateState 仍读旧状态)
+    deliverSpy.mockClear();
+    await runProactiveHeartbeat(now);
+    // heartbeat 不应投递 meeting_soon(因为它不产这类候选)
+    // 可能投递别的(如 activity_capture),但不能是 meeting_soon/deadline_near
+    for (const call of deliverSpy.mock.calls) {
+      const [c] = call as [ProactiveCandidate, unknown];
+      expect(c.kind).not.toBe("meeting_soon");
+      expect(c.kind).not.toBe("deadline_near");
+    }
+  });
+
+  it("[并发场景] heartbeat 的候选集不含 deadline_near(冷启动,与 event-scan 零交集)", async () => {
+    _proactive = { ..._proactive, mode: "gentle" };
+    const now = tsAt(10, 0);
+    // 设置一个 30min 内到点的 todo(在 DEADLINE_NEAR_WINDOW_MS=60min 内)
+    _fakeEvents = [];
+    _fakeTodos = [
+      {
+        id: "todo-deadline",
+        title: "截止任务",
+        priority: "high",
+        tags: [],
+        status: "todo",
+        createdAt: new Date(now - 60 * 60 * 1000).toISOString(),
+        scheduledDate: "2026-06-15",
+        scheduledTime: `${String(new Date(now + 30 * 60 * 1000).getHours()).padStart(2, "0")}:${String(new Date(now + 30 * 60 * 1000).getMinutes()).padStart(2, "0")}-${String(new Date(now + 90 * 60 * 1000).getHours()).padStart(2, "0")}:${String(new Date(now + 90 * 60 * 1000).getMinutes()).padStart(2, "0")}`,
+      },
+    ];
+
+    // event-scan 应产 deadline_near
+    await runProactiveEventScan(now);
+    const eventScanDelivered = deliverSpy.mock.calls.some(
+      ([c]) => (c as ProactiveCandidate).kind === "deadline_near"
+    );
+    expect(eventScanDelivered).toBe(true);
+
+    // heartbeat 不应再产 deadline_near
+    deliverSpy.mockClear();
+    await runProactiveHeartbeat(now);
+    for (const call of deliverSpy.mock.calls) {
+      const [c] = call as [ProactiveCandidate, unknown];
+      expect(c.kind).not.toBe("deadline_near");
+      expect(c.kind).not.toBe("meeting_soon");
+    }
+  });
+
+  it("heartbeat 内部候选过滤:collectCandidates 产出 meeting_soon 时,heartbeat 流程中过滤掉它", async () => {
+    // 这个测试直接验证 heartbeat 候选里不含 EVENT_SCAN_KINDS,即使 collectCandidates 产了它们
+    _proactive = { ..._proactive, mode: "gentle" };
+    const now = tsAt(10, 0);
+
+    // 只有一个 meeting_soon 候选,无其他候选
+    _fakeEvents = [eventStartingInMin(now, 5)];
+    _fakeTodos = [];
+
+    // heartbeat 应不投递(候选被过滤掉了)
+    await runProactiveHeartbeat(now);
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("候选分区完整性:event-scan 专管时间敏感(meeting/ddl),heartbeat 专管慢节奏(stuck/completed)", async () => {
+    _proactive = { ..._proactive, mode: "active" };
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 同时存在 meeting_soon 和 task_stuck 候选
+    _fakeEvents = [eventStartingInMin(now, 10)];
+    _fakeTodos = [
+      {
+        id: "stuck-1",
+        title: "卡住的任务",
+        priority: "medium",
+        tags: [],
+        status: "todo",
+        createdAt: stuckCreatedAt,
+      },
+    ];
+
+    // event-scan 只投 meeting_soon
+    await runProactiveEventScan(now);
+    const eventScanKinds = deliverSpy.mock.calls.map(([c]) => (c as ProactiveCandidate).kind);
+    expect(eventScanKinds).toContain("meeting_soon");
+    expect(eventScanKinds).not.toContain("task_stuck");
+
+    deliverSpy.mockClear();
+
+    // heartbeat 只投 task_stuck(不产 meeting_soon)
+    await runProactiveHeartbeat(now);
+    const heartbeatKinds = deliverSpy.mock.calls.map(([c]) => (c as ProactiveCandidate).kind);
+    expect(heartbeatKinds).not.toContain("meeting_soon");
+    expect(heartbeatKinds).not.toContain("deadline_near");
+    // task_stuck(priority=40) 在 active 档(priorityFloor=30)应能过线
+    expect(heartbeatKinds).toContain("task_stuck");
   });
 });

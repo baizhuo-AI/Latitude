@@ -484,7 +484,14 @@ export async function runProactiveHeartbeat(now: number = Date.now()): Promise<v
         : undefined;
     // M3:lastActivityFiredMs 从 proactive_log 派生(不再保守传 0)
     const lastActivityFiredMs = await getLastActivityCaptureMs();
-    const candidates = collectCandidates(triggerSnapshot, nowDate, lang, activityCaptureCfg, lastActivityFiredMs);
+    const allCandidates = collectCandidates(triggerSnapshot, nowDate, lang, activityCaptureCfg, lastActivityFiredMs);
+
+    // 全合终审修:heartbeat 不再产 EVENT_SCAN_KINDS(meeting_soon / deadline_near)候选。
+    // 这两类由 proactive-event-scan(15min 细粒度)专管。
+    // 候选分区是根治并发双发的唯一可靠手段:两 job 各自 loadGateState() 在对方
+    // dbLogProactiveSent 落库前都能读到同一份空状态,仅靠 gate 去重无法防止竞态;
+    // 只有让候选集零交集才能保证同 tick 并发不双发同一会议/任务。
+    const candidates = allCandidates.filter((c) => !EVENT_SCAN_KINDS.has(c.kind));
 
     // 4. 事件开关过滤
     const filtered = filterCandidatesByEvents(candidates, stance.events);
@@ -566,17 +573,17 @@ export function createProactiveHeartbeatJob(): ScheduledJob {
 // 根因:heartbeatMin(默认 90min) > MEETING_SOON_WINDOW_MS(30min),
 //       某次会议的「将至窗口」可能整个落在两次心跳之间 → 漏报。
 //
-// 方案(a):拆分两个 job:
+// 方案:拆分两个 job,通过候选分区根治并发双发:
 //   - proactive-event-scan (本节):每 EVENT_SCAN_INTERVAL_MIN(≤15min) 跑一次,
 //     只收时间敏感的 EVENT_SCAN_KINDS 候选(meeting_soon / deadline_near)→ gate → 投递。
-//   - proactive-heartbeat (已有):维持原 heartbeatMin 慢节奏,收全量候选
-//     (含 task_stuck / just_completed / activity_capture)→ gate → 投递。
+//   - proactive-heartbeat (已有):维持原 heartbeatMin 慢节奏,候选中过滤掉 EVENT_SCAN_KINDS
+//     (即不产 meeting_soon / deadline_near),只处理
+//     task_stuck / just_completed / activity_capture → gate → 投递。
 //
-// 两个 job 共用同一个 gate(预算/冷却/去重),实际发送频率不会因此翻倍:
-//   - meeting_soon 冷却 30min:同一会议只打扰一次;
-//   - deadline_near 冷却 30min:同一任务只打扰一次;
-//   - task_stuck / just_completed / activity_capture 冷却 12h/2h/120min:
-//     它们只在旧 heartbeat 里产,event-scan 不产,不受影响。
+// 两 job 候选零交集 → 同一 tick 并发跑(典型:冷启动 lastRan 都 undefined)时不可能双发同一会议/任务。
+// 这比"共用 gate + 依赖冷却去重"更可靠:gate 的去重/冷却只约束单次 gateProactive 调用内,
+// 并发跑时两 job 各自 loadGateState() 都在对方 dbLogProactiveSent 落库前读到同一份空状态。
+// 候选分区是唯一能在调度层面根治的方案,无需 await tick(影响面大)。
 
 /**
  * 事件细粒度巡检间隔(分钟):≤ MEETING_SOON_WINDOW_MS(30min)的一半。
