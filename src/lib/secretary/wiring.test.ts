@@ -117,6 +117,11 @@ import {
   applyLoadToGateOptions,
   runProactiveHeartbeat,
   createProactiveHeartbeatJob,
+  // M5 新增:事件细粒度巡检
+  EVENT_SCAN_INTERVAL_MIN,
+  EVENT_SCAN_KINDS,
+  runProactiveEventScan,
+  createProactiveEventScanJob,
 } from "./wiring";
 import { createScheduler, type ScheduledJob } from "./scheduler";
 import { defaultGateOptions } from "./gateProactive";
@@ -226,7 +231,7 @@ describe("buildGateStateProvider", () => {
 // 4. registerSecretaryJobs — 注册集合
 // ════════════════════════════════════════════════════════════════════════════
 describe("registerSecretaryJobs", () => {
-  it("恰好注册 daily-scan + morning-briefing + proactive-heartbeat 三个任务", () => {
+  it("恰好注册 daily-scan + morning-briefing + proactive-heartbeat + proactive-event-scan 四个任务", () => {
     const registered: string[] = [];
     const scheduler = createScheduler({ windowId: "test-main" });
     const origRegister = scheduler.registerJob;
@@ -240,7 +245,8 @@ describe("registerSecretaryJobs", () => {
     expect(registered).toContain("daily-scan");
     expect(registered).toContain("morning-briefing");
     expect(registered).toContain("proactive-heartbeat");
-    expect(registered).toHaveLength(3);
+    expect(registered).toContain("proactive-event-scan");
+    expect(registered).toHaveLength(4);
   });
 
   it("注册的 morning-briefing 是带 gate 的版本(其 shouldRun 跨自然日判断)", () => {
@@ -508,5 +514,217 @@ describe("runProactiveHeartbeat", () => {
     (db.dbListCalendarEvents as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("db down"));
     await expect(runProactiveHeartbeat(tsAt(10, 0))).resolves.toBeUndefined();
     expect(deliverSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// M5:事件细粒度巡检 — 证明"会议提醒漏报"修复
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── 10. EVENT_SCAN_INTERVAL_MIN 常量:应远小于 MEETING_SOON_WINDOW_MS(30min) ──
+describe("M5: EVENT_SCAN_INTERVAL_MIN 常量", () => {
+  it("事件巡检间隔 <= 15min(保证落在 30min 会议窗口内有机会检查)", () => {
+    // 关键约束:检查间隔 <= 会议窗口(30min)才能保证不漏报
+    expect(EVENT_SCAN_INTERVAL_MIN).toBeLessThanOrEqual(15);
+    expect(EVENT_SCAN_INTERVAL_MIN).toBeGreaterThan(0);
+  });
+});
+
+// ── 11. EVENT_SCAN_KINDS:只包含时间敏感事件 kind ─────────────────────────────
+describe("M5: EVENT_SCAN_KINDS 常量", () => {
+  it("包含 meeting_soon + deadline_near", () => {
+    expect(EVENT_SCAN_KINDS).toContain("meeting_soon");
+    expect(EVENT_SCAN_KINDS).toContain("deadline_near");
+  });
+
+  it("不包含低优先级/慢节奏的 task_stuck / just_completed / activity_capture", () => {
+    // 这三类有自己的 gate 冷却控制(12h / 2h / 120min),不需要快速巡检
+    expect(EVENT_SCAN_KINDS).not.toContain("task_stuck");
+    expect(EVENT_SCAN_KINDS).not.toContain("just_completed");
+    expect(EVENT_SCAN_KINDS).not.toContain("activity_capture");
+  });
+});
+
+// ── 12. createProactiveEventScanJob — shouldRun 使用事件巡检间隔 ─────────────
+describe("M5: createProactiveEventScanJob.shouldRun", () => {
+  it("job id 为 proactive-event-scan", () => {
+    const job = createProactiveEventScanJob();
+    expect(job.id).toBe("proactive-event-scan");
+  });
+
+  it("工作时段外不跑(08:59 → false)", () => {
+    const job = createProactiveEventScanJob();
+    expect(job.shouldRun(tsAt(8, 59), { lastRan: undefined })).toBe(false);
+  });
+
+  it("工作时段内、从未跑过 → true", () => {
+    const job = createProactiveEventScanJob();
+    expect(job.shouldRun(tsAt(10, 0), { lastRan: undefined })).toBe(true);
+  });
+
+  it("使用 EVENT_SCAN_INTERVAL_MIN 间隔,不受 heartbeatMin(90min)约束", () => {
+    const job = createProactiveEventScanJob();
+    const last = tsAt(10, 0);
+    const scanMs = EVENT_SCAN_INTERVAL_MIN * 60 * 1000;
+
+    // 间隔 -1ms 未到 → false
+    expect(job.shouldRun(last + scanMs - 1, { lastRan: last })).toBe(false);
+    // 恰好到间隔(>=)→ true
+    expect(job.shouldRun(last + scanMs, { lastRan: last })).toBe(true);
+
+    // 证明:如果用 90min 间隔则这个时刻不应该跑,但 event-scan 会跑
+    // (即 scanMs << 90min = 5400000ms)
+    expect(scanMs).toBeLessThan(90 * 60 * 1000);
+  });
+});
+
+// ── 13. registerSecretaryJobs — 新增 proactive-event-scan 共 4 个 job ──────
+describe("M5: registerSecretaryJobs 新增 proactive-event-scan", () => {
+  it("恰好注册 4 个任务:daily-scan + morning-briefing + proactive-heartbeat + proactive-event-scan", () => {
+    const registered: string[] = [];
+    const scheduler = createScheduler({ windowId: "test-m5" });
+    const origRegister = scheduler.registerJob;
+    scheduler.registerJob = (job: ScheduledJob) => {
+      registered.push(job.id);
+      origRegister(job);
+    };
+
+    registerSecretaryJobs(scheduler, "zh");
+
+    expect(registered).toContain("daily-scan");
+    expect(registered).toContain("morning-briefing");
+    expect(registered).toContain("proactive-heartbeat");
+    expect(registered).toContain("proactive-event-scan");
+    expect(registered).toHaveLength(4);
+  });
+});
+
+// ── 14. runProactiveEventScan — 核心场景:会议在两次旧心跳之间的窗口 ─────────
+// 这是修复的关键确定性用例:
+// 场景:心跳间隔 90min,会议在 now+20min,上次心跳在 now-10min。
+// 修复前:下次心跳在 now+80min,届时会议已开始 → 漏报。
+// 修复后:event-scan 每 15min 跑,now+0min 时就能检测到会议 → 产候选 → 投递。
+describe("M5: runProactiveEventScan — 确定性漏报修复用例", () => {
+  it("会议在两次旧心跳之间的窗口:事件扫描能检查到,heartbeat 在相同时点不会跑", async () => {
+    // 场景配置:
+    //   - heartbeatMin = 90
+    //   - 会议在 now+20min(在 MEETING_SOON_WINDOW_MS=30min 内)
+    //   - 上次心跳在 now-10min(距本次 10min,远未到 90min 间隔)
+    //   - now = 10:00
+
+    const now = tsAt(10, 0);
+    const heartbeatJob = createProactiveHeartbeatJob(); // heartbeatMin=90
+    const eventScanJob = createProactiveEventScanJob();
+
+    // 上次心跳 10min 前 → heartbeat 不该跑(90min 未到)
+    const lastHeartbeat = tsAt(9, 50);
+    expect(heartbeatJob.shouldRun(now, { lastRan: lastHeartbeat })).toBe(false);
+
+    // 但 event-scan 上次也在 lastHeartbeat 时跑过(同一时点),现在 10min 后到点了
+    // (EVENT_SCAN_INTERVAL_MIN <= 15min,10min 后还没到;但上次完全没跑过时就立即跑)
+    // 测试:从未运行过 → event-scan 立即跑
+    expect(eventScanJob.shouldRun(now, { lastRan: undefined })).toBe(true);
+
+    // 设置:会议在 20min 后开始
+    _fakeEvents = [eventStartingInMin(now, 20)];
+    _proactive = { ..._proactive, mode: "gentle" };
+
+    // runProactiveEventScan 应该能产候选并投递
+    await runProactiveEventScan(now);
+    expect(deliverSpy).toHaveBeenCalledTimes(1);
+    const [candidate] = deliverSpy.mock.calls[0] as [ProactiveCandidate, Record<string, unknown>];
+    expect(candidate.kind).toBe("meeting_soon");
+  });
+
+  it("事件扫描只产 meeting_soon / deadline_near 候选(不产 task_stuck / just_completed)", async () => {
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(); // 4 天前创建
+    _fakeTodos = [
+      {
+        id: "stuck-1",
+        title: "卡住的任务",
+        priority: "medium",
+        tags: [],
+        status: "todo",
+        createdAt: stuckCreatedAt,
+      },
+    ];
+    _fakeEvents = []; // 无会议
+
+    // task_stuck 候选应该存在(4天前创建,>STUCK_TASK_AGE_MS=3天),但 event-scan 不产它
+    await runProactiveEventScan(now);
+    // event-scan 不投递 task_stuck(它只处理 EVENT_SCAN_KINDS)
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("总闸 off → event-scan 不投递", async () => {
+    _proactive = { ..._proactive, mode: "off" };
+    _fakeEvents = [eventStartingInMin(tsAt(10, 0), 5)];
+    await runProactiveEventScan(tsAt(10, 0));
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("meetingSoon 开关关掉 → event-scan 不投递", async () => {
+    _proactive = {
+      ..._proactive,
+      mode: "gentle",
+      events: { ..._proactive.events, meetingSoon: false },
+    };
+    _fakeEvents = [eventStartingInMin(tsAt(10, 0), 5)];
+    await runProactiveEventScan(tsAt(10, 0));
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("gate pausedUntil 拦截 → event-scan 不投递", async () => {
+    _proactive = { ..._proactive, mode: "gentle" };
+    _pausedUntil = tsAt(23, 0);
+    _gateState = { recentlySent: [], pausedUntil: tsAt(23, 0), lastProactiveSentMs: undefined };
+    _fakeEvents = [eventStartingInMin(tsAt(10, 0), 5)];
+    await runProactiveEventScan(tsAt(10, 0));
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it("内部异常不抛(DB 失败 → 整轮静默跳过)", async () => {
+    _proactive = { ..._proactive, mode: "gentle" };
+    const db = await import("../db");
+    (db.dbListCalendarEvents as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("db down"));
+    await expect(runProactiveEventScan(tsAt(10, 0))).resolves.toBeUndefined();
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── 15. 巡检(heartbeat)不变频:task_stuck / just_completed 仍走旧心跳 ────────
+describe("M5: 巡检不变频 — heartbeat 仍处理 task_stuck / just_completed", () => {
+  it("heartbeat 仍能产 task_stuck 候选并投递(巡检能力不受影响)", async () => {
+    _proactive = { ..._proactive, mode: "active" }; // active 档放低地板,task_stuck(40) 能过线
+    const now = tsAt(10, 0);
+    const stuckCreatedAt = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+    _fakeTodos = [
+      {
+        id: "stuck-1",
+        title: "卡住的任务",
+        priority: "medium",
+        tags: [],
+        status: "todo",
+        createdAt: stuckCreatedAt,
+      },
+    ];
+    _fakeEvents = [];
+
+    await runProactiveHeartbeat(now);
+    expect(deliverSpy).toHaveBeenCalledTimes(1);
+    const [candidate] = deliverSpy.mock.calls[0] as [ProactiveCandidate, Record<string, unknown>];
+    expect(candidate.kind).toBe("task_stuck");
+  });
+
+  it("heartbeat job 间隔仍为 heartbeatMin(90min),不被 event-scan 间隔影响", () => {
+    _proactive = { ..._proactive, heartbeatMin: 90 };
+    const heartbeatJob = createProactiveHeartbeatJob();
+    const last = tsAt(10, 0);
+
+    // 89min 后:未到 → false
+    expect(heartbeatJob.shouldRun(tsAt(11, 29), { lastRan: last })).toBe(false);
+    // 90min 后:到点 → true
+    expect(heartbeatJob.shouldRun(tsAt(11, 30), { lastRan: last })).toBe(true);
   });
 });

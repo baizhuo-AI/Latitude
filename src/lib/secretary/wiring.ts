@@ -171,6 +171,9 @@ export function registerSecretaryJobs(scheduler: Scheduler, lang: Lang): void {
   );
   // Task 3.7:主动引擎心跳——触发→负荷→闸门→合成→投递→打点,只在 owner 窗口跑
   scheduler.registerJob(createProactiveHeartbeatJob());
+  // M5:时间敏感事件细粒度巡检——每 EVENT_SCAN_INTERVAL_MIN(15min) 检查一次
+  // meeting_soon / deadline_near,修「心跳粒度 > 会议窗口」漏报问题。
+  scheduler.registerJob(createProactiveEventScanJob());
 }
 
 // ─── 副作用:启动调度器(单 owner 窗口调用) ──────────────────────────────────
@@ -552,6 +555,149 @@ export function createProactiveHeartbeatJob(): ScheduledJob {
 
     async run(): Promise<void> {
       await runProactiveHeartbeat(Date.now());
+    },
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// M5:事件细粒度巡检 —— 修「会议提醒漏报」(心跳粒度 > 会议窗口)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 根因:heartbeatMin(默认 90min) > MEETING_SOON_WINDOW_MS(30min),
+//       某次会议的「将至窗口」可能整个落在两次心跳之间 → 漏报。
+//
+// 方案(a):拆分两个 job:
+//   - proactive-event-scan (本节):每 EVENT_SCAN_INTERVAL_MIN(≤15min) 跑一次,
+//     只收时间敏感的 EVENT_SCAN_KINDS 候选(meeting_soon / deadline_near)→ gate → 投递。
+//   - proactive-heartbeat (已有):维持原 heartbeatMin 慢节奏,收全量候选
+//     (含 task_stuck / just_completed / activity_capture)→ gate → 投递。
+//
+// 两个 job 共用同一个 gate(预算/冷却/去重),实际发送频率不会因此翻倍:
+//   - meeting_soon 冷却 30min:同一会议只打扰一次;
+//   - deadline_near 冷却 30min:同一任务只打扰一次;
+//   - task_stuck / just_completed / activity_capture 冷却 12h/2h/120min:
+//     它们只在旧 heartbeat 里产,event-scan 不产,不受影响。
+
+/**
+ * 事件细粒度巡检间隔(分钟):≤ MEETING_SOON_WINDOW_MS(30min)的一半。
+ * 取 15min:在 30min 窗口内保证至少有 2 次机会检查到「会议将至」。
+ */
+export const EVENT_SCAN_INTERVAL_MIN = 15;
+
+/**
+ * 时间敏感的候选 kind 集合:这些 kind 需要细粒度巡检(间隔 <= 其触发窗口)。
+ * task_stuck / just_completed / activity_capture 有自己的 gate 冷却控制,
+ * 不需要快速巡检,留在旧 heartbeat 的慢节奏里。
+ */
+export const EVENT_SCAN_KINDS: ReadonlySet<ProactiveCandidate["kind"]> = new Set([
+  "meeting_soon",
+  "deadline_near",
+]);
+
+/**
+ * 事件细粒度巡检的心跳配置:使用 EVENT_SCAN_INTERVAL_MIN 替代 heartbeatMin。
+ * 工作时段仍沿用 reminder.workStart/workEnd(唯一真相源)。
+ * stance 仅用于工作时段(通过 reminder),不用其 heartbeatMin。
+ */
+function buildEventScanConfig(_stance: ProactiveStance): HeartbeatConfig {
+  const reminder = readSettingsSnapshot().reminder;
+  return {
+    workStart: reminder?.workStart ?? 9,
+    workEnd: reminder?.workEnd ?? 22,
+    intervalMs: EVENT_SCAN_INTERVAL_MIN * 60 * 1000,
+  };
+}
+
+/**
+ * 跑一轮时间敏感事件巡检。与 runProactiveHeartbeat 结构相同,但:
+ *   - 只收 EVENT_SCAN_KINDS(meeting_soon / deadline_near)候选
+ *   - 不产 task_stuck / just_completed / activity_capture
+ *   - 其余链路(负荷评估 / gate / 投递)完全复用
+ *
+ * 全程不抛:任何异常吞掉并静默跳过本轮。
+ *
+ * @param now 当前时刻(ms,注入;由 createProactiveEventScanJob.run 传 Date.now())
+ */
+export async function runProactiveEventScan(now: number = Date.now()): Promise<void> {
+  try {
+    const nowDate = new Date(now);
+    const snapshot = readSettingsSnapshot();
+    const stance = resolveProactiveStance(snapshot.proactive);
+
+    // 1. 总闸:off → 不跑
+    if (!stance.enabled) return;
+
+    const lang: Lang = snapshot.lang ?? "zh";
+    const workStart = snapshot.reminder?.workStart ?? 9;
+    const workEnd = snapshot.reminder?.workEnd ?? 22;
+
+    // 2. 直读 DB 真相源(只需要 events,deadline 也需要 todos)
+    const [todos, events] = await Promise.all([dbListTodos(), dbListCalendarEvents()]);
+
+    // 3. 触发:产候选(不传 activityCaptureCfg → 不产 activity_capture)
+    const triggerSnapshot: TriggerSnapshot = { todos, events };
+    const allCandidates = collectCandidates(triggerSnapshot, nowDate, lang);
+
+    // 4. 只保留时间敏感 kind
+    const eventCandidates = allCandidates.filter((c) => EVENT_SCAN_KINDS.has(c.kind));
+
+    // 5. 事件开关过滤
+    const filtered = filterCandidatesByEvents(eventCandidates, stance.events);
+    if (filtered.length === 0) return;
+
+    // 6. 负荷评估(同 heartbeat,影响 gate 阈值 + tonePhrase)
+    const signals = buildLoadSignals(todos, events, nowDate, workStart, workEnd);
+    const load = computeLoad(signals, nowDate, lang);
+
+    // 7. 闸门(带持久化 GateState + 负荷 delta + 环境事实)
+    const gateState = await loadGateState(snapshot.reminder?.pausedUntil, nowDate);
+    const baseOpts: GateOptions = {
+      ...defaultGateOptions(),
+      priorityFloor: stance.priorityFloor,
+      budgetPerHalfDay: stance.budgetPerHalfDay,
+    };
+    const opts = applyLoadToGateOptions(baseOpts, load);
+    const inMeeting = computeInMeeting(events, nowDate);
+    const env = buildGateEnv(workStart, workEnd, inMeeting, false);
+
+    const decision = gateProactive(filtered, gateState, env, nowDate, opts);
+    if (decision.sent.length === 0) return;
+
+    // 8. 投递
+    const chosen = decision.sent[0];
+    await deliverProactive(chosen, {
+      lang,
+      channel: stance.channel,
+      tonePhrase: load.tonePhrase,
+    });
+  } catch (err) {
+    console.warn("[secretary/wiring] runProactiveEventScan 异常,跳过本轮事件巡检:", err);
+  }
+}
+
+/**
+ * 创建时间敏感事件细粒度巡检调度任务(M5)。
+ *
+ * shouldRun:工作时段内 + 距上次 >= EVENT_SCAN_INTERVAL_MIN(15min)。
+ *   使用 shouldHeartbeat 纯函数(时间注入),但把 intervalMs 换成细粒度的。
+ *
+ * run:调 runProactiveEventScan(Date.now())。
+ *
+ * ⚠️ 与 proactive-heartbeat 共用 gate(预算/冷却/去重),不会实际变吵:
+ *    meeting_soon / deadline_near 各有 30min 冷却,同一会议/任务 30min 内只打扰一次。
+ */
+export function createProactiveEventScanJob(): ScheduledJob {
+  return {
+    id: "proactive-event-scan",
+
+    shouldRun(now: number, ctx: { lastRan: number | undefined }): boolean {
+      const stance = resolveProactiveStance(readSettingsSnapshot().proactive);
+      const cfg = buildEventScanConfig(stance);
+      return shouldHeartbeat(cfg, ctx.lastRan, new Date(now));
+    },
+
+    async run(): Promise<void> {
+      await runProactiveEventScan(Date.now());
     },
   };
 }
