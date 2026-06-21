@@ -38,6 +38,7 @@ import {
   type BitableFieldMeta,
 } from "./feishuBitable";
 import { emitSync } from "./syncBus";
+import { FIELD_TOOLS, persistCustomFieldsInput } from "./chatToolsFields";
 
 export interface ChatTool {
   name: string;
@@ -172,6 +173,7 @@ export const CHAT_TOOLS: ChatTool[] = [
         scheduled_time: { type: "string", description: "排期时段，如 09:30-11:00" },
         est_time: { type: "string", description: "预估耗时，如 1.5h" },
         reason: { type: "string", description: "为什么做（可选）" },
+        custom_fields: { type: "object", description: "自定义字段值，格式 {字段名: 选项名 或 选项名数组}；选项不存在会自动新建。例 {\"项目\":\"客户A\"}" },
       },
       required: ["title"],
     },
@@ -191,8 +193,14 @@ export const CHAT_TOOLS: ChatTool[] = [
         scheduledDate: str(a.scheduled_date),
         createdAt: new Date().toISOString(),
       };
+      let fieldNote: { created: string[]; skipped: string[] } | undefined;
+      if (a.custom_fields && typeof a.custom_fields === "object") {
+        const r = await persistCustomFieldsInput(a.custom_fields as Record<string, unknown>);
+        todo.customFields = r.customFields;
+        if (r.created.length || r.skipped.length) fieldNote = { created: r.created, skipped: r.skipped };
+      }
       await useTodoStore.getState().addTodo(todo); // 内含 db 写入 + state 更新 + emitSync
-      return JSON.stringify({ created: { id: todo.id, title: todo.title } });
+      return JSON.stringify({ created: { id: todo.id, title: todo.title }, ...(fieldNote ? { fields: fieldNote } : {}) });
     },
   },
   {
@@ -248,6 +256,7 @@ export const CHAT_TOOLS: ChatTool[] = [
         priority: { type: "string", description: "high / medium / low / none" },
         tags: { type: "array", items: { type: "string" } },
         est_time: { type: "string", description: "如 1.5h / 30m" },
+        custom_fields: { type: "object", description: "自定义字段值，格式 {字段名: 选项名 或 选项名数组}；选项不存在会自动新建" },
       },
       required: ["id"],
     },
@@ -268,11 +277,18 @@ export const CHAT_TOOLS: ChatTool[] = [
           : cur.tags,
         estTime: typeof a.est_time === "string" ? (a.est_time || undefined) : cur.estTime,
       };
+      let fieldNote: { created: string[]; skipped: string[] } | undefined;
+      if (a.custom_fields && typeof a.custom_fields === "object") {
+        const r = await persistCustomFieldsInput(a.custom_fields as Record<string, unknown>);
+        merged.customFields = { ...(cur.customFields ?? {}), ...r.customFields };
+        if (r.created.length || r.skipped.length) fieldNote = { created: r.created, skipped: r.skipped };
+      }
       await useTodoStore.getState().updateTodo(merged);
       return JSON.stringify({
         updated: true,
         id,
         fieldsChanged: Object.keys(a).filter((k) => k !== "id"),
+        ...(fieldNote ? { fields: fieldNote } : {}),
       });
     },
   },
@@ -823,6 +839,7 @@ export const CHAT_TOOLS: ChatTool[] = [
       return JSON.stringify({ deleted: true, id });
     },
   },
+  ...FIELD_TOOLS,
 ];
 
 /** name → tool 映射 */

@@ -5,18 +5,7 @@ import { useFieldStore } from "../lib/fieldStore";
 import { cn } from "../lib/utils";
 import type { FieldDefinition } from "../lib/db";
 import { useConfirm } from "./ConfirmDialog";
-
-const PRESET_COLORS = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4",
-  "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280", "#18181b",
-];
-
-function genId() {
-  return `fld_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-}
-function genOptId() {
-  return `opt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-}
+import { PRESET_COLORS, genFieldId as genId, genOptId } from "../lib/fieldMatch";
 
 export function CustomFieldsManager() {
   const { t } = useTranslation();
