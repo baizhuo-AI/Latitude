@@ -12,9 +12,11 @@ pub mod commands;
 pub mod config;
 pub mod db;
 pub mod engine;
+pub mod inbound;
 pub mod keychain;
 pub mod normalize;
 pub mod oauth;
+pub mod outbound;
 pub mod sync;
 pub mod writeback;
 

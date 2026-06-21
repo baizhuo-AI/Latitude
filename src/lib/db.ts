@@ -6,7 +6,7 @@ import { outcomeKindFromRow } from "./secretary/dismissDowngrade";
  * SQLite 单例
  *
  * 数据库位置:Tauri 默认 AppData 目录下的 daybreak.db
- *  - macOS: ~/Library/Application Support/com.apple.todo-floating-panel/daybreak.db
+ *  - macOS: ~/Library/Application Support/com.daybreak.desktop/daybreak.db
  *
  * Schema 迁移策略:
  *  - V1: CREATE TABLE IF NOT EXISTS(初始表)
@@ -321,6 +321,23 @@ async function migrate(db: Database): Promise<void> {
     await db.execute("ALTER TABLE proactive_log ADD COLUMN dismissed_at TEXT");
     console.info("[db] migrated: added proactive_log.dismissed_at column");
   }
+  // V13: conversations 加 channel + external_id（多入口来源标记 + 外部会话映射，飞书对话入口）。
+  // 飞书每个 chat_id 映射一条 conversation（channel='feishu', external_id=chat_id）；
+  // 本地对话 channel 默认 'local'、external_id NULL。加索引供按外部 ID 反查。
+  const convCols = await getColumns(db, "conversations");
+  if (convCols.size > 0 && !convCols.has("channel")) {
+    await db.execute(
+      "ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'local'"
+    );
+    console.info("[db] migrated: added conversations.channel column");
+  }
+  if (convCols.size > 0 && !convCols.has("external_id")) {
+    await db.execute("ALTER TABLE conversations ADD COLUMN external_id TEXT");
+    console.info("[db] migrated: added conversations.external_id column");
+  }
+  await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_conversations_external ON conversations(channel, external_id)"
+  );
 }
 
 export async function getDb(): Promise<Database> {
@@ -775,6 +792,10 @@ export interface ConversationRow {
   title: string;
   createdAt: string;
   updatedAt: string;
+  /** 来源渠道:'local'(对话窗)/ 'feishu' 等。默认 local。 */
+  channel?: string;
+  /** 外部会话 ID(如飞书 chat_id);本地对话为 null。 */
+  externalId?: string | null;
 }
 
 interface ConvRow {
@@ -782,6 +803,9 @@ interface ConvRow {
   title: string;
   created_at: string;
   updated_at: string;
+  /** 迁移前的旧库 SELECT * 可能没有这两列,故可选,读取时回落。 */
+  channel?: string;
+  external_id?: string | null;
 }
 
 interface MsgRow {
@@ -794,25 +818,66 @@ interface MsgRow {
   created_at: string;
 }
 
+function mapConvRow(r: ConvRow): ConversationRow {
+  return {
+    id: r.id,
+    title: r.title,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    channel: r.channel ?? "local",
+    externalId: r.external_id ?? null
+  };
+}
+
 export async function dbListConversations(): Promise<ConversationRow[]> {
   const db = await getDb();
   const rows = await db.select<ConvRow[]>(
     "SELECT * FROM conversations ORDER BY updated_at DESC"
   );
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  }));
+  return rows.map(mapConvRow);
 }
 
 export async function dbInsertConversation(conv: ConversationRow): Promise<void> {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO conversations (id, title, created_at, updated_at) VALUES ($1,$2,$3,$4)`,
-    [conv.id, conv.title, conv.createdAt, conv.updatedAt]
+    `INSERT INTO conversations (id, title, created_at, updated_at, channel, external_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
+      conv.id,
+      conv.title,
+      conv.createdAt,
+      conv.updatedAt,
+      conv.channel ?? "local",
+      conv.externalId ?? null
+    ]
   );
+}
+
+/**
+ * 按「来源渠道 + 外部会话 ID」反查 conversation(飞书入口用 chat_id 找到/复用同一条会话)。
+ * 找不到返回 null。依赖 idx_conversations_external 索引。
+ */
+export async function dbFindConversationByExternal(
+  channel: string,
+  externalId: string
+): Promise<ConversationRow | null> {
+  const db = await getDb();
+  const rows = await db.select<ConvRow[]>(
+    "SELECT * FROM conversations WHERE channel = $1 AND external_id = $2 LIMIT 1",
+    [channel, externalId]
+  );
+  return rows[0] ? mapConvRow(rows[0]) : null;
+}
+
+/**
+ * 取最近一个飞书会话的 chat_id（external_id），作为「秘书主动消息推送到飞书」的目标。
+ * 通常就是你和 bot 的单聊 —— 你 DM 过 bot 才有。没有则返回 null（无处可推，跳过）。
+ */
+export async function dbGetLatestFeishuChatId(): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<{ external_id: string | null }[]>(
+    "SELECT external_id FROM conversations WHERE channel = 'feishu' AND external_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1"
+  );
+  return rows[0]?.external_id ?? null;
 }
 
 export async function dbUpdateConversationTitle(
