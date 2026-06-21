@@ -3,7 +3,8 @@ import type {
   ChatOptions,
   ChatResult,
   LLMProvider,
-  StreamHandlers
+  StreamHandlers,
+  LLMCapabilities
 } from "./types";
 
 /**
@@ -15,6 +16,11 @@ import type {
 export class MockProvider implements LLMProvider {
   readonly name = "mock";
   readonly model = "mock";
+
+  capabilities(): LLMCapabilities {
+    // mock 不真正调工具(永远不返回 toolCalls),但会发假的流式 + 假思考链
+    return { supportsTools: false, supportsReasoning: true, supportsStreaming: true };
+  }
 
   async chat(messages: ChatMessage[]): Promise<ChatResult> {
     const userMsg = [...messages].reverse().find((m) => m.role === "user");

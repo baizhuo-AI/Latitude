@@ -12,7 +12,12 @@
     "telos": "Telos",
     "settings": "Settings",
     "openChatBar": "Open chat bar",
-    "openTodo": "Open todo widget"
+    "closeChatBar": "Close chat bar",
+    "openTodo": "Open todo widget",
+    "closeTodo": "Close todo widget",
+    "aboutYou": "Secretary",
+    "connections": "Connections",
+    "moreInSettings": "More features in Settings"
   },
   "floating": {
     "title": "Daybreak · Tasks",
@@ -140,7 +145,9 @@
     "save": "Save",
     "deleteField": "Delete field",
     "deleteFieldConfirm": "Deleting \"{{name}}\" will clear this field from all tasks. Confirm?",
-    "empty": "No custom fields yet. Click above to create one."
+    "empty": "No custom fields yet. Click above to create one.",
+    "createOption": "Create \"{{label}}\"",
+    "valuePlaceholder": "Select or type…"
   },
   "newTask": {
     "title": "New task",
@@ -221,13 +228,16 @@
     "reasoningStreaming": "Thinking…",
     "capturePlaceholder": "Quick add a todo (Enter)",
     "pin": "Pin on top",
-    "unpin": "Unpin"
+    "unpin": "Unpin",
+    "tooManyRounds": "(Too many tool rounds — please rephrase and try again.)"
   },
   "chatbar": {
     "title": "Chat",
     "placeholder": "What can I help you with today?",
     "empty": "Ask me anything about today, or jot a quick to-do.",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "proactiveHint": "{{name}} sent you a message — tap to view",
+    "proactiveHintAnon": "You have a new message — tap to view"
   },
   "history": {
     "title": "Chat history",
@@ -241,7 +251,9 @@
     "deleteConfirm": "Delete this record?",
     "deleted": "Deleted",
     "loadMore": "Load more",
-    "noMore": "No more records"
+    "noMore": "No more records",
+    "quickLogPlaceholder": "Jot down what you just did (Enter to submit)",
+    "quickLogBtn": "Log"
   },
   "telos": {
     "title": "Telos · Long-term goals",
@@ -273,8 +285,130 @@
       "titleRequired": "Goal title is required"
     }
   },
+  "persona": {
+    "sectionTitle": "AI Secretary Persona",
+    "sectionDesc": "Tune the AI's tone and what it knows about you. Hit \"Try a sample\" to preview.",
+    "name": "Name it",
+    "tone": "Tone",
+    "preset": {
+      "seniorAdvisor": "Senior Advisor",
+      "wittyPartner": "Witty Partner",
+      "gentleCompanion": "Gentle Companion"
+    },
+    "userAlias": "How to address you",
+    "relationship": "Relationship",
+    "habits": "Habits / Boundaries",
+    "habitInput": "Habit input",
+    "freeNote": "Anything else",
+    "trySample": "Try a sample",
+    "trySamplePending": "Generating…",
+    "noKey": "No AI model configured. Add an API Key in the provider section above, then Try a sample will work.",
+    "lockedRulesNote": "Core anti-boilerplate rules are built in — just tune the personality."
+  },
+  "privacy": {
+    "sectionTitle": "Privacy & Cost",
+    "sectionDesc": "Control what data is sent to cloud AI, memory boundaries, and proactive nudge frequency.",
+    "disclosureTitle": "Cloud memory disclosure",
+    "disclosureBody": "When you use a cloud AI (e.g. DeepSeek API, Anthropic API), Daybreak sends your memory facts and today's tasks as a system prompt to the respective API provider. This data is not uploaded to Daybreak's own servers, but it does pass through the third-party AI provider's infrastructure. To prevent memory from being sent to the cloud, enable \"Local brain only\".",
+    "localOnlyBrain": "Local brain only",
+    "localOnlyBrainDesc": "When enabled, memory facts are only injected into local CLI engines (Claude Code / Codex). If you are using a cloud API backend, memories will not be sent to third-party APIs.",
+    "localOnlyBrainWarning": "⚠ Current backend is a cloud API — memory will not be injected into this session. Switch to a local CLI backend (Claude Code / Codex) to get both memory and privacy protection.",
+    "noSensitiveMemory": "No sensitive memory",
+    "noSensitiveMemoryDesc": "When enabled, the AI secretary is instructed not to record passwords, financial data, ID numbers, medical details, or other private information into long-term memory.",
+    "lowPowerMode": "Low-power / low-frequency mode",
+    "lowPowerModeDesc": "When enabled, proactive nudges are throttled (heartbeat extended to 4 hours, max 1 interruption per half-day). Reduces API costs — useful on limited bandwidth or low battery.",
+    "lowPowerModeOn": "Low-frequency on",
+    "lowPowerModeOff": "Low-frequency off",
+    "on": "On",
+    "off": "Off"
+  },
+  "memory": {
+    "sectionTitle": "About You",
+    "sectionDesc": "Facts the AI secretary remembers about you. Edit, delete, or add manually.",
+    "category": {
+      "identity": "Identity",
+      "ongoing": "Ongoing",
+      "habit": "Habits",
+      "people": "People",
+      "preference": "Preferences"
+    },
+    "source": {
+      "told": "You told me",
+      "inferred": "Learned"
+    },
+    "pinned": "Pinned",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "add": "Add",
+    "addTitle": "Add manually",
+    "addPlaceholder": "Enter a fact, press Enter or click Add",
+    "empty": "No memory facts yet. Chat with the AI secretary or add one manually."
+  },
+  "proactive": {
+    "sectionTitle": "Proactive nudges",
+    "sectionDesc": "Whether the AI secretary reaches out on its own. Gentle by default — only when it matters, never spammy.",
+    "mode": "Proactivity",
+    "modeOff": "Off",
+    "modeGentle": "Gentle",
+    "modeActive": "Active",
+    "modeOffHint": "Never reaches out; only responds when you talk first.",
+    "modeGentleHint": "Only urgent moments (meeting soon / task due). Background items stay quiet.",
+    "modeActiveHint": "More proactive — also chimes in on stalled tasks and completions.",
+    "advanced": "Advanced",
+    "advancedShow": "Show advanced",
+    "advancedHide": "Hide",
+    "heartbeat": "Check interval",
+    "heartbeatHint": "How often to check for things worth nudging (minutes).",
+    "morningHour": "Morning briefing time",
+    "morningHourHint": "What hour to deliver the morning briefing (0-23).",
+    "budget": "Interruption budget",
+    "budgetHint": "Max proactive messages per half-day; extras are held back.",
+    "quietHours": "Quiet hours",
+    "quietHoursHint": "No nudges outside these hours. Shared by all proactive nudges and activity logging — editing here applies everywhere.",
+    "events": "What to nudge about",
+    "eventMeetingSoon": "Meeting soon",
+    "eventDeadlineNear": "Task due soon",
+    "eventTaskStuck": "Stalled task",
+    "eventJustCompleted": "Just completed",
+    "channel": "How to notify",
+    "channelChat": "Chat bubble",
+    "channelNotification": "System notification",
+    "channelFloat": "Floating window",
+    "channelAll": "All",
+    "channelHint": "A chat bubble always appears (so you can reply); others are extra alerts on top.",
+    "times": "times",
+    "minutesUnit": "min",
+    "snooze": "Don't bug me",
+    "snoozeHint": "Temporarily mute proactive nudges; auto-resumes when the timer ends (shares the same pause switch as the Reminder section above).",
+    "snooze1h": "Mute for 1 hour",
+    "snoozeToday": "Mute until tonight",
+    "snoozedUntil": "Muted until {{time}}",
+    "snoozeResume": "Resume now",
+    "quietHoursStart": "Work hours start",
+    "quietHoursEnd": "Work hours end",
+    "activityCapture": "Activity logging",
+    "activityCaptureHint": "Periodically asks what you've been working on, logging your answer to the timeline and helping the secretary know you better. Driven on the secretary's unified cadence (respects Don't-bug-me / quiet hours) — no more standalone popups.",
+    "activityCaptureOn": "On",
+    "activityCaptureOff": "Off",
+    "activityCaptureInterval": "Interval",
+    "activityCaptureIntervalHint": "How often to ask (minutes).",
+    "activityCaptureMode": "Cadence",
+    "activityCaptureModeHint": "Defer to secretary: skips when you're busy / muted. Always on schedule: asks on time (still respects Don't-bug-me + work hours).",
+    "activityCaptureModeGentle": "Defer to secretary",
+    "activityCaptureModeScheduled": "Always on schedule"
+  },
   "settings": {
     "title": "Settings",
+    "sidebar": {
+      "title": "Sidebar",
+      "description": "Choose which nav items show in the left sidebar.",
+      "hint": "Settings is always kept; hide the rest as you like, but keep at least one.",
+      "show": "Show",
+      "hide": "Hide",
+      "atLeastOne": "Keep at least one nav item"
+    },
     "shortcuts": {
       "title": "Shortcuts",
       "description": "Set a global hotkey to show / hide the chat bar. Works system-wide, in any app.",
@@ -290,24 +424,6 @@
       "disabled": "Shortcut disabled",
       "failed": "Failed to set (combo may be taken)"
     },
-    "reminder": {
-      "title": "Reminders",
-      "description": "Periodically nudge you to jot down what you just did, building a real log of where your time goes.",
-      "enabled": "Enable",
-      "on": "On",
-      "off": "Off",
-      "interval": "Interval",
-      "minutes": "min",
-      "channel": "Notify via",
-      "channelFloating": "Floating",
-      "channelNotification": "System",
-      "channelBoth": "Both",
-      "workHours": "Active hours",
-      "pause": "Pause",
-      "pause1h": "Pause 1h",
-      "pauseToday": "Mute today",
-      "resume": "Resume"
-    },
     "appearance": {
       "title": "Appearance",
       "lang": "Language",
@@ -322,7 +438,10 @@
       "provider": "Provider",
       "providerMock": "Mock (no AI)",
       "apiKey": "API Key",
-      "model": "Model"
+      "model": "Model",
+      "recommendedTier": "Recommended tier: {{model}}",
+      "tierBelow": "This model is below the recommended tier — reply quality may suffer. Consider {{model}}.",
+      "tierOk": "On the recommended tier — best experience."
     },
     "usage": {
       "title": "Usage",

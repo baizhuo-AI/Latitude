@@ -1,11 +1,12 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { Todo, Priority, TodoStatus } from "./store";
+import { outcomeKindFromRow } from "./secretary/dismissDowngrade";
 
 /**
  * SQLite 单例
  *
  * 数据库位置:Tauri 默认 AppData 目录下的 daybreak.db
- *  - macOS: ~/Library/Application Support/com.apple.todo-floating-panel/daybreak.db
+ *  - macOS: ~/Library/Application Support/com.daybreak.desktop/daybreak.db
  *
  * Schema 迁移策略:
  *  - V1: CREATE TABLE IF NOT EXISTS(初始表)
@@ -100,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_created_at ON llm_usage(created_at);
 CREATE TABLE IF NOT EXISTS activity_log (
   id TEXT PRIMARY KEY,
   content TEXT NOT NULL,
+  occurred_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -200,6 +202,40 @@ CREATE TABLE IF NOT EXISTS calendar_change_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_change_queue_state ON calendar_change_queue(state);
+
+CREATE TABLE IF NOT EXISTS daily_digest (
+  date       TEXT PRIMARY KEY,
+  summary    TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS proactive_log (
+  id              TEXT PRIMARY KEY,
+  type            TEXT NOT NULL,
+  conv_id         TEXT NOT NULL,
+  sent_at         TEXT NOT NULL,
+  content_preview TEXT NOT NULL DEFAULT '',
+  replied_at      TEXT,
+  ref_id          TEXT NOT NULL DEFAULT '',
+  dismissed_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_proactive_log_conv ON proactive_log(conv_id);
+CREATE INDEX IF NOT EXISTS idx_proactive_log_sent_at ON proactive_log(sent_at);
+
+CREATE TABLE IF NOT EXISTS memory_facts (
+  id          TEXT PRIMARY KEY,
+  category    TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'inferred',
+  durability  TEXT NOT NULL DEFAULT 'durable',
+  pinned      INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_created_at ON memory_facts(created_at);
 `;
 
 /**
@@ -252,6 +288,56 @@ async function migrate(db: Database): Promise<void> {
     await db.execute("ALTER TABLE todos ADD COLUMN completed_at TEXT");
     console.info("[db] migrated: added todos.completed_at column");
   }
+  // V9: activity_log 加 occurred_at(事情实际发生时间,与 created_at 写入时间分离)
+  // 旧记录该列 NULL,读取时 COALESCE 回落到 created_at,历史展示不变。
+  const actCols = await getColumns(db, "activity_log");
+  if (actCols.size > 0 && !actCols.has("occurred_at")) {
+    await db.execute("ALTER TABLE activity_log ADD COLUMN occurred_at TEXT");
+    console.info("[db] migrated: added activity_log.occurred_at column");
+  }
+  // V7: daily_digest 表（AI 秘书每日纪要，Task 1.3）
+  // 老库通过 V1 的 IF NOT EXISTS 已建表；新库 V1 路径直接带。这里无需 ALTER，仅记录版本号。
+
+  // V8: proactive_log 表（AI 秘书主动消息投递日志，Task 1.7）
+  // 同 V7：老库已通过 V1 的 IF NOT EXISTS 建表；新库 V1 路径直接带。无需 ALTER。
+
+  // V10: memory_facts 表（AI 秘书记忆事实库，Task 2.1）
+  // 跨窗口共享的事实存储（对话注入时直读 DB，不走任何 store 内存缓存）。
+  // 同 V7/V8：老库通过 V1 的 IF NOT EXISTS 自动建表；新库 V1 路径直接带。无需 ALTER。
+
+  // V11: proactive_log 加 ref_id（完整闸门按触发源实体去重，Task 3.2）
+  // 闸门 gateProactive 的去重键是候选 refId（todo.id / event.id），重启后要能从
+  // proactive_log 派生回 GateState 做同实体去重，所以日志必须落 ref_id。
+  // 旧库该列 NULL/缺失 → ALTER 补；旧简报日志 ref_id 默认空串（按 type 冷却/预算计数仍生效）。
+  const proCols = await getColumns(db, "proactive_log");
+  if (proCols.size > 0 && !proCols.has("ref_id")) {
+    await db.execute("ALTER TABLE proactive_log ADD COLUMN ref_id TEXT NOT NULL DEFAULT ''");
+    console.info("[db] migrated: added proactive_log.ref_id column");
+  }
+  // V12: proactive_log 加 dismissed_at（dismiss 降频采集，Task 3.5）
+  // 「连续 N 次无视 → 自动降档」需要区分 dismissed(用户显式关掉)与 ignored(没回也没关)。
+  // 旧库该列缺失 → ALTER 补；旧日志 dismissed_at NULL，采集时回落为 ignored（语义正确）。
+  if (proCols.size > 0 && !proCols.has("dismissed_at")) {
+    await db.execute("ALTER TABLE proactive_log ADD COLUMN dismissed_at TEXT");
+    console.info("[db] migrated: added proactive_log.dismissed_at column");
+  }
+  // V13: conversations 加 channel + external_id（多入口来源标记 + 外部会话映射，飞书对话入口）。
+  // 飞书每个 chat_id 映射一条 conversation（channel='feishu', external_id=chat_id）；
+  // 本地对话 channel 默认 'local'、external_id NULL。加索引供按外部 ID 反查。
+  const convCols = await getColumns(db, "conversations");
+  if (convCols.size > 0 && !convCols.has("channel")) {
+    await db.execute(
+      "ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'local'"
+    );
+    console.info("[db] migrated: added conversations.channel column");
+  }
+  if (convCols.size > 0 && !convCols.has("external_id")) {
+    await db.execute("ALTER TABLE conversations ADD COLUMN external_id TEXT");
+    console.info("[db] migrated: added conversations.external_id column");
+  }
+  await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_conversations_external ON conversations(channel, external_id)"
+  );
 }
 
 export async function getDb(): Promise<Database> {
@@ -706,6 +792,10 @@ export interface ConversationRow {
   title: string;
   createdAt: string;
   updatedAt: string;
+  /** 来源渠道:'local'(对话窗)/ 'feishu' 等。默认 local。 */
+  channel?: string;
+  /** 外部会话 ID(如飞书 chat_id);本地对话为 null。 */
+  externalId?: string | null;
 }
 
 interface ConvRow {
@@ -713,6 +803,9 @@ interface ConvRow {
   title: string;
   created_at: string;
   updated_at: string;
+  /** 迁移前的旧库 SELECT * 可能没有这两列,故可选,读取时回落。 */
+  channel?: string;
+  external_id?: string | null;
 }
 
 interface MsgRow {
@@ -725,25 +818,66 @@ interface MsgRow {
   created_at: string;
 }
 
+function mapConvRow(r: ConvRow): ConversationRow {
+  return {
+    id: r.id,
+    title: r.title,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    channel: r.channel ?? "local",
+    externalId: r.external_id ?? null
+  };
+}
+
 export async function dbListConversations(): Promise<ConversationRow[]> {
   const db = await getDb();
   const rows = await db.select<ConvRow[]>(
     "SELECT * FROM conversations ORDER BY updated_at DESC"
   );
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  }));
+  return rows.map(mapConvRow);
 }
 
 export async function dbInsertConversation(conv: ConversationRow): Promise<void> {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO conversations (id, title, created_at, updated_at) VALUES ($1,$2,$3,$4)`,
-    [conv.id, conv.title, conv.createdAt, conv.updatedAt]
+    `INSERT INTO conversations (id, title, created_at, updated_at, channel, external_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
+      conv.id,
+      conv.title,
+      conv.createdAt,
+      conv.updatedAt,
+      conv.channel ?? "local",
+      conv.externalId ?? null
+    ]
   );
+}
+
+/**
+ * 按「来源渠道 + 外部会话 ID」反查 conversation(飞书入口用 chat_id 找到/复用同一条会话)。
+ * 找不到返回 null。依赖 idx_conversations_external 索引。
+ */
+export async function dbFindConversationByExternal(
+  channel: string,
+  externalId: string
+): Promise<ConversationRow | null> {
+  const db = await getDb();
+  const rows = await db.select<ConvRow[]>(
+    "SELECT * FROM conversations WHERE channel = $1 AND external_id = $2 LIMIT 1",
+    [channel, externalId]
+  );
+  return rows[0] ? mapConvRow(rows[0]) : null;
+}
+
+/**
+ * 取最近一个飞书会话的 chat_id（external_id），作为「秘书主动消息推送到飞书」的目标。
+ * 通常就是你和 bot 的单聊 —— 你 DM 过 bot 才有。没有则返回 null（无处可推，跳过）。
+ */
+export async function dbGetLatestFeishuChatId(): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<{ external_id: string | null }[]>(
+    "SELECT external_id FROM conversations WHERE channel = 'feishu' AND external_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1"
+  );
+  return rows[0]?.external_id ?? null;
 }
 
 export async function dbUpdateConversationTitle(
@@ -957,21 +1091,24 @@ export async function dbUsageSummary(): Promise<{
 export interface ActivityRecord {
   id: string;
   content: string;
-  /** ISO 时间戳 */
+  /** 事情【实际发生】的时间(ISO),驱动时间线展示与排序;旧记录回落到 createdAt。 */
+  occurredAt: string;
+  /** 记录【写入】的时间(ISO),审计/元数据,不上台面。 */
   createdAt: string;
 }
 
 interface ActivityRow {
   id: string;
   content: string;
+  occurred_at: string | null;
   created_at: string;
 }
 
 export async function dbInsertActivity(rec: ActivityRecord): Promise<void> {
   const db = await getDb();
   await db.execute(
-    "INSERT INTO activity_log (id, content, created_at) VALUES ($1,$2,$3)",
-    [rec.id, rec.content, rec.createdAt]
+    "INSERT INTO activity_log (id, content, occurred_at, created_at) VALUES ($1,$2,$3,$4)",
+    [rec.id, rec.content, rec.occurredAt, rec.createdAt]
   );
 }
 
@@ -988,25 +1125,28 @@ export async function dbListActivities(
   const conditions: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
+  // 过滤/排序都按「发生时间」(occurred_at 缺省回落 created_at):晚上补记的早上事件,
+  // 归到事情发生那天、排到发生时刻,而不是记录那天/记录时刻。
   if (opts?.startDate) {
-    conditions.push(`created_at >= $${idx}`);
+    conditions.push(`COALESCE(occurred_at, created_at) >= $${idx}`);
     params.push(opts.startDate + "T00:00:00");
     idx++;
   }
   if (opts?.endDate) {
-    conditions.push(`created_at < $${idx}`);
+    conditions.push(`COALESCE(occurred_at, created_at) < $${idx}`);
     params.push(opts.endDate + "T23:59:59.999");
     idx++;
   }
   const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
   params.push(limit);
   const rows = await db.select<ActivityRow[]>(
-    `SELECT * FROM activity_log${where} ORDER BY created_at DESC LIMIT $${idx}`,
+    `SELECT * FROM activity_log${where} ORDER BY COALESCE(occurred_at, created_at) DESC LIMIT $${idx}`,
     params
   );
   return rows.map((r) => ({
     id: r.id,
     content: r.content,
+    occurredAt: r.occurred_at ?? r.created_at,
     createdAt: r.created_at
   }));
 }
@@ -1652,4 +1792,618 @@ export async function dbUpdateChangeState(
 export async function dbDeleteChange(id: string): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM calendar_change_queue WHERE id = $1", [id]);
+}
+
+/* ---------- Daily Digest(AI 秘书每日纪要，Task 1.3) ---------- */
+
+export interface DailyDigestRow {
+  /** YYYY-MM-DD,唯一键 */
+  date: string;
+  summary: string;
+  createdAt: string;
+}
+
+/**
+ * upsert 一条每日纪要。
+ *
+ * 语义:同一天重跑/补跑时覆盖而非重复插入——先 DELETE 再 INSERT。
+ * 选「删后插」而非「INSERT OR REPLACE」的原因:INSERT OR REPLACE 在 SQLite 里
+ * 会先删后插(触发 DELETE 钩子)，语义相同；这里显式写出保证可读性。
+ *
+ * @param date     YYYY-MM-DD 格式的本地日期
+ * @param summary  AI 生成的当日事实性纪要文本
+ */
+export async function dbUpsertDailyDigest(date: string, summary: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO daily_digest (date, summary, created_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT(date) DO UPDATE SET summary = excluded.summary, created_at = excluded.created_at`,
+    [date, summary, now]
+  );
+}
+
+/**
+ * 取近 N 天纪要,按日期倒序(最新的在前)。
+ *
+ * 用于注入到 buildChatSystemPrompt,让对话能引用"最近发生了什么"。
+ * N 的合理默认值见 dailyScan.ts 的 RECENT_DIGEST_DAYS 常量(默认 7)。
+ *
+ * @param n 最多返回条数
+ */
+export async function dbGetRecentDigests(n: number): Promise<DailyDigestRow[]> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ date: string; summary: string; created_at: string }>>(
+    `SELECT date, summary, created_at FROM daily_digest
+     ORDER BY date DESC LIMIT $1`,
+    [n]
+  );
+  return rows.map((r) => ({ date: r.date, summary: r.summary, createdAt: r.created_at }));
+}
+
+/**
+ * 查询某本地日期内发送/收到的消息(供 dailyScan 生成纪要用)。
+ *
+ * 时区口径:created_at 存 UTC ISO,按 [T00:00:00, T23:59:59.999] 字符串区间比较。
+ * 只取 user/assistant 轮次,排除 system/tool 消息(这些不是对话要点)。
+ *
+ * @param dateKey YYYY-MM-DD 格式,由调用方按本地时区算
+ */
+export async function dbListMessagesOnDate(
+  dateKey: string
+): Promise<Array<{ role: string; content: string; created_at: string }>> {
+  const db = await getDb();
+  return db.select<Array<{ role: string; content: string; created_at: string }>>(
+    `SELECT role, content, created_at FROM messages
+     WHERE role IN ('user', 'assistant')
+       AND created_at >= $1 AND created_at < $2
+     ORDER BY created_at ASC`,
+    [`${dateKey}T00:00:00`, `${dateKey}T23:59:59.999`]
+  );
+}
+
+/**
+ * 查询某本地日期内有活动的 todos(供 dailyScan 生成纪要用)。
+ *
+ * "有活动"定义:当天创建(created_at 在该日)或当天完成(completed_at 在该日)。
+ * 供 dailyScan 汇总"今天完成了哪些任务/新增了哪些任务"。
+ *
+ * @param dateKey YYYY-MM-DD 格式
+ */
+export async function dbListTodosOnDate(dateKey: string): Promise<
+  Array<{ title: string; status: string; created_at: string; completed_at: string | null }>
+> {
+  const db = await getDb();
+  return db.select<
+    Array<{ title: string; status: string; created_at: string; completed_at: string | null }>
+  >(
+    `SELECT title, status, created_at, completed_at FROM todos
+     WHERE (created_at >= $1 AND created_at < $2)
+        OR (completed_at >= $1 AND completed_at < $2)
+     ORDER BY created_at ASC`,
+    [`${dateKey}T00:00:00`, `${dateKey}T23:59:59.999`]
+  );
+}
+
+/* ---------- Proactive Log(AI 秘书主动消息投递日志，Task 1.7) ---------- */
+
+/** dbLogProactiveSent 的入参 */
+export interface ProactiveSentInput {
+  /** 主动消息类型，如 "morning_briefing"，或触发层候选 kind（"meeting_soon" 等） */
+  type: string;
+  /** 投递进的对话 id */
+  convId: string;
+  /** 简报内容前若干字的预览 */
+  contentPreview: string;
+  /**
+   * 触发源实体 id（todo.id / event.id），完整闸门 gateProactive 据此做同实体去重。
+   * 简报类无实体 → 不传，落库空串。
+   */
+  refId?: string;
+}
+
+/** dbGetProactiveStats 的返回值 */
+export interface ProactiveStats {
+  /** 期间内总发送数 */
+  total: number;
+  /** 已回复数 */
+  replied: number;
+  /** 未回复数 */
+  unreplied: number;
+}
+
+/**
+ * 记录一条主动消息投递日志。
+ *
+ * 在投递成功后（dbInsertMessage 完成之后）调用，失败时不调（C6 路径天然不到这里）。
+ * id 由本函数生成（前缀 'pl'），sent_at 取当前 UTC 时间戳。
+ *
+ * @param entry  投递信息
+ */
+export async function dbLogProactiveSent(entry: ProactiveSentInput): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const id = `pl${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  await db.execute(
+    `INSERT INTO proactive_log (id, type, conv_id, sent_at, content_preview, replied_at, ref_id)
+     VALUES ($1, $2, $3, $4, $5, NULL, $6)`,
+    [id, entry.type, entry.convId, now, entry.contentPreview, entry.refId ?? ""]
+  );
+}
+
+/**
+ * 标记某对话的主动消息日志为"已回复"。
+ *
+ * 按 conv_id 匹配 replied_at IS NULL 的行——即只标记还未回复的条目（保留首次回复时间）。
+ * 无匹配时静默（不报错）。
+ *
+ * 轻量设计：按 conv_id 匹配，一个对话通常只有一条 proactive_log，不用加额外 id 关联。
+ *
+ * @param convId    对话 id
+ * @param repliedAt 回复时间（ISO 时间戳）
+ */
+export async function dbMarkProactiveReplied(convId: string, repliedAt: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE proactive_log
+     SET replied_at = $1
+     WHERE conv_id = $2 AND replied_at IS NULL`,
+    [repliedAt, convId]
+  );
+}
+
+/**
+ * 统计近 N 天内主动消息的发送 / 已回复 / 未回复数。
+ *
+ * 时区口径：sent_at 存 UTC ISO，以 sinceDays 天前的 UTC 时刻为截止点（字符串比较，与其他表一致）。
+ *
+ * @param sinceDays 往前看多少天（含当天）
+ */
+export async function dbGetProactiveStats(sinceDays: number): Promise<ProactiveStats> {
+  const db = await getDb();
+  const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+  const rows = await db.select<Array<{ total: number; replied: number }>>(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN replied_at IS NOT NULL THEN 1 ELSE 0 END) AS replied
+     FROM proactive_log
+     WHERE sent_at >= $1`,
+    [cutoff]
+  );
+  const total = rows[0]?.total ?? 0;
+  const replied = rows[0]?.replied ?? 0;
+  return { total, replied, unreplied: total - replied };
+}
+
+/**
+ * 查询某对话是否有未回复的主动消息日志（用于 chatStore 回复打点）。
+ *
+ * 返回 true 表示该对话是"主动消息对话"且用户还没回复过；返回 false 则跳过标记。
+ * 这是轻量 SELECT，不会阻塞 sendMessage 流程。
+ */
+export async function dbHasUnrepliedProactive(convId: string): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ cnt: number }>>(
+    `SELECT COUNT(*) AS cnt FROM proactive_log
+     WHERE conv_id = $1 AND replied_at IS NULL`,
+    [convId]
+  );
+  return (rows[0]?.cnt ?? 0) > 0;
+}
+
+/** dbListRecentProactive 返回的单条主动消息记录(供启动 wiring / gate 状态用) */
+export interface RecentProactiveRow {
+  /** 主动消息类型,如 "morning_briefing" / "morning_briefing_backfill" */
+  type: string;
+  /** 投递进的对话 id */
+  convId: string;
+  /** 发送时间(UTC ISO 字符串) */
+  sentAt: string;
+  /** 内容预览 */
+  contentPreview: string;
+}
+
+/**
+ * 取最近 N 条主动消息日志,按发送时间倒序(最新在前)。
+ *
+ * 用途(Task 1.8 wiring):
+ *   - 组装 gate 的 recentlySent 状态(同类去重、温和频率)。
+ *   - 供启动补发判断"今天是否已发过简报"。
+ *
+ * ⚠️ Phase 3 gate 完整化时接入,当前未调用。
+ *
+ * @param n 最多返回条数
+ */
+export async function dbListRecentProactive(n: number): Promise<RecentProactiveRow[]> {
+  const db = await getDb();
+  const rows = await db.select<
+    Array<{ type: string; conv_id: string; sent_at: string; content_preview: string }>
+  >(
+    `SELECT type, conv_id, sent_at, content_preview FROM proactive_log
+     ORDER BY sent_at DESC LIMIT $1`,
+    [n]
+  );
+  return rows.map((r) => ({
+    type: r.type,
+    convId: r.conv_id,
+    sentAt: r.sent_at,
+    contentPreview: r.content_preview,
+  }));
+}
+
+/**
+ * 取某类(前缀匹配)主动消息最近一次的发送时间戳(ms)。
+ *
+ * 用途(Task 1.8 wiring):启动补发时判断"今天是否已发过晨间简报"——
+ * 传 typePrefix="morning_briefing" 可同时覆盖正常("morning_briefing")
+ * 与补发("morning_briefing_backfill")两种 type。
+ *
+ * @param typePrefix 类型前缀(用 LIKE 'prefix%' 匹配)
+ * @returns 最近一条匹配记录的 sent_at 转成的毫秒时间戳;无记录时 undefined
+ */
+export async function dbGetLastProactiveSentAt(
+  typePrefix: string
+): Promise<number | undefined> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ sent_at: string }>>(
+    `SELECT sent_at FROM proactive_log
+     WHERE type LIKE $1
+     ORDER BY sent_at DESC LIMIT 1`,
+    [`${typePrefix}%`]
+  );
+  const raw = rows[0]?.sent_at;
+  if (!raw) return undefined;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+/** dbListProactiveLogSince 返回的单条记录(给完整闸门派生 GateState 用) */
+export interface ProactiveLogSinceRow {
+  /** 主动消息类型(= 候选 kind 或 "morning_briefing" 等) */
+  type: string;
+  /** 触发源实体 id(旧简报日志为空串) */
+  refId: string;
+  /** 发送时间戳(ms) */
+  sentAtMs: number;
+}
+
+/**
+ * 取 sinceMs(含)之后发送的所有主动消息日志,供完整闸门(gateProactive)
+ * 跨重启派生 GateState(去重 / 冷却 / 半天预算计数)。
+ *
+ * 时区口径:proactive_log.sent_at 存 UTC ISO,这里把 sinceMs 转 ISO 做字符串比较
+ * (与其他表一致);返回时把 sent_at 转回 ms 时间戳。脏 sent_at(无法解析)跳过。
+ *
+ * @param sinceMs 截止毫秒时间戳(早于此的不取)
+ */
+export async function dbListProactiveLogSince(sinceMs: number): Promise<ProactiveLogSinceRow[]> {
+  const db = await getDb();
+  const cutoff = new Date(sinceMs).toISOString();
+  const rows = await db.select<Array<{ type: string; ref_id: string | null; sent_at: string }>>(
+    `SELECT type, ref_id, sent_at FROM proactive_log
+     WHERE sent_at >= $1
+     ORDER BY sent_at DESC`,
+    [cutoff]
+  );
+  const out: ProactiveLogSinceRow[] = [];
+  for (const r of rows) {
+    const ms = Date.parse(r.sent_at);
+    if (Number.isNaN(ms)) continue;
+    out.push({ type: r.type, refId: r.ref_id ?? "", sentAtMs: ms });
+  }
+  return out;
+}
+
+/**
+ * 查询某对话在 proactive_log 里记录的 type(用于 chatStore 识别 activity_capture 对话)。
+ *
+ * M3:chatStore.sendMessage 回写时,通过此函数判断是否是 activity_capture 对话。
+ * 比 conv.id 前缀检查更稳健(真相源是 proactive_log.type,而非 id 命名约定)。
+ *
+ * 没有记录时返回 undefined(普通对话)。
+ *
+ * @param convId 对话 id
+ */
+export async function dbGetProactiveTypeForConv(convId: string): Promise<string | undefined> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ type: string }>>(
+    `SELECT type FROM proactive_log WHERE conv_id = $1 LIMIT 1`,
+    [convId]
+  );
+  return rows[0]?.type ?? undefined;
+}
+
+/**
+ * 标记某对话的主动消息日志为"已 dismiss(用户显式关掉)"(Task 3.5)。
+ *
+ * 与 dbMarkProactiveReplied 平行:按 conv_id 匹配 dismissed_at IS NULL 的行,
+ * 只标记还未 dismiss 的条目(保留首次 dismiss 时间)。无匹配时静默。
+ *
+ * 用途:对话窗 / 浮窗里用户对某条主动消息点了"关闭/不感兴趣"时调用,
+ *      作为 dismissDowngrade 的强信号(优于"没回复"的弱信号 ignored)。
+ *
+ * 注:replied_at 与 dismissed_at 互不抵触。若用户先回复再关,outcomeKindFromRow
+ *    仍判 replied(回复优先);只关不回则判 dismissed。
+ *
+ * @param convId      对话 id
+ * @param dismissedAt dismiss 时间(ISO 时间戳)
+ */
+export async function dbMarkProactiveDismissed(
+  convId: string,
+  dismissedAt: string
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE proactive_log
+     SET dismissed_at = $1
+     WHERE conv_id = $2 AND dismissed_at IS NULL`,
+    [dismissedAt, convId]
+  );
+}
+
+/** dbListProactiveOutcomesSince 返回的单条结局(给 dismissDowngrade 评估用) */
+export interface ProactiveOutcomeRow {
+  /** 结局类型:replied(回复)/ dismissed(显式关)/ ignored(没回也没关) */
+  kind: "replied" | "dismissed" | "ignored";
+  /** 发送时间戳(ms) */
+  sentAtMs: number;
+}
+
+/**
+ * 取 sinceMs(含)之后发送的所有主动消息结局,按发送时间【升序】(旧→新),
+ * 供 dismissDowngrade.evaluateDismissDowngrade 算"连续 N 次无视 → 降档"(Task 3.5)。
+ *
+ * 每行据 replied_at / dismissed_at 两列映射成结局类型(outcomeKindFromRow 集中逻辑)。
+ * 时区口径同其他查询:sent_at 存 UTC ISO,把 sinceMs 转 ISO 做字符串比较;脏 sent_at 跳过。
+ *
+ * @param sinceMs 截止毫秒时间戳(早于此的不取)
+ */
+export async function dbListProactiveOutcomesSince(
+  sinceMs: number
+): Promise<ProactiveOutcomeRow[]> {
+  const db = await getDb();
+  const cutoff = new Date(sinceMs).toISOString();
+  const rows = await db.select<
+    Array<{ replied_at: string | null; dismissed_at: string | null; sent_at: string }>
+  >(
+    `SELECT replied_at, dismissed_at, sent_at FROM proactive_log
+     WHERE sent_at >= $1
+     ORDER BY sent_at ASC`,
+    [cutoff]
+  );
+  const out: ProactiveOutcomeRow[] = [];
+  for (const r of rows) {
+    const ms = Date.parse(r.sent_at);
+    if (Number.isNaN(ms)) continue;
+    out.push({ kind: outcomeKindFromRow(r.replied_at, r.dismissed_at), sentAtMs: ms });
+  }
+  return out;
+}
+
+/* ---------- Memory Facts(AI 秘书记忆事实库，Task 2.1) ---------- */
+
+/**
+ * 事实分类枚举。这是【单一真相源】:
+ *   - memory_facts.category 列存的就是这些字面量
+ *   - chatTools 的 remember/update_memory 校验也复用 MEMORY_CATEGORIES
+ * 改这里要同步改两边的文档/提示词(枚举值是给大脑看的语义标签)。
+ *
+ * 语义:
+ *   - identity:用户是谁(职业/身份/长期角色)
+ *   - ongoing:当前在进行的事(项目、阶段性任务,通常 transient)
+ *   - habit:习惯/作息/固定模式
+ *   - people:人际(同事/家人/合作方及其关系)
+ *   - preference:偏好(口味、工具、表达方式)
+ */
+export type MemoryCategory =
+  | "identity"
+  | "ongoing"
+  | "habit"
+  | "people"
+  | "preference";
+
+/** 枚举的运行时数组(校验用)。与 MemoryCategory 一一对应,改一处改两处。 */
+export const MEMORY_CATEGORIES: readonly MemoryCategory[] = [
+  "identity",
+  "ongoing",
+  "habit",
+  "people",
+  "preference",
+];
+
+/** 事实来源:told=用户明说的、inferred=对话中推断的。 */
+export type MemorySource = "told" | "inferred";
+
+/** 耐久度:durable=长期有效、transient=阶段性(通常带 expires_at)。 */
+export type MemoryDurability = "durable" | "transient";
+
+export interface MemoryFact {
+  id: string;
+  category: MemoryCategory;
+  content: string;
+  source: MemorySource;
+  durability: MemoryDurability;
+  /** 用户钉住:不因过期被淘汰、列表里优先。 */
+  pinned: boolean;
+  createdAt: string;
+  /** 有效期(ISO,可空)。空=永不过期;到点后非 pinned 则不再 active。 */
+  expiresAt?: string;
+}
+
+interface MemoryFactRow {
+  id: string;
+  category: string;
+  content: string;
+  source: string;
+  durability: string;
+  pinned: number;
+  created_at: string;
+  expires_at: string | null;
+}
+
+function rowToMemoryFact(r: MemoryFactRow): MemoryFact {
+  return {
+    id: r.id,
+    category: r.category as MemoryCategory,
+    content: r.content,
+    source: r.source as MemorySource,
+    durability: r.durability as MemoryDurability,
+    pinned: r.pinned === 1,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at ?? undefined,
+  };
+}
+
+/**
+ * 判断一条事实在给定时刻是否仍然有效(active)。【纯函数 + 时间注入】
+ *
+ * 规则(与 dbListMemoryFacts 的 SQL 过滤一一对应,改一处改两处):
+ *   - pinned → 永远 active(用户钉住优先于过期)
+ *   - expiresAt 为空 / 无法解析 → 永远 active(无有效期,脏值不误删)
+ *   - expiresAt 有效 → 仅当 now < expiresAt 才 active(到点即失效,边界取闭)
+ *
+ * @param fact 事实(只读 pinned / expiresAt)
+ * @param now  当前时刻(ms),由调用方注入,便于单测
+ */
+export function isMemoryFactActive(
+  fact: Pick<MemoryFact, "pinned" | "expiresAt">,
+  now: number
+): boolean {
+  if (fact.pinned) return true;
+  if (!fact.expiresAt) return true;
+  const exp = Date.parse(fact.expiresAt);
+  if (Number.isNaN(exp)) return true; // 脏值按"无有效期"处理,不误删
+  return now < exp;
+}
+
+/** dbInsertMemoryFact 的入参(不含由本函数生成的 id / createdAt)。 */
+export interface MemoryFactInput {
+  category: MemoryCategory;
+  content: string;
+  source: MemorySource;
+  durability: MemoryDurability;
+  pinned: boolean;
+  /** 可空。transient 事实通常由调用方兜一个有效期再传进来。 */
+  expiresAt?: string;
+}
+
+/**
+ * 插入一条记忆事实。id(前缀 'mf')与 createdAt 由本函数生成,返回新 id。
+ * @returns 新事实的 id
+ */
+export async function dbInsertMemoryFact(input: MemoryFactInput): Promise<string> {
+  const db = await getDb();
+  const id = `mf${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO memory_facts
+      (id, category, content, source, durability, pinned, created_at, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      id,
+      input.category,
+      input.content,
+      input.source,
+      input.durability,
+      input.pinned ? 1 : 0,
+      now,
+      input.expiresAt ?? null,
+    ]
+  );
+  return id;
+}
+
+/** dbUpdateMemoryFact 的可改字段(只改传入的;expiresAt 传 null 显式清空)。 */
+export interface MemoryFactPatch {
+  category?: MemoryCategory;
+  content?: string;
+  source?: MemorySource;
+  durability?: MemoryDurability;
+  pinned?: boolean;
+  /** undefined=不动;null=清空有效期;string=设新有效期。 */
+  expiresAt?: string | null;
+}
+
+/**
+ * 部分更新一条记忆事实。只更新 patch 里出现的字段(动态拼 SET 子句)。
+ * 没有任何字段时直接返回(不打空 UPDATE)。
+ *
+ * @param id    目标事实 id
+ * @param patch 要改的字段
+ */
+export async function dbUpdateMemoryFact(
+  id: string,
+  patch: MemoryFactPatch
+): Promise<void> {
+  const db = await getDb();
+  const sets: string[] = [];
+  const args: unknown[] = [];
+  const push = (col: string, val: unknown) => {
+    args.push(val);
+    sets.push(`${col} = $${args.length}`);
+  };
+  if (patch.category !== undefined) push("category", patch.category);
+  if (patch.content !== undefined) push("content", patch.content);
+  if (patch.source !== undefined) push("source", patch.source);
+  if (patch.durability !== undefined) push("durability", patch.durability);
+  if (patch.pinned !== undefined) push("pinned", patch.pinned ? 1 : 0);
+  // expiresAt: undefined=不动;null=清空;string=设值
+  if (patch.expiresAt !== undefined) push("expires_at", patch.expiresAt);
+  if (sets.length === 0) return; // 没有要改的,不打空 UPDATE
+  args.push(id);
+  await db.execute(
+    `UPDATE memory_facts SET ${sets.join(", ")} WHERE id = $${args.length}`,
+    args
+  );
+}
+
+/** 删除一条记忆事实(硬删,记忆不需要软删/可恢复语义)。 */
+export async function dbDeleteMemoryFact(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM memory_facts WHERE id = $1", [id]);
+}
+
+export interface ListMemoryFactsOptions {
+  /** 只取仍然有效的事实(过滤过期且非 pinned 的)。默认 false=全取。 */
+  onlyActive?: boolean;
+  /** 限定分类。 */
+  category?: MemoryCategory;
+}
+
+/**
+ * 列出记忆事实。pinned 优先、再按创建时间倒序(新的在前)。
+ *
+ * onlyActive 的过滤在 SQL 层做(保证跨窗口直读 DB 即时新鲜):
+ *   active = pinned=1 OR expires_at IS NULL OR expires_at > now
+ * 这与纯函数 isMemoryFactActive 的规则对齐:
+ *   - pinned=true / expires_at 为 NULL → 永远 active(两者口径一致)
+ *   - 脏 expires_at(字母开头等非 ISO 值):SQLite 字符串比较下字母开头 > 数字开头的
+ *     ISO 时间戳,故脏值 > now → 被保活。与 isMemoryFactActive 纯函数一致
+ *     (脏值 Date.parse 返回 NaN,按"永远有效"处理,同样保活)。
+ *   - 正常 ISO 时间戳:字符串排序与时间先后一致,SQL 过滤结果准确。
+ */
+export async function dbListMemoryFacts(
+  opts: ListMemoryFactsOptions = {}
+): Promise<MemoryFact[]> {
+  const db = await getDb();
+  const where: string[] = [];
+  const args: unknown[] = [];
+  if (opts.onlyActive) {
+    args.push(new Date().toISOString());
+    where.push(
+      `(pinned = 1 OR expires_at IS NULL OR expires_at > $${args.length})`
+    );
+  }
+  if (opts.category) {
+    args.push(opts.category);
+    where.push(`category = $${args.length}`);
+  }
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const rows = await db.select<MemoryFactRow[]>(
+    `SELECT * FROM memory_facts ${clause}
+     ORDER BY pinned DESC, created_at DESC`,
+    args
+  );
+  return rows.map(rowToMemoryFact);
 }

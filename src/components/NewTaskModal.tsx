@@ -7,6 +7,7 @@ import { useTodoStore, newTodoId, type Priority, type Todo } from "../lib/store"
 import { useFieldStore } from "../lib/fieldStore";
 import { cn } from "../lib/utils";
 import { DatePicker } from "./DatePicker";
+import { FieldValueSelect } from "./FieldValueSelect";
 import {
   parseScheduledTime,
   quickDeadline,
@@ -401,75 +402,22 @@ export function NewTaskModal({ open, onClose, initial }: Props) {
                     {fieldDefs.map((fd) => (
                       <div key={fd.id} className="mb-3 last:mb-0">
                         <Field label={fd.name}>
-                          {fd.type === "single_select" ? (
-                            <select
-                              value={(customFieldValues[fd.id] as string) ?? ""}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setCustomFieldValues((prev) => {
-                                  const next = { ...prev };
-                                  if (v) next[fd.id] = v;
-                                  else delete next[fd.id];
-                                  return next;
-                                });
-                              }}
-                              className={inputCls}
-                            >
-                              <option value="">—</option>
-                              {fd.options.map((opt) => (
-                                <option key={opt.id} value={opt.id}>{opt.label}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950">
-                              {((customFieldValues[fd.id] as string[]) ?? []).map((optId) => {
-                                const opt = fd.options.find((o) => o.id === optId);
-                                if (!opt) return null;
-                                return (
-                                  <span
-                                    key={optId}
-                                    className="inline-flex items-center gap-1 text-xs text-white px-1.5 py-0.5 rounded-full"
-                                    style={{ backgroundColor: opt.color }}
-                                  >
-                                    {opt.label}
-                                    <button
-                                      type="button"
-                                      onClick={() => setCustomFieldValues((prev) => {
-                                        const arr = ((prev[fd.id] as string[]) ?? []).filter((v) => v !== optId);
-                                        const next = { ...prev };
-                                        if (arr.length > 0) next[fd.id] = arr;
-                                        else delete next[fd.id];
-                                        return next;
-                                      })}
-                                      className="hover:text-white/70"
-                                    >
-                                      <X className="w-2.5 h-2.5" />
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                              <select
-                                value=""
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  if (!v) return;
-                                  setCustomFieldValues((prev) => {
-                                    const arr = (prev[fd.id] as string[]) ?? [];
-                                    if (arr.includes(v)) return prev;
-                                    return { ...prev, [fd.id]: [...arr, v] };
-                                  });
-                                }}
-                                className="bg-transparent outline-none text-xs text-zinc-500 cursor-pointer"
-                              >
-                                <option value="">+</option>
-                                {fd.options
-                                  .filter((o) => !((customFieldValues[fd.id] as string[]) ?? []).includes(o.id))
-                                  .map((opt) => (
-                                    <option key={opt.id} value={opt.id}>{opt.label}</option>
-                                  ))}
-                              </select>
-                            </div>
-                          )}
+                          <FieldValueSelect
+                            field={fd}
+                            value={customFieldValues[fd.id] ?? (fd.type === "multi_select" ? [] : "")}
+                            onChange={(v) =>
+                              setCustomFieldValues((prev) => {
+                                const next = { ...prev };
+                                const empty = Array.isArray(v) ? v.length === 0 : !v;
+                                if (empty) delete next[fd.id];
+                                else next[fd.id] = v;
+                                return next;
+                              })
+                            }
+                            onCreateOption={(label) =>
+                              useFieldStore.getState().addOption(fd.id, label)
+                            }
+                          />
                         </Field>
                       </div>
                     ))}

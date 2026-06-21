@@ -1,11 +1,15 @@
 //! Claude Code CLI adapter
 //!
 //! 调用：claude -p "<prompt>" --output-format stream-json --verbose --include-partial-messages
-//!       [--resume <session-id>] [--mcp-config <path>]
+//!       [--mcp-config <path>]
 //!
 //! 用户已经 `claude login` 后，spawn 跑就走他的订阅额度，无需 API key。
 //! 输出是 NDJSON：每行一个 JSON 事件（assistant message delta、tool_use、thinking、result 等）。
 //! 我们解析成统一 ChatEvent，推给前端。
+//!
+//! **无状态（铁律①）**：不用 `--resume`，不持有/回传 session。每轮的完整上下文
+//! （人设 + 记忆 + 历史 + 当前消息）由 app 拼进 `req.prompt`。CLI 输出里的 session_id
+//! 我们不解析、不存。
 
 use super::{ChatEvent, ChatRequest};
 use serde::Deserialize;
@@ -18,13 +22,9 @@ use tokio::sync::mpsc::Sender;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 enum ClaudeEvent {
-    /// 系统消息：包含 session_id 等元信息
+    /// 系统消息（含 session_id 等元信息；无状态适配器不解析这些字段，仅占位以正确分流）
     #[serde(rename = "system")]
-    System {
-        session_id: Option<String>,
-        #[serde(default)]
-        subtype: Option<String>,
-    },
+    System,
     /// assistant 消息（含 content 数组：text、thinking、tool_use 等子项）
     #[serde(rename = "assistant")]
     Assistant { message: AssistantMessage },
@@ -34,7 +34,6 @@ enum ClaudeEvent {
     /// 最终结果（一轮结束）
     #[serde(rename = "result")]
     Result {
-        session_id: Option<String>,
         #[serde(default)]
         is_error: bool,
         #[serde(default)]
@@ -93,9 +92,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
         .arg("--verbose")
         .arg("--include-partial-messages");
 
-    if let Some(sid) = &req.session_id {
-        cmd.arg("--resume").arg(sid);
-    }
     if let Some(path) = &mcp_config_path {
         cmd.arg("--mcp-config").arg(path);
     }
@@ -112,8 +108,6 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
         .ok_or_else(|| "claude stdout 不可用".to_string())?;
     let mut reader = BufReader::new(stdout).lines();
 
-    let mut last_session_id: Option<String> = None;
-
     // 3. 逐行解析 NDJSON
     while let Ok(Some(line)) = reader.next_line().await {
         if line.trim().is_empty() {
@@ -124,10 +118,8 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
             Err(_) => continue, // 解析不了的行跳过（兼容未来格式变化）
         };
         match ev {
-            ClaudeEvent::System { session_id, .. } => {
-                if session_id.is_some() {
-                    last_session_id = session_id;
-                }
+            ClaudeEvent::System => {
+                // 无状态：不解析 session_id（铁律①）
             }
             ClaudeEvent::Assistant { message } => {
                 for block in message.content {
@@ -149,14 +141,7 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
                 // 工具结果回传给 claude 自己；我们补一个 ToolCallEnd（简化：不区分单个工具）
                 // 更精细的对应可后续优化（记录 tool_use_id → name 映射）
             }
-            ClaudeEvent::Result {
-                session_id,
-                is_error,
-                ..
-            } => {
-                if session_id.is_some() {
-                    last_session_id = session_id;
-                }
+            ClaudeEvent::Result { is_error, .. } => {
                 if is_error {
                     let _ = tx
                         .send(ChatEvent::Error {
@@ -175,11 +160,7 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
         let _ = std::fs::remove_file(&path);
     }
 
-    let _ = tx
-        .send(ChatEvent::Done {
-            session_id: last_session_id,
-        })
-        .await;
+    let _ = tx.send(ChatEvent::Done).await;
     Ok(())
 }
 

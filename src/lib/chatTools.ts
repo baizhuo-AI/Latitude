@@ -16,6 +16,14 @@ import {
   dbUpdateTodoSchedule,
   dbListActivities,
   dbListCalendarEvents,
+  dbInsertMemoryFact,
+  dbUpdateMemoryFact,
+  dbDeleteMemoryFact,
+  MEMORY_CATEGORIES,
+  type MemoryCategory,
+  type MemorySource,
+  type MemoryDurability,
+  type MemoryFactPatch,
 } from "./db";
 import { useTodoStore, newTodoId, type Todo, type Priority, type TodoStatus } from "./store";
 import { useGoalsStore, newGoalId, type Goal } from "./goalsStore";
@@ -30,6 +38,7 @@ import {
   type BitableFieldMeta,
 } from "./feishuBitable";
 import { emitSync } from "./syncBus";
+import { FIELD_TOOLS, persistCustomFieldsInput } from "./chatToolsFields";
 
 export interface ChatTool {
   name: string;
@@ -51,10 +60,53 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v : undefined;
 }
 
+/**
+ * 把 AI 传入的 occurred_at(事情实际发生时间)收敛成 ISO 时间戳。
+ * - 完整可解析时间(ISO,或 "2026-06-15 09:00")→ 该时刻 ISO
+ * - 纯 "HH:mm" / "H:mm" → 今天本地日期 + 该时刻
+ * - 空 / 无法解析 → undefined(交给 store 兜底成当前时间,绝不把垃圾写进时间线)
+ * 防呆:解析出的时间若比现在晚 1 小时以上,基本是模型把日期/上下午算错了
+ *      (log_activity 只记已发生的事),回退成当前时间。
+ */
+function resolveOccurredAt(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  let ms: number | null = null;
+  const hm = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (hm) {
+    const h = Number(hm[1]);
+    const min = Number(hm[2]);
+    if (h <= 23 && min <= 59) {
+      const d = new Date();
+      d.setHours(h, min, 0, 0);
+      ms = d.getTime();
+    }
+  } else {
+    const parsed = Date.parse(s);
+    if (!Number.isNaN(parsed)) ms = parsed;
+  }
+  if (ms == null) return undefined;
+  if (ms - Date.now() > 60 * 60 * 1000) return undefined; // 明显的"未来"=算错,回退当前
+  return new Date(ms).toISOString();
+}
+
 /** todos 写操作后统一刷新主窗口 + 通知其它窗口 */
 async function refreshTodos() {
   await useTodoStore.getState().hydrate();
   emitSync("todos");
+}
+
+/**
+ * transient(阶段性)事实没给 expires_at 时,默认兜的有效期跨度。
+ * 30 天:阶段性事情("这周在赶 demo")最多月级,过期后自动不再注入对话,避免陈旧噪音。
+ */
+const TRANSIENT_DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** 校验并收敛 category;非法返回 undefined(由调用方转成 error)。 */
+function asCategory(v: unknown): MemoryCategory | undefined {
+  return typeof v === "string" && (MEMORY_CATEGORIES as readonly string[]).includes(v)
+    ? (v as MemoryCategory)
+    : undefined;
 }
 
 /**
@@ -121,6 +173,7 @@ export const CHAT_TOOLS: ChatTool[] = [
         scheduled_time: { type: "string", description: "排期时段，如 09:30-11:00" },
         est_time: { type: "string", description: "预估耗时，如 1.5h" },
         reason: { type: "string", description: "为什么做（可选）" },
+        custom_fields: { type: "object", description: "自定义字段值，格式 {字段名: 选项名 或 选项名数组}；选项不存在会自动新建。例 {\"项目\":\"客户A\"}" },
       },
       required: ["title"],
     },
@@ -140,8 +193,14 @@ export const CHAT_TOOLS: ChatTool[] = [
         scheduledDate: str(a.scheduled_date),
         createdAt: new Date().toISOString(),
       };
+      let fieldNote: { created: string[]; skipped: string[] } | undefined;
+      if (a.custom_fields && typeof a.custom_fields === "object") {
+        const r = await persistCustomFieldsInput(a.custom_fields as Record<string, unknown>);
+        todo.customFields = r.customFields;
+        if (r.created.length || r.skipped.length) fieldNote = { created: r.created, skipped: r.skipped };
+      }
       await useTodoStore.getState().addTodo(todo); // 内含 db 写入 + state 更新 + emitSync
-      return JSON.stringify({ created: { id: todo.id, title: todo.title } });
+      return JSON.stringify({ created: { id: todo.id, title: todo.title }, ...(fieldNote ? { fields: fieldNote } : {}) });
     },
   },
   {
@@ -197,6 +256,7 @@ export const CHAT_TOOLS: ChatTool[] = [
         priority: { type: "string", description: "high / medium / low / none" },
         tags: { type: "array", items: { type: "string" } },
         est_time: { type: "string", description: "如 1.5h / 30m" },
+        custom_fields: { type: "object", description: "自定义字段值，格式 {字段名: 选项名 或 选项名数组}；选项不存在会自动新建" },
       },
       required: ["id"],
     },
@@ -217,11 +277,18 @@ export const CHAT_TOOLS: ChatTool[] = [
           : cur.tags,
         estTime: typeof a.est_time === "string" ? (a.est_time || undefined) : cur.estTime,
       };
+      let fieldNote: { created: string[]; skipped: string[] } | undefined;
+      if (a.custom_fields && typeof a.custom_fields === "object") {
+        const r = await persistCustomFieldsInput(a.custom_fields as Record<string, unknown>);
+        merged.customFields = { ...(cur.customFields ?? {}), ...r.customFields };
+        if (r.created.length || r.skipped.length) fieldNote = { created: r.created, skipped: r.skipped };
+      }
       await useTodoStore.getState().updateTodo(merged);
       return JSON.stringify({
         updated: true,
         id,
         fieldsChanged: Object.keys(a).filter((k) => k !== "id"),
+        ...(fieldNote ? { fields: fieldNote } : {}),
       });
     },
   },
@@ -384,18 +451,31 @@ export const CHAT_TOOLS: ChatTool[] = [
         ? { startDate: date, endDate: date }
         : (startDate || endDate) ? { startDate, endDate } : undefined;
       const rows = await dbListActivities(limit, opts);
-      return JSON.stringify({ count: rows.length, activities: rows.map((r) => ({ id: r.id, content: r.content, createdAt: r.createdAt })) });
+      return JSON.stringify({ count: rows.length, activities: rows.map((r) => ({ id: r.id, content: r.content, occurredAt: r.occurredAt, createdAt: r.createdAt })) });
     },
   },
   {
     name: "log_activity",
-    description: "记一条时间日志（你现在/刚才在做什么）",
-    parameters: { type: "object", properties: { content: { type: "string" } }, required: ["content"] },
+    description:
+      "记一条时间日志(用户做过 / 正在做的某件事)。记的时间是这件事【实际发生】的时间,不是现在对话的时间。",
+    parameters: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "做了什么" },
+        occurred_at: {
+          type: "string",
+          description:
+            "这件事实际发生的时间。优先传完整 ISO8601(YYYY-MM-DDTHH:mm:ss,日期用系统给你的当前时间推算);也接受 HH:mm(默认今天)。用户说『刚才/正在/现在』或就是当下做的,省略本字段(默认当前时间)。⚠️用户只给『早上/上午/下午/晚上』这类模糊词时,先问清具体几点,别自己瞎填。",
+        },
+      },
+      required: ["content"],
+    },
     execute: async (a) => {
       const content = str(a.content);
       if (!content) return JSON.stringify({ error: "content 必填" });
-      await useActivityStore.getState().addActivity(content); // 内含 db 写入 + emitSync
-      return JSON.stringify({ logged: { content } });
+      const occurredAt = resolveOccurredAt(str(a.occurred_at));
+      await useActivityStore.getState().addActivity(content, occurredAt); // 内含 db 写入 + emitSync
+      return JSON.stringify({ logged: { content, occurredAt: occurredAt ?? "(当前时间)" } });
     },
   },
   {
@@ -614,6 +694,152 @@ export const CHAT_TOOLS: ChatTool[] = [
       }
     },
   },
+  // ─── 记忆工具(Task 2.1):让对话里的大脑写/改/删关于用户的长期事实 ───
+  // 写入直落 SQLite(跨窗口共享);改完 emitSync('memory') 通知面板等其它窗口刷新 UI。
+  // 对话注入侧直读 DB(dbListMemoryFacts),不走任何 store 缓存——改了即时新鲜。
+  {
+    name: "remember",
+    description:
+      "记住一条关于用户的长期事实(身份/在做的事/习惯/人际/偏好),供以后的对话个性化参考。" +
+      "只在确实值得长期记的信息上用;一次性、马上过时的内容不要记。category 必须是枚举值之一。",
+    parameters: {
+      type: "object",
+      properties: {
+        category: {
+          type: "string",
+          enum: ["identity", "ongoing", "habit", "people", "preference"],
+          description:
+            "identity=身份/职业;ongoing=当前在进行的事(通常用 durability=transient);habit=习惯/作息;people=人际;preference=偏好",
+        },
+        content: { type: "string", description: "事实正文(必填),一句话讲清楚" },
+        source: {
+          type: "string",
+          enum: ["told", "inferred"],
+          description: "told=用户明确说的;inferred=你从对话推断的。默认 inferred",
+        },
+        durability: {
+          type: "string",
+          enum: ["durable", "transient"],
+          description:
+            "durable=长期有效;transient=阶段性(会自动过期)。默认 durable。ongoing 类一般用 transient",
+        },
+        expires_at: {
+          type: "string",
+          description:
+            "有效期 YYYY-MM-DD(可选)。transient 但不填时自动兜约 30 天;durable 一般不填",
+        },
+        pinned: {
+          type: "boolean",
+          description: "钉住:即使过期也保留并优先(默认 false)。慎用,通常交给用户在面板钉",
+        },
+      },
+      required: ["category", "content"],
+    },
+    execute: async (a) => {
+      const category = asCategory(a.category);
+      if (!category)
+        return JSON.stringify({
+          error: `category 必须是以下之一: ${MEMORY_CATEGORIES.join(" / ")}`,
+        });
+      const content = str(a.content);
+      if (!content) return JSON.stringify({ error: "content 必填" });
+
+      const source: MemorySource = a.source === "told" ? "told" : "inferred";
+      const durability: MemoryDurability =
+        a.durability === "transient" ? "transient" : "durable";
+      const pinned = a.pinned === true;
+
+      // transient 没给有效期 → 兜一个默认 TTL,防止阶段性事实变成永久噪音
+      let expiresAt = str(a.expires_at);
+      if (!expiresAt && durability === "transient") {
+        expiresAt = new Date(Date.now() + TRANSIENT_DEFAULT_TTL_MS).toISOString();
+      }
+
+      const id = await dbInsertMemoryFact({
+        category,
+        content,
+        source,
+        durability,
+        pinned,
+        expiresAt,
+      });
+      emitSync("memory");
+      return JSON.stringify({ id, remembered: { category, content } });
+    },
+  },
+  {
+    name: "update_memory",
+    description:
+      "修改一条已有的记忆事实(按 id)。只填想改的字段。改正、补充、或把 transient 续期/转 durable 时用。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "目标事实的 id(必填)" },
+        category: {
+          type: "string",
+          enum: ["identity", "ongoing", "habit", "people", "preference"],
+        },
+        content: { type: "string" },
+        source: { type: "string", enum: ["told", "inferred"] },
+        durability: { type: "string", enum: ["durable", "transient"] },
+        expires_at: {
+          type: "string",
+          description: "改有效期 YYYY-MM-DD;传空字符串则清空(变永不过期)",
+        },
+        pinned: { type: "boolean" },
+      },
+      required: ["id"],
+    },
+    execute: async (a) => {
+      const id = str(a.id);
+      if (!id) return JSON.stringify({ error: "id 必填" });
+
+      const patch: MemoryFactPatch = {};
+      if (a.category !== undefined) {
+        const c = asCategory(a.category);
+        if (!c)
+          return JSON.stringify({
+            error: `category 必须是以下之一: ${MEMORY_CATEGORIES.join(" / ")}`,
+          });
+        patch.category = c;
+      }
+      if (typeof a.content === "string" && a.content.trim()) patch.content = a.content.trim();
+      if (a.source === "told" || a.source === "inferred") patch.source = a.source;
+      if (a.durability === "durable" || a.durability === "transient")
+        patch.durability = a.durability;
+      if (typeof a.pinned === "boolean") patch.pinned = a.pinned;
+      // expires_at: 空字符串=清空(null);非空=设值;字段缺省=不动
+      if (typeof a.expires_at === "string") {
+        patch.expiresAt = a.expires_at.trim() ? a.expires_at.trim() : null;
+      }
+
+      await dbUpdateMemoryFact(id, patch);
+      emitSync("memory");
+      return JSON.stringify({
+        updated: true,
+        id,
+        fieldsChanged: Object.keys(patch),
+      });
+    },
+  },
+  {
+    name: "forget",
+    description:
+      "删除一条记忆事实(按 id),硬删不可恢复。用户说『忘掉/别记这个』或事实已彻底失效时用。",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string", description: "目标事实的 id(必填)" } },
+      required: ["id"],
+    },
+    execute: async (a) => {
+      const id = str(a.id);
+      if (!id) return JSON.stringify({ error: "id 必填" });
+      await dbDeleteMemoryFact(id);
+      emitSync("memory");
+      return JSON.stringify({ deleted: true, id });
+    },
+  },
+  ...FIELD_TOOLS,
 ];
 
 /** name → tool 映射 */

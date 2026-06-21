@@ -3,7 +3,7 @@
 //! 在 Tauri 进程内启动一个 streamable-http MCP server，让 Claude Code 等 MCP 客户端
 //! 访问 Daybreak 的本地数据。与前端共享同一个 daybreak.db（各自独立连接，WAL 下并发安全）。
 //!
-//! - server.rs：server 启动、鉴权中间件、12 个工具
+//! - server.rs：server 启动、鉴权中间件、15 个工具（含记忆 remember/update_memory/forget）
 //! - connect.rs：接入密钥（token）管理 + 给前端读接入信息的 Tauri command
 //! - db.rs：sqlx 连接 + WAL
 //!

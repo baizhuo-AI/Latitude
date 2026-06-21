@@ -8,6 +8,8 @@ import { ChatHistoryPage } from "../pages/ChatHistoryPage";
 import { TelosPage } from "../pages/TelosPage";
 import { ActivitiesPage } from "../pages/ActivitiesPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { AboutYouPage } from "../pages/AboutYouPage";
+import { ConnectionsPage } from "../pages/ConnectionsPage";
 
 /**
  * 工作台壳 — 工作台窗(label "main")的内容容器。
@@ -30,6 +32,8 @@ export function BoardShell() {
               <Route path="/activities" element={<ActivitiesPage />} />
               <Route path="/history" element={<ChatHistoryPage />} />
               <Route path="/telos" element={<TelosPage />} />
+              <Route path="/about-you" element={<AboutYouPage />} />
+              <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>
