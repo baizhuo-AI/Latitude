@@ -151,6 +151,13 @@ export interface SettingsState {
    * 默认 false。
    */
   lowPowerMode: boolean;
+  /**
+   * 侧栏导航项显隐(需求 4)
+   * 存「被隐藏的导航 key」列表(briefing/todos/calendar/activities/history/telos/aboutYou/connections)。
+   * 默认 []=全部显示;只存被关掉的,向后兼容(旧存档无此字段即全显)。
+   * 「设置」入口不参与隐藏(它是侧栏管理的回路,藏了用户会被锁死),故不在此列表里。
+   */
+  sidebarHidden: string[];
 }
 
 // re-export PersonaSpec / ProactiveConfig 让消费方不用另外 import 子模块
@@ -200,7 +207,9 @@ function defaults(): SettingsState {
     // 隐私 + 成本(Task 4.6a):默认全关,不改变现有行为
     localOnlyBrain: false,
     noSensitiveMemory: false,
-    lowPowerMode: false
+    lowPowerMode: false,
+    // 新用户默认只露 todos/calendar/aboutYou,其余藏起来降低初始认知负荷
+    sidebarHidden: ["briefing", "activities", "history", "telos", "connections"]
   };
 }
 
@@ -328,7 +337,13 @@ function readStored(): SettingsState {
       // Task 4.6a 隐私 + 成本:布尔字段浅合并,旧存档无此字段时回退 defaults
       localOnlyBrain: typeof parsed.localOnlyBrain === "boolean" ? parsed.localOnlyBrain : def.localOnlyBrain,
       noSensitiveMemory: typeof parsed.noSensitiveMemory === "boolean" ? parsed.noSensitiveMemory : def.noSensitiveMemory,
-      lowPowerMode: typeof parsed.lowPowerMode === "boolean" ? parsed.lowPowerMode : def.lowPowerMode
+      lowPowerMode: typeof parsed.lowPowerMode === "boolean" ? parsed.lowPowerMode : def.lowPowerMode,
+      // 侧栏显隐:只接受字符串数组,逐项过滤脏数据。
+      // 老用户(有 localStorage 但没存过此字段)回退 [] 全显,不被新默认值突然藏掉导航;
+      // 全新用户(无 localStorage)走 defaults() 拿到精简默认。
+      sidebarHidden: Array.isArray(parsed.sidebarHidden)
+        ? parsed.sidebarHidden.filter((x): x is string => typeof x === "string")
+        : []
     };
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
@@ -394,6 +409,47 @@ function persist(state: SettingsState) {
   } catch (err) {
     console.error("[settings] persist failed:", err);
   }
+  // 活动记录的原生后台调度（Rust 引擎）需要这份配置,但设置只在前端 localStorage、Rust 读不到。
+  // 收口在 persist:任何设置变更都把最新「主动配置」推给 Rust。fire-and-forget,失败只告警不阻塞。
+  pushProactiveConfigToTauri(state);
+}
+
+/**
+ * 把「主动配置」推给 Rust 后台引擎(`set_proactive_config` 命令)。
+ *
+ * 字段口径对齐 `src-tauri/src/secretary/config.rs` 的 `ProactiveRuntimeConfig`(camelCase)。
+ * 动态 import invoke:避免给被广泛引用的 settings.ts 加 Tauri 顶层依赖;非 Tauri 环境(单测)
+ * 走 catch 静默失败,不影响设置本身。
+ */
+function pushProactiveConfigToTauri(state: SettingsState): void {
+  const ac = state.proactive?.activityCapture;
+  const config = {
+    enabled: ac?.enabled ?? false,
+    masterOn: (state.proactive?.mode ?? "gentle") !== "off",
+    intervalMin: ac?.intervalMin ?? 120,
+    workStart: state.reminder?.workStart ?? 9,
+    workEnd: state.reminder?.workEnd ?? 22,
+    pausedUntil: state.reminder?.pausedUntil ?? null,
+    channel: state.proactive?.channel ?? "chat",
+    lang: state.lang ?? "zh",
+  };
+  void (async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_proactive_config", { config });
+    } catch (err) {
+      console.warn("[settings] 推送主动配置到 Rust 失败(忽略):", err);
+    }
+  })();
+}
+
+/**
+ * 启动时(主窗)推一次初始「主动配置」给 Rust。
+ * persist 只在用户改设置时触发,冷启动不会调,故主窗挂载时须主动推一次,否则 Rust 引擎
+ * 配置为 None、每个 tick 都跳过,活动记录永不触发。
+ */
+export function pushProactiveConfig(): void {
+  pushProactiveConfigToTauri(readSettingsSnapshot());
 }
 
 interface SettingsStore extends SettingsState {
@@ -411,6 +467,8 @@ interface SettingsStore extends SettingsState {
   setProactive: (patch: ProactivePatch) => void;
   /** Task 4.6a: 更新隐私/成本开关(localOnlyBrain / noSensitiveMemory / lowPowerMode) */
   setPrivacy: (patch: Partial<Pick<SettingsState, "localOnlyBrain" | "noSensitiveMemory" | "lowPowerMode">>) => void;
+  /** 需求 4: 全量覆盖侧栏隐藏项列表(「至少保留一项」的校验在 UI 层做,这里只负责存) */
+  setSidebarHidden: (hidden: string[]) => void;
   reset: () => void;
 }
 
@@ -478,6 +536,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setPrivacy: (patch) => {
     set(patch);
     persist({ ...get(), ...patch });
+  },
+  setSidebarHidden: (sidebarHidden) => {
+    set({ sidebarHidden });
+    persist({ ...get(), sidebarHidden });
   },
   reset: () => {
     const d = defaults();

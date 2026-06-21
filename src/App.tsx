@@ -12,8 +12,9 @@ import { useChatStore } from "./lib/chatStore";
 import { onSync, bridgeDataChangedToSync, type SyncTopic } from "./lib/syncBus";
 import { setupOnlineReplay } from "./lib/calendarSync";
 import { startSecretaryScheduler, runStartupBackfill } from "./lib/secretary/wiring";
+import { setupFeishuChatBridge } from "./lib/feishuChat";
 import { windowRole } from "./lib/windowLayout";
-import { useSettingsStore } from "./lib/settings";
+import { useSettingsStore, pushProactiveConfig } from "./lib/settings";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "./components/Toaster";
@@ -92,11 +93,20 @@ function MainWindow() {
     return stop;
   }, []);
 
+  // 启动时把「主动配置」推给 Rust 后台引擎(活动记录原生调度需要;之后每次改设置由 settings.persist 重推)。
+  useEffect(() => {
+    pushProactiveConfig();
+  }, []);
+
   // 启动补发:若今早错过晨间简报且用户尚未活跃,补发一条(只在主窗起一次)。
   // 不阻塞渲染、不抛错——内部已吞异常并保守降级。
   useEffect(() => {
     void runStartupBackfill();
   }, []);
+
+  // 飞书对话入口:监听 Rust 入站消费端的 "feishu://incoming" → 跑秘书核心 → 回复发回飞书。
+  // 只在工作台主窗起一份(主窗"关闭=隐藏"始终存活,是可靠的执行器;settings 在此为真相源)。
+  useEffect(() => setupFeishuChatBridge(), []);
 
   // 全局快捷键:启动时按设置里保存的 accelerator 注册一次(用户改时由设置页重新注册)。
   useEffect(() => {

@@ -12,7 +12,12 @@
     "telos": "Telos",
     "settings": "Settings",
     "openChatBar": "Open chat bar",
-    "openTodo": "Open todo widget"
+    "closeChatBar": "Close chat bar",
+    "openTodo": "Open todo widget",
+    "closeTodo": "Close todo widget",
+    "aboutYou": "Secretary",
+    "connections": "Connections",
+    "moreInSettings": "More features in Settings"
   },
   "floating": {
     "title": "Daybreak · Tasks",
@@ -231,7 +236,8 @@
     "placeholder": "What can I help you with today?",
     "empty": "Ask me anything about today, or jot a quick to-do.",
     "collapse": "Collapse",
-    "proactiveHint": "Your assistant sent you a message — tap to view"
+    "proactiveHint": "{{name}} sent you a message — tap to view",
+    "proactiveHintAnon": "You have a new message — tap to view"
   },
   "history": {
     "title": "Chat history",
@@ -395,6 +401,14 @@
   },
   "settings": {
     "title": "Settings",
+    "sidebar": {
+      "title": "Sidebar",
+      "description": "Choose which nav items show in the left sidebar.",
+      "hint": "Settings is always kept; hide the rest as you like, but keep at least one.",
+      "show": "Show",
+      "hide": "Hide",
+      "atLeastOne": "Keep at least one nav item"
+    },
     "shortcuts": {
       "title": "Shortcuts",
       "description": "Set a global hotkey to show / hide the chat bar. Works system-wide, in any app.",

@@ -12,7 +12,12 @@
     "telos": "目标",
     "settings": "设置",
     "openChatBar": "打开对话条",
-    "openTodo": "打开 todo 悬浮窗"
+    "closeChatBar": "收起对话条",
+    "openTodo": "打开 todo 悬浮窗",
+    "closeTodo": "收起 todo 悬浮窗",
+    "aboutYou": "秘书",
+    "connections": "连接",
+    "moreInSettings": "在设置中开启更多功能"
   },
   "floating": {
     "title": "Daybreak · 待办",
@@ -231,7 +236,8 @@
     "placeholder": "今天想做点什么?",
     "empty": "问我今天的安排,或随手记个待办。",
     "collapse": "收起",
-    "proactiveHint": "拂晓给你发了条消息,点开查看"
+    "proactiveHint": "{{name}}给你发了条消息,点开查看",
+    "proactiveHintAnon": "你收到一条新消息,点开查看"
   },
   "history": {
     "title": "对话记录",
@@ -395,6 +401,14 @@
   },
   "settings": {
     "title": "设置",
+    "sidebar": {
+      "title": "侧栏管理",
+      "description": "选择左侧导航显示哪些入口。",
+      "hint": "「设置」始终保留;其余可按需隐藏,但至少留一个。",
+      "show": "显示",
+      "hide": "隐藏",
+      "atLeastOne": "至少保留一个导航项"
+    },
     "shortcuts": {
       "title": "快捷键",
       "description": "设置一个全局快捷键来开 / 收对话条,系统级生效(任意 App 前台都能触发)。",

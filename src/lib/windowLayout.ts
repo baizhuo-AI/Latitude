@@ -54,6 +54,45 @@ export function openTodoFloat(): Promise<void> {
   return showWindow(WIN_TODO);
 }
 
+/**
+ * 切换对话条显隐:可见则收起,隐藏则打开并聚焦。
+ * 复用 Rust 的 toggle_chatbar 命令——与全局快捷键、托盘菜单走同一条路径,
+ * 保证桌面侧栏按钮与其它入口对窗口状态的认知一致(避免各管一份本地 flag 漂移)。
+ */
+export async function toggleChatBar(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("toggle_chatbar");
+  } catch (err) {
+    console.error("[windowLayout] toggle chatbar failed:", err);
+  }
+}
+
+/** 切换 todo 悬浮窗显隐:可见则收起,隐藏则打开并聚焦(复用 Rust toggle_todo,与快捷键/托盘同路径)。 */
+export async function toggleTodoFloat(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("toggle_todo");
+  } catch (err) {
+    console.error("[windowLayout] toggle todo failed:", err);
+  }
+}
+
+/**
+ * 查询某悬浮窗当前是否可见(label 取 WIN_CHATBAR / WIN_TODO)。
+ * 无 Tauri runtime(jsdom 单测 / Ladle)时返回 false,安静降级——
+ * 此时侧栏按钮一律显示「打开」,点击走 toggle 仍安全。
+ */
+export async function isFloaterVisible(label: string): Promise<boolean> {
+  try {
+    const mod = await import("@tauri-apps/api/webviewWindow");
+    const win = await mod.WebviewWindow.getByLabel(label);
+    return win ? await win.isVisible() : false;
+  } catch {
+    return false;
+  }
+}
+
 /** 隐藏「当前窗口」。悬浮窗的关闭按钮用 hide 而非 close,保住 label 下次再 show。 */
 export async function hideCurrentWindow(): Promise<void> {
   try {
