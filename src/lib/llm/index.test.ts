@@ -93,6 +93,7 @@ import {
   chatAgentCall,
   generateOnce,
   getCapabilities,
+  buildAgentSystemPrompt,
 } from "./index";
 
 beforeEach(() => {
@@ -350,5 +351,21 @@ describe("能力位 getCapabilities — 据实声明,供上层降级", () => {
     expect(caps.supportsTools).toBe(true);
     expect(caps.supportsReasoning).toBe(true);
     expect(caps.supportsStreaming).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// buildAgentSystemPrompt — 两个大脑路线共用的「工具引导」单一入口
+// 回归:CLI 路线(claude-cli / codex-cli)曾直接用 buildChatSystemPrompt() 漏掉工具引导,
+// 导致切到 Claude Code 后大脑不知道能"记录(log_activity)",把请求当纯文字答复。
+// ════════════════════════════════════════════════════════════════════════════
+describe("buildAgentSystemPrompt — 工具引导单一入口(API / CLI 路线共用)", () => {
+  it("产出 = 基础系统提示词 + 工具引导;含 log_activity 记录能力", async () => {
+    const prompt = await buildAgentSystemPrompt();
+    // 基础上下文仍在(人设核心规则),证明工具引导是「追加」而非「顶替」基础提示词
+    expect(prompt).toContain("不替用户甩选项");
+    // 工具引导被拼进来(总入口),且明确告知能调 log_activity 记录用户做过的事
+    expect(prompt).toContain("你能调用工具");
+    expect(prompt).toContain("log_activity");
   });
 });

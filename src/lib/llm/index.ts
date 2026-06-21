@@ -615,6 +615,21 @@ const TOOL_SYSTEM_HINT = `
 - 用户答不上来或说「无所谓 / 记不清」→ 按那个时段给个合理时间记下（上午≈9:00、下午≈14:00、晚上≈20:00），别因为没问到精确时间就卡着不记。`;
 
 /**
+ * agent 对话的「系统提示词」单一入口 = 基础上下文(buildChatSystemPrompt:人设/记忆/todos/Telos)
+ * + 工具引导(TOOL_SYSTEM_HINT:告诉大脑它能调 log_activity 等工具)。
+ *
+ * 【为什么收成一个函数】两条对话路线都必须经此取系统提示词,保证两个大脑被一致告知"能调工具":
+ *   - API 路线:chatAgentCall(本文件)
+ *   - CLI 路线:chatStore.sendMessage 的 sendViaCli 分支(claude-cli / codex-cli)
+ * 历史 bug:CLI 路线曾直接用 buildChatSystemPrompt() 漏掉 TOOL_SYSTEM_HINT,切到 Claude Code /
+ * Codex 后大脑不知道"记录(log_activity)"等工具存在,把"记一下今天做的事"当成纯文字答复。
+ * 收成单一入口后,任一路线都不会再漏掉工具引导。
+ */
+export async function buildAgentSystemPrompt(): Promise<string> {
+  return (await buildChatSystemPrompt()) + TOOL_SYSTEM_HINT;
+}
+
+/**
  * 带 function calling 的 agent 对话（非流式）。
  *
  * 模型可多轮调用工具：调工具 → 前端执行 → 结果回传 → 继续，直到给出最终答复。
@@ -633,7 +648,7 @@ export async function chatAgentCall(
   const caps = getCapabilities(model);
   const tools = caps.supportsTools ? toolsForLLM() : undefined;
   const messages: ChatMessage[] = [
-    { role: "system", content: (await buildChatSystemPrompt()) + TOOL_SYSTEM_HINT },
+    { role: "system", content: await buildAgentSystemPrompt() },
     ...history,
   ];
   const MAX_ROUNDS = 6;

@@ -34,6 +34,7 @@ import {
 } from "../db";
 import { useSettingsStore } from "../settings";
 import { emitSync } from "../syncBus";
+import { pushProactiveToFeishu } from "../feishuPush";
 import type { Lang } from "../settings";
 import type { ConversationRow, ChatMessageRow } from "../db";
 
@@ -291,6 +292,9 @@ export async function composeMorningBriefing(
   //    多窗口架构下各窗口有独立 chatStore,统一靠 emitSync + daybreak://data-changed 刷新,
   //    不在此处直接改 in-memory store(那只能影响本窗口,反而不一致)。
   emitSync("conversations");
+
+  // 选项 A:简报也推到飞书单聊(电脑开着时多一个飞书落点)。fire-and-forget,不阻塞投递。
+  void pushProactiveToFeishu(briefingText);
 
   // 7. 记录投递日志(Task 1.7):投递成功后打点,C6 失败路径在步骤 4 已提前 return,不会走到这里
   //    补发时 type 体现"补发"标记

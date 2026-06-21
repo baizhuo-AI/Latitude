@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Sparkles, ArrowUp, Plus, Square, ChevronDown, Bell } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Sparkles, ArrowUp, Plus, Square, ChevronDown, MessageCircle, X } from "lucide-react";
 import { useChatStore } from "../lib/chatStore";
+import { useSettingsStore } from "../lib/settings";
 import { cn } from "../lib/utils";
 import { setChatBarExpanded } from "../lib/windowLayout";
 import { onSync } from "../lib/syncBus";
@@ -197,19 +200,12 @@ export function ChatBar() {
         </div>
       )}
 
-      {/* 主动消息轻提示横幅 — 仅在有新主动消息对话时显示,不打断当前会话 */}
-      {proactiveHintConvId && (
-        <button
-          type="button"
-          data-testid="proactive-hint"
-          data-tauri-drag-region="false"
-          onClick={handleProactiveHintClick}
-          className="flex flex-shrink-0 items-center gap-2 rounded-2xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-left text-xs text-accent transition-colors hover:bg-accent/20"
-        >
-          <Bell className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
-          <span className="flex-1 truncate">{t("chatbar.proactiveHint")}</span>
-        </button>
-      )}
+      {/* 主动消息悬浮通知卡片 */}
+      <ProactiveToast
+        convId={proactiveHintConvId}
+        onOpen={handleProactiveHintClick}
+        onDismiss={() => setProactiveHintConvId(null)}
+      />
 
       <div
         data-tauri-drag-region
@@ -300,5 +296,90 @@ function Bubble({
         )}
       </div>
     </div>
+  );
+}
+
+const TOAST_AUTO_DISMISS_MS = 5000;
+
+function ProactiveToast({
+  convId,
+  onOpen,
+  onDismiss,
+}: {
+  convId: string | null;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
+  const personaName = useSettingsStore((s) => s.persona.name);
+  const [hovered, setHovered] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!convId) return;
+    if (hovered) return;
+    timerRef.current = setTimeout(onDismiss, TOAST_AUTO_DISMISS_MS);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [convId, hovered, onDismiss]);
+
+  const hintText = personaName
+    ? t("chatbar.proactiveHint", { name: personaName })
+    : t("chatbar.proactiveHintAnon");
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {convId && (
+        <motion.div
+          key="proactive-toast"
+          initial={{ opacity: 0, y: -40, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          transition={{ type: "spring", damping: 25, stiffness: 350 }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          className="fixed top-4 left-1/2 z-[80] -translate-x-1/2"
+        >
+          <button
+            type="button"
+            data-testid="proactive-hint"
+            onClick={onOpen}
+            className={cn(
+              "flex items-center gap-2.5 rounded-xl px-4 py-2.5",
+              "border border-border/60 bg-bg-elevated/95 backdrop-blur-md shadow-lg",
+              "text-sm text-text transition-all",
+              "hover:shadow-xl hover:border-accent/50"
+            )}
+          >
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+              <MessageCircle className="h-3.5 w-3.5" />
+            </span>
+            <span className="flex-1 truncate max-w-[240px]">{hintText}</span>
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="dismiss"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDismiss();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  onDismiss();
+                }
+              }}
+              className="flex-shrink-0 rounded p-0.5 text-text-faint transition-colors hover:text-text hover:bg-bg-muted"
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
   );
 }

@@ -103,6 +103,8 @@ pub mod mcp;
 pub mod cli_agent;
 // 飞书 / Lark 日历同步（OAuth + 增量拉取 + 双向回写）
 pub mod feishu;
+// AI 秘书原生后台能力（目前：活动记录的常驻调度引擎，绕开藏窗冻结 JS 定时器）
+pub mod secretary;
 // 跨模块共享小工具（id 生成 / ISO 时间戳）
 pub mod util;
 
@@ -197,10 +199,34 @@ pub fn run() {
                 let _ = feishu_handle.emit("daybreak://data-changed", topic.to_string());
             });
             tauri::async_runtime::spawn(feishu::engine::run_scheduler(
-                db_path,
+                db_path.clone(),
                 feishu_notify,
                 sync_handle,
             ));
+
+            // AI 秘书「活动记录」原生调度（替代主窗渲染进程里会被 macOS 冻结的 setInterval）：
+            // - 主动配置只在前端 localStorage，Rust 读不到 → 前端通过 set_proactive_config 命令推过来，
+            //   这里 manage 一个 ProactiveConfigState（Mutex<Option<_>>）承接（前端没推时引擎跳过）。
+            // - run_scheduler 内部每 60s tick、闸判定到点则写库 + 发系统通知 + notify 前端刷新；
+            //   连库失败只记日志退出本任务、单 tick 失败不中断，与 feishu 引擎同款长命兜底。
+            // - 复用同一个 daybreak.db（WAL 并发安全）与同款 notify 闭包（emit data-changed）。
+            app.manage(secretary::config::ProactiveConfigState::default());
+            let secretary_app = app.handle().clone();
+            let secretary_handle = app.handle().clone();
+            let secretary_notify: secretary::engine::Notifier =
+                std::sync::Arc::new(move |topic: &str| {
+                    let _ = secretary_handle.emit("daybreak://data-changed", topic.to_string());
+                });
+            tauri::async_runtime::spawn(secretary::engine::run_scheduler(
+                db_path,
+                secretary_app,
+                secretary_notify,
+            ));
+
+            // 飞书入站消费端（飞书对话入口）：监督 lark-cli event consume 收 IM 消息 → emit 给
+            // 主窗前端飞书桥（feishuChat.ts）→ 跑秘书核心 → feishu_send_reply 发回飞书。
+            // 自兜底：lark-cli 没装就只记日志退出、不影响主应用；进程掉了指数退避自动重连。
+            tauri::async_runtime::spawn(feishu::inbound::run_inbound(app.handle().clone()));
 
             // 菜单栏(托盘)图标:菜单可开 / 收对话条、打开 todo 悬浮窗、退出。
             {
@@ -254,6 +280,8 @@ pub fn run() {
             feishu::bitable::feishu_bitable_describe,
             feishu::bitable::feishu_bitable_create,
             feishu::bitable::feishu_bitable_update,
+            feishu::outbound::feishu_send_reply,
+            secretary::config::set_proactive_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

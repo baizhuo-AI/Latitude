@@ -35,6 +35,7 @@ import {
 } from "../db";
 import { useSettingsStore } from "../settings";
 import { emitSync } from "../syncBus";
+import { pushProactiveToFeishu } from "../feishuPush";
 import { openTodoFloat } from "../windowLayout";
 import type { Lang } from "../settings";
 import type { ConversationRow, ChatMessageRow } from "../db";
@@ -331,6 +332,9 @@ export async function deliverProactive(
 
   // 跨窗口刷新:让监听 conversations 的窗口 hydrate 出这条新对话(铁律:不直接改某窗口 store)
   emitSync("conversations");
+
+  // 选项 A:主动消息也推到飞书单聊(电脑开着时多一个飞书落点)。fire-and-forget,不阻塞投递。
+  void pushProactiveToFeishu(text);
 
   // 3. 额外渠道(失败各自吞掉,不影响已投递的聊天消息)
   if (channels.notification) {
