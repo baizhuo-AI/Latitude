@@ -105,7 +105,7 @@ AI Listener 项目维护，不进入维度软件设计文档。
 
 ### 5.2 维度项目负责软件理解层
 
-目录：`~/Documents/Daybreak`
+目录：`~/Documents/Latitude`
 
 负责：
 

@@ -3,7 +3,7 @@
 - 日期：2026-08-19
 - 版本：v3.9（v3.8 引用改指工程实施计划；v3.9 品牌改名 Latitude、秘书不预设专名、状态徽章中文通俗化）
 - 状态：已按 harness 实验设计对齐（待拍板 2 项，见第 10 节）
-- 对应仓库：`~/Documents/Daybreak`，分支 `feature/ai-secretary`
+- 对应仓库：`~/Documents/Latitude`，分支 `feature/ai-secretary`
 - 视觉依据：`docs/assets/dimension-demo/` 三张稿
 - 上位文档：[总纲 PRD](2026-08-20-dimension-master-prd.md)、[工程实施计划](../plans/2026-08-20-dimension-implementation-plan.md)、[harness 实验设计](2026-08-19-dimension-harness-experiment-design.md)、[现实采集背景](2026-08-10-dimension-capture-background-and-vision.md)
 
