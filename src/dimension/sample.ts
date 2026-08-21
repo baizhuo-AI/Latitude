@@ -24,13 +24,12 @@ export const DESK: Desk = {
     stateCn: "递交",
     headline: "你先往前走，我替你守住节奏。",
     note: "该挡的提醒我先挡住，真正需要你拍板时再找你。",
-    stageLabel: "默契 · 74",
+    stageLabel: "默契 · 合拍",
     stageProgress: 74,
     stageNote: "我猜得到你的取舍：能替你判断一步，仍由你拍板。",
     metrics: [
-      { label: "关系", value: 78, tone: "olive" },
-      { label: "节奏", value: 82, tone: "blue" },
-      { label: "默契", value: 71, tone: "amber" },
+      { label: "熟悉", value: 78, tone: "olive" },
+      { label: "默契", value: 71, tone: "blue" },
       { label: "权能", value: 46, tone: "rust" }
     ]
   },
@@ -67,7 +66,7 @@ export const DESK: Desk = {
         { text: "主页自由度：模型能生成到什么程度", meta: "3D" },
         { text: "角色占比：秘书栏要不要可折叠", meta: "2D" },
         { text: "卡片权限：自定义 HTML 什么时候开", meta: "NEXT" },
-        { text: "学习周期：多久重算一次关系参数", meta: "TODAY" }
+        { text: "学习周期：多久重算一次养成参数", meta: "TODAY" }
       ]
     },
     {

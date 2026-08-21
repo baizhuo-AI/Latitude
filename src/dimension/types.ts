@@ -1,7 +1,7 @@
 /**
  * 维度桌面 — 数据契约
  *
- * 一张桌面 = 秘书状态 + 关系参数 + 一组纸片。形态定稿见 design/Opening.dc.html。
+ * 一张桌面 = 秘书状态 + 养成参数 + 一组纸片。形态定稿见 design/Opening.dc.html。
  *
  * 这是前端投影,不是数据库 schema。当前只定义「渲染这张桌面需要什么」,
  * 等版式跑顺了再倒推后端表。
@@ -15,13 +15,21 @@
 /** 秘书状态。语义对齐 AI Listener 的角色状态机。 */
 export type SecretaryState = "ready" | "thinking" | "presenting";
 
-/** 关系参数。四条,口径按设计稿(关系 / 节奏 / 默契 / 权能)。 */
+/**
+ * 养成参数。**三条**:熟悉 / 默契 / 权能(总纲 §5.5)。
+ *
+ * 「关系」本身不做数值 —— 那会被理解成情感好感度;数值与阶段一律挂在三参数上。
+ * 设计稿里的第四条「节奏」已退役(它是内容节律,不是养成维度)。
+ *
+ * value 仅供内部排序与进度条,外显默认走阶段名(见 Secretary.stageLabel)。
+ */
 export interface RelationMetric {
-  label: string;
-  /** 0—100 */
+  /** 只能是三者之一,口径见总纲 §5.5 */
+  label: "熟悉" | "默契" | "权能";
+  /** 0—100,内部值;不作为默认外显 */
   value: number;
   /** 取 dimension.css 里的强调色变量名 */
-  tone: "olive" | "blue" | "amber" | "rust";
+  tone: "olive" | "blue" | "rust";
 }
 
 export interface Secretary {
@@ -34,7 +42,7 @@ export interface Secretary {
   headline: string;
   /** 补充说明,三行以内 */
   note: string;
-  /** 阶段标签,如「默契 · 74」 */
+  /** 阶段标签。默认显示**阶段名**而非裸数值,如「默契 · 合拍」(总纲 §5.5) */
   stageLabel: string;
   /** 0—100,阶段进度条 */
   stageProgress: number;

@@ -1,0 +1,42 @@
+<h2>1. Macaron：不是严格意义上的 agent 社区，更像“内容入口＋迷你应用目录”</h2>
+<p><b>你的体感基本成立，但“agent 社区”这个词不够精确。</b>Macaron 官方一直强调深度记忆、个人助手和个性化 mini-app；实际 App Store 描述和用户评论却显示，它的获客与使用体验长期更集中在互动故事、小说、情绪记录、测试、饮食、习惯和各类小工具。用户会在一个内置 mini-app 集合里探索，而不是和一个统一秘书建立稳定工作关系。</p>
+<p>近期版本明显收窄到饮食、健身、日程与提醒，说明团队可能也意识到“什么都能生成”缺少稳定日常入口。它的问题不是完全没有产品力，而是<b>品牌承诺、实际入口与留存机制没有合成一个清楚的角色</b>：到底是伙伴、工具商店、内容社区还是生活助手，用户需要自己理解。</p>
+<p><b>可学习：</b>让 AI 快速把需求变成可用小工具；用具体生活场景而不是抽象 OS 获客。<b>不要照抄：</b>无限扩张 mini-app 品类、让用户在目录里找用途、用角色数量代替一个持续人格。</p>
+<p>证据：<a href="https://apps.apple.com/us/app/macaron-ai-your-personal-ai/id6747623785">Macaron App Store 页面</a>、<a href="https://macaron.im/">Macaron 官网</a>。</p>
+
+<h2>2. JamesOS：确实高度个人化，但不是几个“现成 Agent”的简单拼装</h2>
+<p><b>你的方向判断对：</b>JamesOS 是“one human, one AI”，明确不作为通用产品出售。Tara、Marcus、Andrea 分别承担行动、长期思考和身心状态的视角，背后还连接晨间会、夜间整理、记忆衰减、知识图谱、审批、工具提案和 Apple 原生应用。</p>
+<p>更准确地说，它不是三个成型 Agent，而是开发者把自己的生活方法论做成了一个<b>封闭但完整的关系型运行时</b>。三个角色只是显性界面，真正值得学的是：被动数据进入记忆；记忆有权重、关系与衰减；Agent 定期主动工作；行动要审批；用户摩擦会反向生成新功能。</p>
+<p><b>可学习：</b>完整闭环、角色职责分离、记忆衰减、行动审批、从真实摩擦长功能。<b>不要照抄：</b>把三个角色当成产品卖点，或把开发者个人方法论直接普适化。维度应提供底层乐高和一套优秀默认形态，让不同用户长出不同系统。</p>
+<p>证据：<a href="https://jamesos.app/">JamesOS 官网及架构说明</a>。</p>
+
+<h2>3. OpenHuman：远不只是知识库，但它的中心仍是“上下文与编排”</h2>
+<p>OpenHuman 已经具备可编辑 Memory Tree、Obsidian Vault、百余集成、浏览器和电脑控制、代码工具、定时任务、子 Agent、语音、会议参与、后台触发、主动通知、计划审核以及线程内任务面板。因此，把它描述成“只落到知识库、还没到助手”会低估它。</p>
+<p>不过，你抓到的核心缺口仍然存在：OpenHuman 的公开系统中心是<b>尽可能多地获得上下文，再编排能力</b>。它能知道发生了什么，也能在触发后行动；但公开产品机制没有充分展示“它怎样形成你的判断模型、怎样发现最值得介入的位置、怎样因一次纠正而改变未来的优先级和权限”。</p>
+<p><b>可学习：</b>快速集成、自动摄取、可编辑本地知识结构、后台运行、行动计划审核。<b>维度要补上的一层：</b>从“获取信息”到“识别张力或机会”，再到“匹配帮助方式、判断是否该打扰、观察结果并更新个人模型”。</p>
+<p>还要注意，它的“local-first”并不等于默认全本地：公开仓库披露了托管登录、模型路由、搜索和 Composio 等依赖。隐私叙事必须和真实数据路径完全一致。</p>
+<p>证据：<a href="https://github.com/tinyhumansai/openhuman">OpenHuman 仓库</a>、<a href="https://github.com/tinyhumansai/openhuman/blob/main/gitbooks/README.md">官方文档</a>。</p>
+
+<h2>4. OS7 与 Xyra：前者是生成式应用运行时，后者是自适应界面的好样本</h2>
+<p>OS7 并不是“操作所有外部应用但弱于 Codex computer use”。它的主要叙事是：AI 为用户生成个人应用、数据库、仪表盘和工作流，再由专门 Agent 操作这些生成出来的应用。它更接近一个有权限、数据和工作流底座的 generative SaaS，而不是通用电脑操作层。</p>
+<p>Xyra 则更接近你最初的 Daybreak：用户用语音或文本倾倒想法，AI 生成 tracker、dashboard 和 todo。它证明“界面可以从需求中长出来”，但公开版本尚未展示长期关系、成长复盘、判断模型与逐步授权，因此更像动态工具表面，不是完整伙伴。</p>
+<p><b>可学习：</b>OS7 的稳定运行时和权限底座；Xyra 的低门槛自然语言建界面。<b>维度的升级：</b>模块不只被一次请求生成，还会因关系和生活变化出现、合并、降权、过期和消失。</p>
+<p>证据：<a href="https://www.os7.dev/">OS7 官网</a>、<a href="https://xyra.dev/">Xyra 官网</a>。</p>
+
+<h2>5. Replika：不只记兴趣，也讲成长；但成长仍主要发生在关系和对话里</h2>
+<p>Replika 的 Memory 确实会保存书、音乐、电影、爱好、朋友和家人等个人事实。但当前官网也明确强调 routines、plans、goals 和 flourish，并用创业、求职、学习技能、恢复社交等故事证明“陪你变好”。所以说它完全不关注个人成长并不准确。</p>
+<p>真正差异在于：Replika 的成长主要通过温暖关系、鼓励、提醒和对话叙事发生；它没有公开展示一个结构化、可纠正的成长模型，也没有共同维护的生活看板、跨应用行动权与“复盘如何改变系统”的机制。</p>
+<p><b>可学习：</b>关系连续性、非功利对话、让用户愿意透露真实生活。<b>不要照抄：</b>只优化聊天亲密度，或把“成长”留在鼓励性语言中。</p>
+<p>证据：<a href="https://help.replika.com/hc/en-us/articles/360000874712-What-does-my-Replika-remember-about-me">Replika Memory 说明</a>、<a href="https://replika.com/">Replika 官网</a>。</p>
+
+<h2>6. WorkBuddy 与大平台：避开办公生态是对的，但不要假装工作不属于生活</h2>
+<p>WorkBuddy 已覆盖文档、邮件、会议、知识库、数据分析、设计、代码和多 Agent 项目空间，并借助腾讯生态、专家与 Skills 形成很强的办公闭环。维度不应进入“谁能更快做 PPT、周报、表格、邮件”的正面战争。</p>
+<p>但边界不应是“维度不碰工作”，而应是：<b>维度拥有跨生活域的判断与连续性，专业工具拥有域内执行。</b>工作压力会影响睡眠、关系和日程；职业选择属于人生目标。维度要理解这些信息，判断其重要性和代价，再把写文档、操作表格、跑代码交给 WorkBuddy、Codex 或其他执行器。</p>
+<p>同时，OpenAI、Google、Microsoft 和 Meta 已经公开占用了记忆、主动简报、个性化、行动以及“帮助你成为想成为的人”等叙事。维度必须以可观察机制取胜。</p>
+<p>证据：<a href="https://cloud.tencent.cn/product/workbuddy">WorkBuddy 产品页</a>、<a href="https://openai.com/index/introducing-chatgpt-pulse/">ChatGPT Pulse</a>、<a href="https://blog.google/innovation-and-ai/products/gemini-app/personal-intelligence/">Gemini Personal Intelligence</a>。</p>
+
+<h2>7. OpenDAN：不是完全死亡，但没有持续产品化的证据</h2>
+<p>OpenDAN 仓库在 2024 年 8 月后长时间沉寂，直到 2026 年 3 月出现一次名为“first real PRD for v1.0”的提交；进一步检查发现，该提交主要新增的是数据抓取 skill 开发指南，并非新产品实现。严格说它没有彻底停止，但一次文档型回归不能证明项目恢复了持续开发。</p>
+<p>它早期同时承诺 AIOS、Agent 商店、知识库、工作流、IoT、分布式算力和多个内置角色，用户则需要 Docker、API token 和 shell。这个组合是典型的“先造操作系统，再寻找每日用途”。星标说明开发者认可理念，不代表普通用户形成了习惯。</p>
+<p><b>最重要的经验：</b>维度不能先建设一个宏大平台，再期待用途自然出现。第一版要用一个高频、可感知的闭环证明“相处真的会改变系统”，底层自由度只服务于这个闭环。</p>
+<p>证据：<a href="https://github.com/fiatrete/OpenDAN-Personal-AI-OS">OpenDAN 仓库</a>。</p>

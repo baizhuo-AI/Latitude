@@ -7,7 +7,8 @@ import type { CognitionCard, DeskCard } from "./types";
 import "./dimension.css";
 
 /**
- * 维度桌面 —— 可交互原型。
+ * 维度桌面 —— 可交互原型。**尚未挂载到主应用**(main.tsx 仍渲染旧 App/BoardShell),
+ * 目前只从 DimensionApp.stories.tsx 进入。挂载属于批次 0,见 ./README.md。
  *
  * 隐喻:桌面上摊着纸片,其中一张是本子,点开摊成内页,合上回到桌面。
  * 定稿见 design/Opening.dc.html,规格见 docs/specs/2026-08-19-dimension-desktop-frontend-prd.md。
@@ -71,7 +72,7 @@ export function DimensionApp() {
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <SecretaryRail
           secretary={DESK.secretary}
-          onReview={() => say("原型阶段：这里通往关系时间线（重构计划的「30 天」）")}
+          onReview={() => say("原型阶段：这里通往养成时间线（重构计划的「30 天」）")}
         />
 
         <main

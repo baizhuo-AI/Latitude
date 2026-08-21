@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7c8a3e; } a:hover { color: #46521f; }
+    .m { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+    .hand { font-family: "Caveat", "Kaiti SC", STKaiti, KaiTi, "楷体", "Bradley Hand", cursive; }
+
+    /* 贴上去的东西:便签、票据。本子本身不是卡片,只有"贴上去的"才有影子 */
+    .stuck {
+      position: relative;
+      box-shadow: 0 1px 2px rgba(92, 80, 52, .08), 0 5px 14px rgba(92, 80, 52, .10);
+      transition: transform .28s cubic-bezier(.2, .8, .3, 1), box-shadow .28s ease;
+    }
+    .stuck:hover {
+      transform: rotate(0deg) translateY(-2px) !important;
+      box-shadow: 0 2px 3px rgba(92, 80, 52, .09), 0 10px 22px rgba(92, 80, 52, .13);
+      z-index: 5;
+    }
+    @media (prefers-reduced-motion: reduce) { .stuck { transition: none; } }
+  </style>
+</helmet>
+
+<div style="width: 1060px; height: 620px; box-sizing: border-box; display: flex; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif; color: #2a2a24; background-color: #faf6e9; background-image: repeating-linear-gradient(0deg, rgba(120,140,90,.085) 0 1px, transparent 1px 24px), repeating-linear-gradient(90deg, rgba(120,140,90,.085) 0 1px, transparent 1px 24px); box-shadow: inset 0 0 60px rgba(150,135,100,.07);">
+
+  <!-- 活页装订边 -->
+  <div style="width: 52px; flex-shrink: 0; border-right: 1px solid rgba(195,94,74,.28); display: flex; flex-direction: column; align-items: center; justify-content: space-around; padding: 46px 0; background: rgba(238,231,213,.5);">
+    <span style="width: 13px; height: 13px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+    <span style="width: 13px; height: 13px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+    <span style="width: 13px; height: 13px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+    <span style="width: 13px; height: 13px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+  </div>
+
+  <div style="flex: 1; min-width: 0; padding: 28px 34px; position: relative;">
+
+    <!-- 橡皮章日期戳 -->
+    <div style="position: absolute; top: 22px; right: 30px; transform: rotate(-7deg); border: 2px solid rgba(195,94,74,.45); border-radius: 3px; padding: 4px 10px; opacity: .8;">
+      <p class="m" style="margin: 0; font-size: 11px; letter-spacing: 0.18em; color: rgba(195,94,74,.85);">08 · 19</p>
+    </div>
+
+    <p class="m" style="margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8d8878;">方向 B · 手帐本</p>
+    <p class="hand" style="margin: 0 0 22px; font-size: 18px; color: #a89a72;">重要的话直接写在本子上,不装进盒子</p>
+
+    <!-- 主判断:不是卡片,直接写在纸上 -->
+    <div style="max-width: 640px;">
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Cognition / Worth Rethinking</p>
+      <h3 style="margin: 10px 0 0; font-size: 20px; font-weight: 600; line-height: 1.6; letter-spacing: -0.012em; text-wrap: pretty;">你把「信息还不够」当成推迟的理由,但最近 6 次这样推迟的决定里,后来补到的信息只有 1 次真的改变了你的选择。</h3>
+      <svg width="300" height="10" viewBox="0 0 300 10" style="display: block; margin: 4px 0 0 -3px;" aria-hidden="true">
+        <path d="M4 6 Q 76 2, 150 5 T 296 4" fill="none" stroke="#c35e4a" stroke-width="1.8" stroke-linecap="round" opacity=".5"/>
+      </svg>
+
+      <!-- 引用自己说过的话:铅笔写在左侧竖线里 -->
+      <div style="margin-top: 20px; padding-left: 15px; border-left: 2px solid rgba(124,138,62,.45);">
+        <p class="m" style="margin: 0 0 5px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">你说过 · 假设</p>
+        <p style="margin: 0; font-size: 13px; line-height: 1.75; color: #4a463a;">重要的决定要等信息足够了再做,不然会错。</p>
+      </div>
+
+      <!-- 替代视角:手绘箭头引出 -->
+      <div style="margin-top: 18px; display: flex; gap: 12px; align-items: flex-start;">
+        <svg width="26" height="30" viewBox="0 0 26 30" style="flex-shrink: 0; margin-top: 2px;" aria-hidden="true">
+          <path d="M3 3 Q 4 18, 20 22" fill="none" stroke="#7c8a3e" stroke-width="1.6" stroke-linecap="round" opacity=".65"/>
+          <path d="M14 18 L 21 22.5 L 14 26" fill="none" stroke="#7c8a3e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".65"/>
+        </svg>
+        <p style="margin: 0; font-size: 13px; line-height: 1.8; color: #5a5544;">可逆的决定不需要等信息 —— 它自己就是最快的信息来源。真正需要等的是那些改不回来的。</p>
+      </div>
+
+      <div style="margin-top: 20px; display: flex; align-items: center; gap: 16px;">
+        <span class="m" style="font-size: 10px; letter-spacing: 0.06em; color: #9a9482;">支持 2 · 反证 3</span>
+        <span style="font-size: 11.5px; color: #7c8a3e; border-bottom: 1px solid rgba(124,138,62,.4); padding-bottom: 1px;">看完整证据 →</span>
+      </div>
+    </div>
+
+    <!-- 贴在右侧的便签:待抉择 -->
+    <div class="stuck" style="position: absolute; top: 96px; right: 26px; width: 268px; padding: 18px 20px 16px; background: #fbf0c8; transform: rotate(1.6deg);">
+      <span style="position: absolute; top: -9px; left: 50%; margin-left: -34px; width: 68px; height: 19px; background: rgba(198,216,48,.5); background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.32) 0 1px, transparent 1px 3px); transform: rotate(-2deg); box-shadow: 0 1px 2px rgba(92,80,52,.10);"></span>
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a29656;">Decisions / Waiting</p>
+      <h3 style="margin: 8px 0 0; font-size: 14.5px; font-weight: 600;">4 个待抉择</h3>
+      <div style="margin-top: 13px; display: flex; flex-direction: column; gap: 11px;">
+        <div style="display: flex; align-items: flex-start; gap: 9px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #a08b3e; transform: rotate(45deg); margin-top: 5px;"></span><span style="flex: 1; font-size: 12px; line-height: 1.5; color: #4a463a;">主页自由度</span><span class="m" style="font-size: 9.5px; color: #a29656;">3D</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 9px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #a08b3e; transform: rotate(45deg); margin-top: 5px;"></span><span style="flex: 1; font-size: 12px; line-height: 1.5; color: #4a463a;">秘书栏要不要可折叠</span><span class="m" style="font-size: 9.5px; color: #a29656;">2D</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 9px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #a08b3e; transform: rotate(45deg); margin-top: 5px;"></span><span style="flex: 1; font-size: 12px; line-height: 1.5; color: #4a463a;">自定义 HTML 什么时候开</span><span class="m" style="font-size: 9.5px; color: #a29656;">NEXT</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 9px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #c35e4a; transform: rotate(45deg); margin-top: 5px;"></span><span style="flex: 1; font-size: 12px; line-height: 1.5; color: #4a463a;">多久重算一次关系参数</span><span class="m" style="font-size: 9.5px; color: #c35e4a;">TODAY</span></div>
+      </div>
+    </div>
+
+    <!-- 底部一行:图表画在格子上 + 手写的两条 -->
+    <div style="position: absolute; left: 34px; right: 26px; bottom: 30px; display: flex; gap: 34px; align-items: flex-end;">
+
+      <!-- 深度工作:直接画在方格纸上,没有卡片 -->
+      <div style="flex: 1; min-width: 0;">
+        <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Today / Reshaped</p>
+        <p style="margin: 7px 0 0; font-size: 14px; font-weight: 600;">剩余 2 小时 10 分可深度工作</p>
+        <div style="margin-top: 12px; display: flex; align-items: flex-end; gap: 5px; height: 46px;">
+          <span style="flex: 1; height: 25%; background: rgba(90,168,174,.55);"></span><span style="flex: 1; height: 45%; background: rgba(90,168,174,.55);"></span><span style="flex: 1; height: 62%; background: rgba(90,168,174,.72);"></span><span style="flex: 1; height: 85%; background: rgba(90,168,174,.9);"></span><span style="flex: 1; height: 50%; background: rgba(90,168,174,.72);"></span><span style="flex: 1; height: 95%; background: rgba(90,168,174,.9);"></span><span style="flex: 1; height: 55%; background: rgba(90,168,174,.72);"></span><span style="flex: 1; height: 30%; background: rgba(90,168,174,.55);"></span><span style="flex: 1; height: 70%; background: rgba(90,168,174,.72);"></span><span style="flex: 1; height: 35%; background: rgba(90,168,174,.55);"></span>
+        </div>
+      </div>
+
+      <!-- 专注闸门 + 下班:手写在页边 -->
+      <div style="width: 300px; flex-shrink: 0; padding-left: 26px; border-left: 1px dashed rgba(138,124,94,.32);">
+        <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Focus Gate</p>
+        <p class="hand" style="margin: 5px 0 0; font-size: 19px; color: #9a6b3c; line-height: 1.35;">低优先级的先替你挡着<br>直到 16:00</p>
+        <p class="m" style="margin: 18px 0 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Life Anchor</p>
+        <p class="hand" style="margin: 5px 0 0; font-size: 22px; color: #4a463a; line-height: 1.2;">18:30 下班 ✓</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

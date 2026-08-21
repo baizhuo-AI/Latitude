@@ -19,7 +19,10 @@ src-tauri/target
 *.db
 *.db-journal
 
-# ==== pipeline/ 采集转写管线 ====
+# ==== pipeline/ 采集转写管线（整目录不进主仓）====
+# 定位：本地实验资产或独立私有仓，见 pipeline/README.md 的边界声明。
+# 保留下面的细化规则作为双保险（即便将来放开目录，数据仍绝不入库）。
+pipeline/
 # 凭据(明文 API key)
 pipeline/.env
 # 虚拟环境

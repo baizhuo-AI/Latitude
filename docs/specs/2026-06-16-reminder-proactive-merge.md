@@ -1,5 +1,10 @@
 # 定时提醒 × 主动提醒 合并方案(全合)
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](2026-08-20-dimension-master-prd.md) · [工程实施计划](../plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 - 日期:2026-06-16
 - 状态:**已实现并自检通过(2026-06-16,M1-M6 + 终审修并发双发)**;tsc 0 / vitest 722/723(仅 tokens 既有红);提交在 `feature/ai-secretary`(a19df6d→be5f8db)
 - 依赖:AI 秘书改造 Phase 0-4(`feature/ai-secretary`,已实现)

@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7c8a3e; } a:hover { color: #46521f; }
+    .m { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+  </style>
+</helmet>
+
+<div style="width: 1040px; height: 560px; box-sizing: border-box; padding: 28px 30px; background: #efece0; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif; color: #2a2a24;">
+
+  <p class="m" style="margin: 0 0 18px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">现在的样子 · 每张卡等权、边框密集、内容顶边</p>
+
+  <div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-items: stretch;">
+
+    <!-- 认知卡 -->
+    <div style="grid-column: span 7; background: #fcf6ea; border: 1px solid #d8d2c0; border-top: 2px solid #7c8a3e; border-radius: 2px; padding: 14px 16px 16px;">
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Cognition / Worth Rethinking</p>
+      <h3 style="margin: 5px 0 0; font-size: 17px; font-weight: 600; line-height: 1.5; letter-spacing: -0.01em;">你把「信息还不够」当成推迟的理由,但最近 6 次这样推迟的决定里,后来补到的信息只有 1 次真的改变了你的选择。</h3>
+      <div style="margin-top: 14px; padding-left: 11px; border-left: 2px solid #d8d2c0;">
+        <p class="m" style="margin: 0 0 4px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">你说过 · 假设</p>
+        <p style="margin: 0; font-size: 12px; line-height: 1.7;">重要的决定要等信息足够了再做,不然会错。</p>
+      </div>
+      <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: #6b6656; display: flex; gap: 8px; align-items: flex-start;">
+        <span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg); margin-top: 6px;"></span>
+        <span>可逆的决定不需要等信息 —— 它自己就是最快的信息来源。真正需要等的是那些改不回来的。</span>
+      </p>
+      <div style="margin-top: 14px; padding-top: 11px; border-top: 1px solid #e8e3d4; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <span class="m" style="font-size: 10px; letter-spacing: 0.06em; color: #9a9482;">支持 2 · 反证 3</span>
+        <span style="background: #fcf6ea; border: 1px solid #d8d2c0; border-radius: 2px; padding: 5px 12px; font-size: 11.5px; color: #6b6656;">看完整证据 →</span>
+      </div>
+    </div>
+
+    <!-- 待抉择 -->
+    <div style="grid-column: span 5; background: #fcf6ea; border: 1px solid #d8d2c0; border-left: 3px solid #c35e4a; border-radius: 2px; padding: 14px 16px 16px;">
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Decisions / Waiting</p>
+      <h3 style="margin: 5px 0 0; font-size: 15px; font-weight: 600;">4 个待抉择</h3>
+      <div style="margin-top: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">主页自由度:模型能生成到什么程度</span><span class="m" style="font-size: 10px; color: #9a9482;">3D</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #e8e3d4;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">角色占比:秘书栏要不要可折叠</span><span class="m" style="font-size: 10px; color: #9a9482;">2D</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #e8e3d4;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">卡片权限:自定义 HTML 什么时候开</span><span class="m" style="font-size: 10px; color: #9a9482;">NEXT</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #e8e3d4;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">学习周期:多久重算一次关系参数</span><span class="m" style="font-size: 10px; color: #9a9482;">TODAY</span></div>
+      </div>
+    </div>
+
+    <!-- 专注闸门 -->
+    <div style="grid-column: span 4; background: #fbf3d9; border: 1px solid #d8d2c0; border-radius: 2px; padding: 14px 16px 16px;">
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Focus Gate / Temporary</p>
+      <h3 style="margin: 5px 0 0; font-size: 15px; font-weight: 600;">我先替你挡住低优先级提醒</h3>
+      <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.7; color: #6b6656;">该挡的提醒我先挡住,真正需要你拍板时再找你。</p>
+      <p style="margin: 12px 0 0; padding-left: 11px; border-left: 2px solid #d9a441; font-size: 12px; line-height: 1.6; color: #6b6656;">直到 16:00,只保留会阻塞你或今天到期的事项。</p>
+    </div>
+
+    <!-- 深度工作 -->
+    <div style="grid-column: span 4; background: #fcf6ea; border: 1px solid #d8d2c0; border-radius: 2px; padding: 14px 16px 16px;">
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Today / Reshaped</p>
+      <h3 style="margin: 5px 0 0; font-size: 15px; font-weight: 600;">剩余 2 小时 10 分可深度工作</h3>
+      <div style="margin-top: 16px; display: flex; align-items: flex-end; gap: 5px; height: 62px;">
+        <span style="flex: 1; height: 25%; background: #5aa8ae;"></span><span style="flex: 1; height: 45%; background: #5aa8ae;"></span><span style="flex: 1; height: 62%; background: #5aa8ae;"></span><span style="flex: 1; height: 85%; background: #5aa8ae;"></span><span style="flex: 1; height: 50%; background: #5aa8ae;"></span><span style="flex: 1; height: 95%; background: #5aa8ae;"></span><span style="flex: 1; height: 55%; background: #5aa8ae;"></span><span style="flex: 1; height: 30%; background: #5aa8ae;"></span><span style="flex: 1; height: 70%; background: #5aa8ae;"></span><span style="flex: 1; height: 35%; background: #5aa8ae;"></span>
+      </div>
+      <p style="margin: 12px 0 0; font-size: 11.5px; color: #7c8a3e;">打开日历 →</p>
+    </div>
+
+    <!-- 下班锚点 -->
+    <div style="grid-column: span 4; background: #fcf6ea; border: 1px solid #d8d2c0; border-radius: 2px; padding: 14px 16px 16px;">
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Life Anchor / Never Hidden</p>
+      <h3 style="margin: 5px 0 0; font-size: 15px; font-weight: 600;">18:30 下班</h3>
+      <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.7; color: #6b6656;">冲刺模式不会吞掉你设定的生活边界。</p>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

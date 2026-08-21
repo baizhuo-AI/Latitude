@@ -1,5 +1,10 @@
 # 飞书对话入口 — 本地并存方案
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](../specs/2026-08-20-dimension-master-prd.md) · [工程实施计划](../plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 > 状态:第 1-6 步代码全部完成，`cargo check` / `tsc --noEmit` / `npm test` 均 0 报错·无回归；
 > 待 app 实跑端到端验收。第 2 步链路已实跑通过（websocket connected）。
 > 日期:2026-06-19 ｜ 分支:`feature/ai-secretary`

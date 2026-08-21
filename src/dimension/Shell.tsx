@@ -66,7 +66,6 @@ const STATE_EN: Record<SecretaryState, string> = {
 const METRIC_TONE: Record<RelationMetric["tone"], string> = {
   olive: "var(--dim-olive)",
   blue: "#2b5ca8",
-  amber: "var(--dim-amber)",
   rust: "var(--dim-rust)"
 };
 
@@ -292,7 +291,7 @@ export function CommandBar({ onSend }: { onSend?: (text: string) => void }) {
       <input
         name="dim-say"
         className="dim-input"
-        placeholder="跟晓说点什么，或者让她改动这张桌面……"
+        placeholder="说点什么，或者让秘书改动这张桌面……"
         aria-label="跟秘书说话"
       />
       <span className="dim-meta" style={{ flexShrink: 0 }}>
