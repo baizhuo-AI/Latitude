@@ -19,7 +19,7 @@ import type { Goal } from "./goalsStore";
  *
  * 格式:
  *   {
- *     "$schema": "daybreak.v1",
+ *     "$schema": "latitude.v1",
  *     "exportedAt": "...ISO...",
  *     "todos": [...],
  *     "goals": [...]
@@ -29,7 +29,7 @@ import type { Goal } from "./goalsStore";
  * 不覆盖现有 todo,避免误操作丢数据。要全量替换,先 "重置数据" 再导入。
  */
 
-const SCHEMA_VERSION = "daybreak.v1";
+const SCHEMA_VERSION = "latitude.v1";
 
 interface ExportPayload {
   $schema: string;
@@ -57,7 +57,7 @@ export async function downloadExport(): Promise<{
   const json = await exportAll();
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const filename = `daybreak-${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = `latitude-${new Date().toISOString().slice(0, 10)}.json`;
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;

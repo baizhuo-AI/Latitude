@@ -70,7 +70,7 @@ enum ContentBlock {
 
 /// 跑一次 Claude Code，事件实时推到 tx。
 ///
-/// MCP：调用前会写一个临时 mcp config 文件指向 Daybreak 自己的 MCP server，
+/// MCP：调用前会写一个临时 mcp config 文件指向 Latitude 自己的 MCP server，
 /// 这样 claude 启动会连进来、能调你已有的 16 个工具。
 pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> {
     // 1. 准备 MCP config（如果传了 mcp 信息）
@@ -165,11 +165,11 @@ pub async fn run(req: ChatRequest, tx: Sender<ChatEvent>) -> Result<(), String> 
 }
 
 /// 写一个临时 mcp config 文件，让 claude 启动时连本机 MCP server。
-/// 用 streamable-http transport：和 Daybreak MCP server 一致。
+/// 用 streamable-http transport：和 Latitude MCP server 一致。
 fn write_mcp_config(url: &str, token: &str) -> std::io::Result<std::path::PathBuf> {
     let cfg = serde_json::json!({
         "mcpServers": {
-            "daybreak": {
+            "latitude": {
                 "type": "http",
                 "url": url,
                 "headers": {
@@ -179,7 +179,7 @@ fn write_mcp_config(url: &str, token: &str) -> std::io::Result<std::path::PathBu
         }
     });
     let mut path = std::env::temp_dir();
-    path.push(format!("daybreak-mcp-{}.json", std::process::id()));
+    path.push(format!("latitude-mcp-{}.json", std::process::id()));
     std::fs::write(&path, serde_json::to_string_pretty(&cfg)?)?;
     Ok(path)
 }

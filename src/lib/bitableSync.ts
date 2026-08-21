@@ -50,7 +50,7 @@ export interface SyncPlan {
   unassigned: WorkItem[];
 }
 
-/** 项目名归一化：去首尾与内部空白 + 小写，做匹配用（"Daybreak 插件" ≈ "daybreak插件"）。 */
+/** 项目名归一化：去首尾与内部空白 + 小写，做匹配用（"Latitude 插件" ≈ "latitude插件"）。 */
 function normalizeProjectName(s: string): string {
   return s.replace(/\s+/g, "").toLowerCase();
 }

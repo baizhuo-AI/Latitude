@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Daybreak</title>
+    <title>维度 Latitude</title>
     <script>
       // 初始主题:在 React 渲染之前就把 class="dark" 应用到 html,避免"先白后黑"闪烁
       (function () {
         try {
-          var stored = localStorage.getItem("daybreak.theme");
+          var stored = localStorage.getItem("latitude.theme");
           var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
           var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           var isDark = mode === "dark" || (mode === "system" && prefersDark);

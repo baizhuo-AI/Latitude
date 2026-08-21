@@ -27,7 +27,7 @@ import { Toaster } from "./components/Toaster";
  *  - todo    → todo 悬浮窗:今日待办 + 速记 + 间歇提醒落点
  *
  * 三个 Tauri 窗口共用同一份代码,通过 URL hash 区分入口(沿用原浮窗的同源多窗方案,test-safe)。
- * 共享:SQLite db(同文件)+ Tauri Event 跨窗口同步(syncBus / daybreak://data-changed)。
+ * 共享:SQLite db(同文件)+ Tauri Event 跨窗口同步(syncBus / latitude://data-changed)。
  */
 export default function App() {
   const [role] = useState(() => windowRole());
@@ -38,7 +38,7 @@ export default function App() {
 }
 
 /**
- * 按需把若干数据域 hydrate 进本窗口,并订阅跨窗同步(前端 syncBus + 后端 daybreak://data-changed)。
+ * 按需把若干数据域 hydrate 进本窗口,并订阅跨窗同步(前端 syncBus + 后端 latitude://data-changed)。
  * 单例副作用(提醒/在线回放)不在这里,见各窗口自身。
  */
 function useDataSync(topics: SyncTopic[]) {
@@ -56,7 +56,7 @@ function useDataSync(topics: SyncTopic[]) {
     let unlisten: (() => void) | undefined;
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
-      unlisten = await listen<string>("daybreak://data-changed", (e) => {
+      unlisten = await listen<string>("latitude://data-changed", (e) => {
         const tp = e.payload as SyncTopic;
         if (topics.includes(tp)) hydrators[tp]?.();
       });
@@ -75,7 +75,7 @@ function MainWindow() {
   useDataSync(["todos", "goals", "activities", "calendar_events"]);
 
   // 后端事件 → 前端 syncBus 的桥接(只在主窗起一份)。
-  // MCP(CC/Codex)经 daybreak://data-changed 发的 "memory" 不在 useDataSync 列表里,
+  // MCP(CC/Codex)经 latitude://data-changed 发的 "memory" 不在 useDataSync 列表里,
   // 这里转嫁成 syncBus 的 emitSync("memory"),让 AboutYouPanel 的 onSync("memory") 实时刷新。
   useEffect(() => bridgeDataChangedToSync(), []);
 

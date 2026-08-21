@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-const STORAGE_KEY = "daybreak.settings";
+const STORAGE_KEY = "latitude.settings";
 
 /**
  * 装一个可用的内存 localStorage。

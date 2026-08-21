@@ -8,9 +8,9 @@
 //!
 //! 限制（MVP 第一版的取舍）：
 //! - 输出是纯文本，**无法精细区分思考过程 / 工具调用 / 最终答复**，全部作为 Text 流给前端
-//! - **必须有 KIRO_API_KEY 环境变量**：MVP 依赖系统环境继承，后续可在 Daybreak 设置里
+//! - **必须有 KIRO_API_KEY 环境变量**：MVP 依赖系统环境继承，后续可在 Latitude 设置里
 //!   让用户填，spawn 时通过 .env() 注入
-//! - MCP 配置走 Kiro IDE / CLI 共享的全局配置，需用户自己一次性配好 daybreak MCP
+//! - MCP 配置走 Kiro IDE / CLI 共享的全局配置，需用户自己一次性配好 latitude MCP
 
 use super::{ChatEvent, ChatRequest};
 use std::process::Stdio;

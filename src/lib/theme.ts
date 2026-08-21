@@ -16,7 +16,7 @@ import { create } from "zustand";
 
 export type ThemeMode = "light" | "dark" | "system";
 
-const STORAGE_KEY = "daybreak.theme";
+const STORAGE_KEY = "latitude.theme";
 
 function readStored(): ThemeMode {
   if (typeof window === "undefined") return "system";

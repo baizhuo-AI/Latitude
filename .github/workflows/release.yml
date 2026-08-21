@@ -42,16 +42,16 @@ jobs:
           # universal 包同时兼容 Intel 和 Apple Silicon Mac
           args: --target universal-apple-darwin
           tagName: ${{ github.ref_name }}
-          releaseName: "Daybreak ${{ github.ref_name }}"
+          releaseName: "Latitude ${{ github.ref_name }}"
           releaseBody: |
             ## 安装
             下载下方 `.dmg`，拖入「应用程序」。
 
             **首次打开**：macOS 会提示"无法验证开发者"（因为未做苹果签名）。
-            右键点 Daybreak → 选「打开」→ 再点「打开」即可。
-            或终端执行：`xattr -d com.apple.quarantine /Applications/Daybreak.app`
+            右键点 Latitude → 选「打开」→ 再点「打开」即可。
+            或终端执行：`xattr -d com.apple.quarantine /Applications/Latitude.app`
 
             ## 接入 AI 助手
-            打开 Daybreak → 设置 → 「接入 AI 助手」→ 复制命令，粘到 Claude Code 运行。
+            打开 Latitude → 设置 → 「接入 AI 助手」→ 复制命令，粘到 Claude Code 运行。
           releaseDraft: false
           prerelease: false

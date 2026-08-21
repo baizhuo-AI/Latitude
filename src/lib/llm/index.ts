@@ -443,7 +443,7 @@ function recordUsage(
  */
 export async function buildChatSystemPrompt(): Promise<string> {
   // 必须直读 localStorage 真相源,不能用 useSettingsStore.getState()。
-  // Daybreak 多窗口架构:每个窗口的 Zustand store 只在初始化时读一次 localStorage,
+  // Latitude 多窗口架构:每个窗口的 Zustand store 只在初始化时读一次 localStorage,
   // 设置页(主窗)改了人设/语言后只更新主窗 store + localStorage;对话悬浮条的 store
   // 仍是陈旧快照。readSettingsSnapshot() 直读 localStorage,跨窗口始终拿到最新值。
   const s = readSettingsSnapshot();
@@ -451,7 +451,7 @@ export async function buildChatSystemPrompt(): Promise<string> {
   // 若 persona 未配置(旧 settings 数据/测试环境),用默认资深幕僚兜底
   const persona = s.persona ?? { presetKey: "seniorAdvisor" as const };
 
-  // 人设片段(用户可配置字段 + 锁死核心规则段);替换原来写死的"你是 Daybreak…"
+  // 人设片段(用户可配置字段 + 锁死核心规则段);替换原来写死的"你是 Latitude…"
   const personaSection = composePersonaPrompt(persona, lang);
 
   const todos = useTodoStore.getState().todos;

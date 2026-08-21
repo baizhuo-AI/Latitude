@@ -1,6 +1,6 @@
 //! OpenAI Codex CLI adapter
 //!
-//! 调用：codex exec --json [-c mcp_servers.daybreak.url=...] [-c mcp_servers.daybreak.http_headers=...] "<prompt>"
+//! 调用：codex exec --json [-c mcp_servers.latitude.url=...] [-c mcp_servers.latitude.http_headers=...] "<prompt>"
 //! 输出：JSONL，事件类型见下方 CodexEvent。
 //!
 //! **无状态（铁律①）**：不用 `codex exec resume <sid>`，不持有/回传 session。每轮的完整
@@ -9,10 +9,10 @@
 //! **MCP 注入（Task 4.4）**：Codex 的 MCP 配置落在 `~/.codex/config.toml` 的
 //! `[mcp_servers.<name>]` 表（TOML，注意是下划线 `mcp_servers`，不是 claude 的 JSON
 //! `mcpServers`）。Codex 提供 `codex exec -c <dotted.key>=<TOML值>` 可在**调用时**用点路径
-//! 覆盖配置，且会与用户既有 config.toml 合并。我们据此程序化注入 daybreak MCP，**不写文件、
+//! 覆盖配置，且会与用户既有 config.toml 合并。我们据此程序化注入 latitude MCP，**不写文件、
 //! 不改用户的 ~/.codex/config.toml**：
-//!   `-c mcp_servers.daybreak.url="<url>"`
-//!   `-c mcp_servers.daybreak.http_headers={Authorization="Bearer <token>"}`
+//!   `-c mcp_servers.latitude.url="<url>"`
+//!   `-c mcp_servers.latitude.http_headers={Authorization="Bearer <token>"}`
 //! 这与 claude.rs 的 `write_mcp_config` + `--mcp-config` 思路对齐（streamable-http + Bearer
 //! 鉴权），但更干净:无临时文件、无清理、不污染用户全局配置。token 是 UUID 十六进制
 //! (`[0-9a-f]{32}`)，无 TOML 特殊字符，内联进 TOML 字符串安全。
@@ -74,8 +74,8 @@ enum Item {
 /// 据 MCP 接入信息构造 codex 的 `-c` 注入参数对（每对两项：`-c` 与其值）。
 ///
 /// 返回需要追加到命令行的字符串序列；调用方逐个 `cmd.arg(..)`。两条键：
-///   - `mcp_servers.daybreak.url="<url>"`
-///   - `mcp_servers.daybreak.http_headers={Authorization="Bearer <token>"}`
+///   - `mcp_servers.latitude.url="<url>"`
+///   - `mcp_servers.latitude.http_headers={Authorization="Bearer <token>"}`
 ///
 /// 拿不到 url/token 时返回空 Vec（不注入，降级纯聊天）。抽成纯函数便于单测（headless 下
 /// 没法真起 codex，这里只验参数构造正确）。
@@ -86,9 +86,9 @@ fn build_mcp_config_args(mcp_url: &Option<String>, mcp_token: &Option<String>) -
     match (mcp_url, mcp_token) {
         (Some(url), Some(token)) => vec![
             "-c".to_string(),
-            format!("mcp_servers.daybreak.url=\"{url}\""),
+            format!("mcp_servers.latitude.url=\"{url}\""),
             "-c".to_string(),
-            format!("mcp_servers.daybreak.http_headers={{Authorization=\"Bearer {token}\"}}"),
+            format!("mcp_servers.latitude.http_headers={{Authorization=\"Bearer {token}\"}}"),
         ],
         _ => Vec::new(),
     }
@@ -192,9 +192,9 @@ mod tests {
             args,
             vec![
                 "-c".to_string(),
-                "mcp_servers.daybreak.url=\"http://127.0.0.1:42800/mcp\"".to_string(),
+                "mcp_servers.latitude.url=\"http://127.0.0.1:42800/mcp\"".to_string(),
                 "-c".to_string(),
-                "mcp_servers.daybreak.http_headers={Authorization=\"Bearer abc123def456\"}"
+                "mcp_servers.latitude.http_headers={Authorization=\"Bearer abc123def456\"}"
                     .to_string(),
             ]
         );

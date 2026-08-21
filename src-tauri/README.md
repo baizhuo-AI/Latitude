@@ -1,6 +1,6 @@
 # Tauri Shell
 
-Daybreak 的 Tauri 2 桌面壳。两个窗口:
+Latitude 的 Tauri 2 桌面壳。两个窗口:
 
 - `main` — 主 App,1100×740,可调整大小,带原生标题栏
 - `floating` — 浮窗,260×420,无边框 / 常驻置顶 / **默认隐藏**,由主 App Sidebar 左下角"打开浮窗"按钮拉出;浮窗顶部自带一个隐藏按钮(`hide()`,不 close),关掉后再打开走的是同一个窗口实例

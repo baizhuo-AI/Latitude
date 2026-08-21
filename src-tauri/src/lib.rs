@@ -109,7 +109,7 @@ pub mod secretary;
 pub mod util;
 
 /**
- * Daybreak Tauri 入口
+ * Latitude Tauri 入口
  *
  * 装的 plugin:
  * - tauri-plugin-sql (sqlite):前端通过 @tauri-apps/plugin-sql 调 SQLite
@@ -156,7 +156,7 @@ pub fn run() {
         )
         .on_window_event(|window, event| {
             // 工作台主窗"关闭"= 隐藏而非销毁:点红叉只是藏起来,Dock 图标 / 菜单栏 / 全局快捷键都能再拉回来。
-            // 真正退出走 ⌘Q 或菜单栏"退出 Daybreak"。其它窗口(悬浮窗)不拦,保持默认。
+            // 真正退出走 ⌘Q 或菜单栏"退出 Latitude"。其它窗口(悬浮窗)不拦,保持默认。
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
@@ -168,26 +168,26 @@ pub fn run() {
             // 全局快捷键 → 动作 的映射表(with_handler 查它分发);set_global_shortcuts 维护。
             app.manage(ShortcutActions::default());
 
-            // 内嵌 MCP server：进程内后台任务，连同一个 daybreak.db。
+            // 内嵌 MCP server：进程内后台任务，连同一个 latitude.db。
             // - token 持久化在 app config 目录，供鉴权和前端接入页共用
-            // - 写操作通过 Tauri 事件 daybreak://data-changed 通知前端刷新
+            // - 写操作通过 Tauri 事件 latitude://data-changed 通知前端刷新
             // - start() 内部自行兜底（连库 / 端口失败只记日志），不会让主应用崩溃
             use tauri::Emitter;
             let config_dir = app
                 .path()
                 .app_config_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let db_path = config_dir.join("daybreak.db");
+            let db_path = config_dir.join("latitude.db");
             let token = mcp::load_or_create_token(&config_dir);
             let handle = app.handle().clone();
             let notify: mcp::Notifier = std::sync::Arc::new(move |topic: &str| {
-                let _ = handle.emit("daybreak://data-changed", topic.to_string());
+                let _ = handle.emit("latitude://data-changed", topic.to_string());
             });
             tauri::async_runtime::spawn(mcp::start(db_path.clone(), token, notify));
 
             // 飞书/Lark 日历后台同步调度（P2-4）：启动跑一次 + 每 5min + 可手动唤醒。
-            // - 复用同一个 daybreak.db（WAL 并发安全），与 mcp / 前端共享。
-            // - 写库后通过 daybreak://data-changed 事件（topic "calendar_events"）通知前端刷新，
+            // - 复用同一个 latitude.db（WAL 并发安全），与 mcp / 前端共享。
+            // - 写库后通过 latitude://data-changed 事件（topic "calendar_events"）通知前端刷新，
             //   与上面 mcp 的 notify 同款闭包形态。
             // - SyncHandle 既是手动唤醒句柄、又持「同一时刻一轮」的全局串行锁；manage 进 Tauri
             //   状态，供 feishu_sync_now 命令拿到同一把锁（手动同步与定时同步互斥）。
@@ -196,7 +196,7 @@ pub fn run() {
             app.manage(sync_handle.clone());
             let feishu_handle = app.handle().clone();
             let feishu_notify: feishu::engine::Notifier = std::sync::Arc::new(move |topic: &str| {
-                let _ = feishu_handle.emit("daybreak://data-changed", topic.to_string());
+                let _ = feishu_handle.emit("latitude://data-changed", topic.to_string());
             });
             tauri::async_runtime::spawn(feishu::engine::run_scheduler(
                 db_path.clone(),
@@ -209,13 +209,13 @@ pub fn run() {
             //   这里 manage 一个 ProactiveConfigState（Mutex<Option<_>>）承接（前端没推时引擎跳过）。
             // - run_scheduler 内部每 60s tick、闸判定到点则写库 + 发系统通知 + notify 前端刷新；
             //   连库失败只记日志退出本任务、单 tick 失败不中断，与 feishu 引擎同款长命兜底。
-            // - 复用同一个 daybreak.db（WAL 并发安全）与同款 notify 闭包（emit data-changed）。
+            // - 复用同一个 latitude.db（WAL 并发安全）与同款 notify 闭包（emit data-changed）。
             app.manage(secretary::config::ProactiveConfigState::default());
             let secretary_app = app.handle().clone();
             let secretary_handle = app.handle().clone();
             let secretary_notify: secretary::engine::Notifier =
                 std::sync::Arc::new(move |topic: &str| {
-                    let _ = secretary_handle.emit("daybreak://data-changed", topic.to_string());
+                    let _ = secretary_handle.emit("latitude://data-changed", topic.to_string());
                 });
             tauri::async_runtime::spawn(secretary::engine::run_scheduler(
                 db_path,
@@ -236,7 +236,7 @@ pub fn run() {
                     MenuItem::with_id(app, "toggle_chatbar", "打开 / 收起对话条", true, None::<&str>)?;
                 let todo_i =
                     MenuItem::with_id(app, "open_todo", "打开 todo 悬浮窗", true, None::<&str>)?;
-                let quit_i = MenuItem::with_id(app, "quit", "退出 Daybreak", true, None::<&str>)?;
+                let quit_i = MenuItem::with_id(app, "quit", "退出 Latitude", true, None::<&str>)?;
                 let sep = PredefinedMenuItem::separator(app)?;
                 let menu = Menu::with_items(app, &[&toggle_i, &todo_i, &sep, &quit_i])?;
                 if let Some(icon) = app.default_window_icon().cloned() {

@@ -1,12 +1,12 @@
 [package]
-name = "daybreak"
+name = "latitude"
 version = "0.1.0"
-description = "Daybreak — AI-powered personal daily briefing and planner"
+description = "Latitude — AI-powered personal daily briefing and planner"
 authors = ["apple"]
 edition = "2021"
 
 [lib]
-name = "daybreak_lib"
+name = "latitude_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -22,7 +22,7 @@ tauri-plugin-notification = "2"
 # 全局快捷键:Alt+Space 开/收对话条（在 Rust 端注册,见 lib.rs）
 tauri-plugin-global-shortcut = "2"
 
-# === 内嵌 MCP server（对外暴露 Claude Code / 其他 MCP 客户端访问 Daybreak 数据）===
+# === 内嵌 MCP server（对外暴露 Claude Code / 其他 MCP 客户端访问 Latitude 数据）===
 # rmcp: 官方 Rust MCP SDK；axum: HTTP 层。两者跑在 Tauri 进程内的 tokio 后台任务里。
 rmcp = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"

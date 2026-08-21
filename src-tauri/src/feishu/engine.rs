@@ -56,7 +56,7 @@ const CALENDAR_DELETED_CODE: i64 = 191003;
 
 /// 写库后通知前端刷新的回调（与 mcp::Notifier 同形态：`Arc<dyn Fn(&str) + Send + Sync>`）。
 ///
-/// 复用 lib.rs setup() 里现成的 notify 闭包（emit `daybreak://data-changed`）。一轮同步落库后
+/// 复用 lib.rs setup() 里现成的 notify 闭包（emit `latitude://data-changed`）。一轮同步落库后
 /// 调 `notify("calendar_events")`，前端据此重新 hydrate 日历事件 store。
 pub type Notifier = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -298,7 +298,7 @@ where
 /// 兜住（不会冒泡到这里、不会让任务退出）。
 ///
 /// 参数：
-///  - `db_path`：daybreak.db 路径（与前端、mcp 共享同一文件，WAL 并发安全）。
+///  - `db_path`：latitude.db 路径（与前端、mcp 共享同一文件，WAL 并发安全）。
 ///  - `notify`：写库后刷新前端的回调（复用 lib.rs 现成闭包）。
 ///  - `handle`：手动唤醒句柄（其内含的 [`Notify`] 被 `feishu_sync_now` 戳一下即插一轮）。
 pub async fn run_scheduler(db_path: PathBuf, notify: Notifier, handle: SyncHandle) {
@@ -386,8 +386,8 @@ struct KeychainEnv {
 }
 
 impl KeychainEnv {
-    /// `db_path` 是 daybreak.db 路径；其父目录即 app config 目录（feishu_config.json 与
-    /// daybreak.db 同目录，见 config.rs 的落点约定）。
+    /// `db_path` 是 latitude.db 路径；其父目录即 app config 目录（feishu_config.json 与
+    /// latitude.db 同目录，见 config.rs 的落点约定）。
     fn new(db_path: PathBuf) -> Self {
         let config_dir = db_path
             .parent()
@@ -471,14 +471,14 @@ impl SyncEnv for KeychainEnv {
 /// 跑完再跑自己这轮（不会并发）。直接在 command 里持锁跑 [`sync_once`]（而不是只 `wake` 让后台
 /// 跑）是为了**拿到这一轮的 SyncSummary 回给前端**；后台 wake 路径无法把结果传回 command。
 ///
-/// 取 `db_path` / `config_dir` 的方式与 lib.rs setup() 一致：app config 目录下的 daybreak.db。
+/// 取 `db_path` / `config_dir` 的方式与 lib.rs setup() 一致：app config 目录下的 latitude.db。
 #[tauri::command]
 pub async fn feishu_sync_now(app: AppHandle) -> Result<SyncSummary, String> {
     let config_dir = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("解析配置目录失败: {e}"))?;
-    let db_path = config_dir.join("daybreak.db");
+    let db_path = config_dir.join("latitude.db");
 
     // 从 Tauri 全局状态取调度句柄（lib.rs setup() 里 manage 进去的同一把锁）。没有则退化为
     // 「自建一把临时锁」——保证 command 仍可独立工作（虽然此时与后台调度不互斥，但 WAL 下并发写
@@ -498,7 +498,7 @@ pub async fn feishu_sync_now(app: AppHandle) -> Result<SyncSummary, String> {
     let app_for_notify = app.clone();
     let notify: Notifier = Arc::new(move |topic: &str| {
         use tauri::Emitter;
-        let _ = app_for_notify.emit("daybreak://data-changed", topic.to_string());
+        let _ = app_for_notify.emit("latitude://data-changed", topic.to_string());
     });
 
     // 持全局串行锁跑这一轮，拿摘要回前端。
@@ -529,7 +529,7 @@ pub async fn feishu_flush_queue(app: AppHandle) -> Result<crate::feishu::writeba
         .path()
         .app_config_dir()
         .map_err(|e| format!("解析配置目录失败: {e}"))?;
-    let db_path = config_dir.join("daybreak.db");
+    let db_path = config_dir.join("latitude.db");
 
     let handle = app
         .try_state::<SyncHandle>()
@@ -559,7 +559,7 @@ pub async fn feishu_flush_queue(app: AppHandle) -> Result<crate::feishu::writeba
     // 有任何队列项被处理（成功或转冲突）→ 通知前端刷新（重 hydrate 日历事件 / 弹冲突卡）。
     if result.pushed > 0 || result.conflicted > 0 {
         use tauri::Emitter;
-        let _ = app.emit("daybreak://data-changed", "calendar_events".to_string());
+        let _ = app.emit("latitude://data-changed", "calendar_events".to_string());
     }
 
     Ok(result)

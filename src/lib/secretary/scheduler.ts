@@ -70,8 +70,8 @@ export interface SchedulerStorage {
 
 // ─── localStorage 键 ──────────────────────────────────────────────────────────
 
-const LOCK_KEY = "daybreak.secretary.scheduler.lock";
-const JOB_LAST_RAN_PREFIX = "daybreak.secretary.scheduler.lastRan.";
+const LOCK_KEY = "latitude.secretary.scheduler.lock";
+const JOB_LAST_RAN_PREFIX = "latitude.secretary.scheduler.lastRan.";
 
 /** 默认锁过期阈值:30s。owner 若 30s 内没有刷新心跳,视为已死亡。 */
 const DEFAULT_TIMEOUT_MS = 30 * 1000;

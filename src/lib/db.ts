@@ -5,8 +5,8 @@ import { outcomeKindFromRow } from "./secretary/dismissDowngrade";
 /**
  * SQLite 单例
  *
- * 数据库位置:Tauri 默认 AppData 目录下的 daybreak.db
- *  - macOS: ~/Library/Application Support/com.daybreak.desktop/daybreak.db
+ * 数据库位置:Tauri 默认 AppData 目录下的 latitude.db
+ *  - macOS: ~/Library/Application Support/com.latitude.desktop/latitude.db
  *
  * Schema 迁移策略:
  *  - V1: CREATE TABLE IF NOT EXISTS(初始表)
@@ -342,7 +342,7 @@ async function migrate(db: Database): Promise<void> {
 
 export async function getDb(): Promise<Database> {
   if (_db) return _db;
-  _db = await Database.load("sqlite:daybreak.db");
+  _db = await Database.load("sqlite:latitude.db");
   await migrate(_db);
   return _db;
 }

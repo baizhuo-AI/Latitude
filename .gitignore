@@ -18,3 +18,18 @@ src-tauri/target
 # 本地 SQLite 数据库(开发期可能在这里)
 *.db
 *.db-journal
+
+# ==== pipeline/ 采集转写管线 ====
+# 凭据(明文 API key)
+pipeline/.env
+# 虚拟环境
+pipeline/.venv/
+pipeline/__pycache__/
+# 音频原件与转写产物(含真实工作对话,绝不进 git)
+pipeline/audio/
+pipeline/out/
+*.wav
+*.WAV
+*.mp3
+# 热词表 id(非密钥,但属本机运行态)
+pipeline/.vocab_id

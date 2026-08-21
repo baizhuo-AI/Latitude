@@ -85,7 +85,7 @@ const LOG_PREVIEW_LEN = 50;
 /**
  * activity_capture 对话固定问句模板(不调 LLM,节省 token)。
  *
- * 语气轻松自然;秘书人设名"拂晓"在设置里可配,这里保持通用口吻,
+ * 语气轻松自然;秘书人设名在设置里可配(默认不预设专名),这里保持通用口吻,
  * 不 hardcode 人设名(否则每次改人设要改这里)。
  */
 const ACTIVITY_CAPTURE_PROMPT: Record<Lang, string> = {
@@ -341,11 +341,11 @@ export async function deliverProactive(
     const notifyTitle =
       candidate.kind === "activity_capture"
         ? lang === "zh"
-          ? "Daybreak 活动记录"
-          : "Daybreak Activity"
+          ? "Latitude 活动记录"
+          : "Latitude Activity"
         : lang === "zh"
-          ? "Daybreak 提醒"
-          : "Daybreak";
+          ? "Latitude 提醒"
+          : "Latitude";
     await sendSystemNotification(notifyTitle, text);
   }
   if (channels.float) {

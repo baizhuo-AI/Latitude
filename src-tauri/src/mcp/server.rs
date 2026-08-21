@@ -120,10 +120,10 @@ fn parse_options(raw: &str) -> Vec<FieldOption> {
 /* ===================== server 实例 ===================== */
 
 #[derive(Clone)]
-pub struct DaybreakMcp {
+pub struct LatitudeMcp {
     pool: SqlitePool,
     notify: Notifier,
-    tool_router: ToolRouter<DaybreakMcp>,
+    tool_router: ToolRouter<LatitudeMcp>,
 }
 
 /* ---------- 请求参数结构 ---------- */
@@ -314,7 +314,7 @@ struct DeleteFieldOptionRequest {
 /* ---------- 工具实现 ---------- */
 
 #[tool_router]
-impl DaybreakMcp {
+impl LatitudeMcp {
     fn new(pool: SqlitePool, notify: Notifier) -> Self {
         Self {
             pool,
@@ -651,7 +651,7 @@ impl DaybreakMcp {
      * 镜像 TS chatTools 的 remember / update_memory / forget，让 CC/Codex 经 MCP 写记忆。
      * 字段、枚举、默认值、TTL 兜底与 TS 侧逐字对齐（见 src/lib/chatTools.ts 与 src/lib/db.ts）。
      * 表由前端 migrate 建（memory_facts），此处只读写既有库；写后 notify("memory") 发到后端→前端桥
-     * daybreak://data-changed（topic "memory"）。注意它与前端 syncBus 的 emitSync("memory") 是
+     * latitude://data-changed（topic "memory"）。注意它与前端 syncBus 的 emitSync("memory") 是
      * 两条不同事件名，并不直接互通：前端在常驻主窗用 bridgeDataChangedToSync()（见 src/lib/syncBus.ts
      * 与 src/App.tsx 的 MainWindow）把这条 data-changed 的 "memory" 转嫁到 syncBus，
      * onSync("memory") 的消费者（「关于你」面板 AboutYouPanel）才会实时刷新。
@@ -1114,9 +1114,9 @@ impl DaybreakMcp {
     }
 }
 
-/* ---------- 自定义字段非工具 helper（DaybreakMcp 的私有方法，不挂 #[tool]） ---------- */
+/* ---------- 自定义字段非工具 helper（LatitudeMcp 的私有方法，不挂 #[tool]） ---------- */
 
-impl DaybreakMcp {
+impl LatitudeMcp {
     /// D4 翻译：把 {字段名: 选项名|选项名[]} 翻成存库的 {fieldId: optId|[optId]} JSON 串。
     /// 字段名归一化匹配 field.name（匹配不到 → 记入 skipped、跳过）；选项名归一化匹配 option.label
     /// （匹配不到 → 在该字段 options 新建选项、回写 field_definitions、记入 created）。
@@ -1303,20 +1303,20 @@ impl DaybreakMcp {
 }
 
 #[tool_handler]
-impl ServerHandler for DaybreakMcp {
+impl ServerHandler for LatitudeMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2025_03_26,
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation {
-                name: "daybreak".to_string(),
+                name: "latitude".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 title: None,
                 website_url: None,
                 icons: None,
             },
             instructions: Some(
-                "Daybreak 本地 MCP：管理你的任务、目标、时间日志，以及关于你的长期记忆事实".to_string(),
+                "Latitude 本地 MCP：管理你的任务、目标、时间日志，以及关于你的长期记忆事实".to_string(),
             ),
         }
     }
@@ -1349,7 +1349,7 @@ async fn require_auth(
 /// 启动 MCP server。
 ///
 /// 设计原则：MCP 是附加能力，任何启动失败（连库失败、端口被占）都只记日志、安静退出，
-/// 绝不 panic、不影响 Daybreak 主应用的正常使用。
+/// 绝不 panic、不影响 Latitude 主应用的正常使用。
 ///
 /// - `token`：鉴权密钥，所有请求需带 `Authorization: Bearer <token>`
 /// - `notify`：写操作后的刷新回调（Tauri 端转 event；测试传空回调）
@@ -1364,7 +1364,7 @@ pub async fn start(db_path: PathBuf, token: String, notify: Notifier) {
 
     let notify_for_factory = notify.clone();
     let service = StreamableHttpService::new(
-        move || Ok(DaybreakMcp::new(pool.clone(), notify_for_factory.clone())),
+        move || Ok(LatitudeMcp::new(pool.clone(), notify_for_factory.clone())),
         LocalSessionManager::default().into(),
         Default::default(),
     );
@@ -1388,7 +1388,7 @@ pub async fn start(db_path: PathBuf, token: String, notify: Notifier) {
         }
     };
 
-    eprintln!("[mcp] Daybreak MCP server 已启动: http://{addr}/mcp");
+    eprintln!("[mcp] Latitude MCP server 已启动: http://{addr}/mcp");
 
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("[mcp] MCP server 运行出错: {e}");
@@ -1450,7 +1450,7 @@ mod tests {
 
     /// 内存库 + 建 memory_facts / field_definitions / todos 表。max_connections=1：
     /// sqlite `:memory:` 每连接一个库，多连接会各看各的，限 1 连接保证整池共享同一个内存库。
-    async fn test_mcp() -> DaybreakMcp {
+    async fn test_mcp() -> LatitudeMcp {
         let opts = SqliteConnectOptions::new()
             .filename(":memory:")
             .create_if_missing(true);
@@ -1465,7 +1465,7 @@ mod tests {
         }
         // 测试用空 notify（不接 Tauri）。
         let notify: Notifier = Arc::new(|_domain: &str| {});
-        DaybreakMcp::new(pool, notify)
+        LatitudeMcp::new(pool, notify)
     }
 
     /// 直接查 field_definitions 单行（按 id）。
@@ -1736,7 +1736,7 @@ mod tests {
 
     /// 便捷：建一个字段，返回 (field_id, 返回 JSON)。
     async fn make_field(
-        mcp: &DaybreakMcp,
+        mcp: &LatitudeMcp,
         name: &str,
         ftype: &str,
         options: Vec<&str>,

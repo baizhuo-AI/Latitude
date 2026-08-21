@@ -2,7 +2,7 @@
  * buildChatSystemPrompt.test.ts — 跨窗口人设/语言新鲜度测试
  *
  * 验收场景:
- *   Daybreak 多窗口架构下,对话悬浮条(chatbar)窗口的 Zustand store 是陈旧快照——
+ *   Latitude 多窗口架构下,对话悬浮条(chatbar)窗口的 Zustand store 是陈旧快照——
  *   主窗口(设置页)改了人设/语言后,只更新了主窗口 store + localStorage;
  *   对话窗口的 store 内存态仍是旧值。
  *

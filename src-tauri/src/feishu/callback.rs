@@ -75,9 +75,9 @@ async fn wait_on_listener(
         // 校验 state 防 CSRF；无论成败都回一个页面让用户知道结果。
         let ok = cb.state == expected_state;
         let body = if ok {
-            "<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui;text-align:center;padding-top:64px\"><h2>授权成功 ✅</h2><p>可以关闭此页面，返回 Daybreak。</p></body>"
+            "<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui;text-align:center;padding-top:64px\"><h2>授权成功 ✅</h2><p>可以关闭此页面，返回 Latitude。</p></body>"
         } else {
-            "<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui;text-align:center;padding-top:64px\"><h2>授权校验失败</h2><p>state 不匹配，请回到 Daybreak 重试。</p></body>"
+            "<!doctype html><meta charset=utf-8><body style=\"font-family:system-ui;text-align:center;padding-top:64px\"><h2>授权校验失败</h2><p>state 不匹配，请回到 Latitude 重试。</p></body>"
         };
         let status = if ok { "200 OK" } else { "400 Bad Request" };
         let resp = format!(

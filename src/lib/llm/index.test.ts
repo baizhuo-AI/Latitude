@@ -210,7 +210,7 @@ describe("chatAgentCall — agent loop 特征化(锁住现有行为)", () => {
     expect(engine.received).toHaveLength(3);
     for (const call of engine.received) {
       // 每一轮第一条都是 system,且带上了 buildChatSystemPrompt 的内容
-      // (原来检测 "Daybreak" 字符串;Task 1.1 后人设注入替换了写死的 header,
+      // (原来检测 "Latitude" 字符串;Task 1.1 后人设注入替换了写死的 header,
       //  改为断言锁死核心规则段里必然存在的锚字符串)
       expect(call.messages[0].role).toBe("system");
       expect(call.messages[0].content).toContain("不替用户甩选项");

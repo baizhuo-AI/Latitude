@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Daybreak"
+    "name": "维度"
   },
   "nav": {
     "briefing": "早安",
@@ -20,11 +20,15 @@
     "moreInSettings": "在设置中开启更多功能"
   },
   "floating": {
-    "title": "Daybreak · 待办",
+    "title": "维度 · 待办",
     "placeholder": "记一笔(回车提交)",
     "empty": "今天没有待办,试试在上面记一笔",
     "emptyScope": "这个范围没有未完成的待办",
-    "scope": { "today": "今日", "week": "本周", "all": "全部" },
+    "scope": {
+      "today": "今日",
+      "week": "本周",
+      "all": "全部"
+    },
     "progress": "完成 {{done}}/{{total}}",
     "added": "已添加",
     "addedNoParse": "已添加(AI 未生效,用了原文)",
@@ -39,7 +43,7 @@
     "todayLog": "今日记录 {{count}}"
   },
   "topbar": {
-    "placeholder": "告诉 Daybreak 你要做什么…比如:明天下午给客户 A 过方案",
+    "placeholder": "告诉维度你要做什么…比如:明天下午给客户 A 过方案",
     "parsing": "AI 实时解析中…",
     "field": {
       "deadline": "截止",
@@ -54,7 +58,7 @@
   },
   "briefing": {
     "greeting": "早安。今天 {{date}}。",
-    "subtitle": "Daybreak 已为你生成了今日最优解。",
+    "subtitle": "维度已为你生成了今日最优解。",
     "freeTime": {
       "label": "今日可用空档:{{hours}}",
       "note": "已预定 {{conflicts}}",
@@ -203,7 +207,15 @@
     "syncing": "同步中…",
     "synced": "已同步 · 新增 {{up}} / 删除 {{del}}",
     "syncFailed": "同步失败:{{msg}}",
-    "weekdays": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+    "weekdays": [
+      "周一",
+      "周二",
+      "周三",
+      "周四",
+      "周五",
+      "周六",
+      "周日"
+    ],
     "noScheduled": "未排期",
     "unscheduledHeader": "未排期({{count}})",
     "unscheduledHint": "拖到左侧时间格安排时段",
@@ -214,14 +226,14 @@
   },
   "chat": {
     "title": "AI 对话",
-    "placeholder": "问 Daybreak 任何关于你今天的安排…(⌘+Enter 发送)",
+    "placeholder": "问维度任何关于你今天的安排…(⌘+Enter 发送)",
     "comingSoon": "对话功能开发中。",
     "newConv": "新对话",
     "noConvs": "还没有对话。点上面开始第一段。",
     "send": "发送",
     "stop": "停止",
     "sendHint": "⌘+Enter 发送 / 你的今日 todos 和 Telos 会自动作为上下文",
-    "emptyTitle": "和 Daybreak 聊聊今天",
+    "emptyTitle": "和维度聊聊今天",
     "emptyBody": "今日待办、Telos 目标和当前时间都会自动作为上下文。问「我下午这两个会能挪到明天吗」「今天应该先做哪个」都行。",
     "deleteConv": "删除对话",
     "reasoning": "思考过程",
@@ -257,7 +269,7 @@
   },
   "telos": {
     "title": "Telos · 长期目标",
-    "subtitle": "把方向告诉 Daybreak,它会在排今日和早安时把这些目标考虑进去",
+    "subtitle": "把方向告诉维度,它会在排今日和早安时把这些目标考虑进去",
     "comingSoon": "Telos 页面开发中。",
     "period": {
       "year": "年度目标",
@@ -275,7 +287,7 @@
     },
     "fields": {
       "title": "目标",
-      "titlePlaceholder": "比如:Q3 完成 Daybreak 桌面版 1.0",
+      "titlePlaceholder": "比如:Q3 完成维度桌面版 1.0",
       "description": "描述(可选)",
       "descriptionPlaceholder": "更详细的目标内容、为什么、达成标准…",
       "targetDate": "截止时间(可选)",
@@ -309,7 +321,7 @@
     "sectionTitle": "隐私与成本",
     "sectionDesc": "控制哪些数据会发送给云端 AI、记忆的边界,以及主动推送的频率。",
     "disclosureTitle": "云端记忆披露",
-    "disclosureBody": "当你使用云端 AI(如 DeepSeek API、Anthropic API)时,Daybreak 会把你的记忆事实和今日待办作为系统提示词发送给对应的 API 服务商。这些数据不会上传到 Daybreak 自己的服务器,但会经过第三方 AI 服务商的基础设施处理。如不希望记忆发送给云端,请开启「仅本地大脑」。",
+    "disclosureBody": "当你使用云端 AI(如 DeepSeek API、Anthropic API)时,维度会把你的记忆事实和今日待办作为系统提示词发送给对应的 API 服务商。这些数据不会上传到维度自己的服务器,但会经过第三方 AI 服务商的基础设施处理。如不希望记忆发送给云端,请开启「仅本地大脑」。",
     "localOnlyBrain": "仅本地大脑",
     "localOnlyBrainDesc": "开启后,记忆事实只注入本地 CLI 引擎(Claude Code / Codex)。若当前选了云端 API 后端,记忆将不发送给第三方 API。",
     "localOnlyBrainWarning": "⚠ 当前对话后端是云端 API,记忆不会注入此次对话。切换到本地 CLI 后端(Claude Code/Codex)可同时获得记忆和隐私保护。",
