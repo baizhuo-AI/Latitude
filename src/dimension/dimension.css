@@ -1,0 +1,579 @@
+/*
+ * 维度桌面 — 视觉语言
+ *
+ * 色值取自 docs/assets/dimension-demo/ 的采样,形态取自 design/Opening.dc.html 定稿。
+ * 核心隐喻:桌面上摊着纸片,其中一张是本子,点开摊成内页,合上回到桌面。
+ *
+ * 三条不能动的规则:
+ *  1. 层次靠纸质和 1px 细边框,不靠投影阴影;
+ *  2. 纸片各自歪 ±1.2° 以内,再大就从"自然"变成"刻意做旧";
+ *  3. 等宽大写英文标签压在中文标题之上,这是这套语言最强的识别特征。
+ *
+ * 分工:这个文件管"长什么样",组件里的 inline style 只管排布和逐张卡的差异。
+ * 所有 class 一律 dim- 前缀,和旧 Latitude 样式零冲突。
+ */
+
+.dimension-root {
+  color-scheme: light;
+
+  /* 纸张 */
+  --dim-desk: #e9e4d6; /* 桌面底 */
+  --dim-paper: #fdfaf2; /* 纸片 */
+  --dim-sticky: #fbf0c8; /* 便签黄 */
+  --dim-page: #faf6e9; /* 本子内页 */
+  --dim-inset: rgb(232 227 212 / 50%); /* 卡内嵌入块 */
+
+  /* 线 */
+  --dim-line: #d8d2c0;
+  --dim-line-soft: #e8e3d4;
+
+  /* 墨 */
+  --dim-ink: #2a2a24;
+  --dim-ink-soft: #6b6656;
+  --dim-ink-faint: #9a9482;
+  --dim-ink-sticky: #a29656; /* 便签上的次级墨 */
+
+  /* 强调 */
+  --dim-olive: #7c8a3e;
+  --dim-olive-deep: #46521f;
+  --dim-lime: #c6d830;
+  --dim-teal: #5aa8ae;
+  --dim-rust: #c35e4a;
+  --dim-amber: #d9a441;
+  --dim-hand: #9a6b3c; /* 手写批注 */
+
+  font-family: var(--font-sans);
+  color: var(--dim-ink);
+  background: var(--dim-desk);
+}
+
+/* ---------- 排版原子 ---------- */
+
+/* 等宽大写英文小标签 */
+.dim-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim-ink-faint);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.dim-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--dim-ink-faint);
+}
+
+.dim-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--dim-ink);
+  margin: 9px 0 0;
+}
+
+/* 主位卡的标题:整张桌面唯一的大字 */
+.dim-title--lead {
+  font-size: 17px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.dim-body {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--dim-ink-soft);
+  margin: 0;
+}
+
+/* 手写批注。Caveat 只有拉丁字形,中文靠楷体接住 */
+.dim-hand {
+  font-family: Caveat, "Kaiti SC", STKaiti, KaiTi, "楷体", cursive;
+  color: var(--dim-hand);
+}
+
+/* ---------- 纸片 ---------- */
+
+.dim-paper {
+  position: relative;
+  background: var(--dim-paper);
+  border: 1px solid var(--dim-line);
+  border-radius: 2px;
+  padding: 20px 22px 18px;
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* 鼠标靠近时纸被扶正并抬起 —— rotate(0) 要盖掉逐张卡的内联角度 */
+.dim-paper:hover {
+  transform: rotate(0deg) translateY(-1px) !important;
+  z-index: 5;
+}
+
+.dim-paper--sticky {
+  background: var(--dim-sticky);
+}
+
+/* 方格纸:图表类卡片画在格子上 */
+.dim-paper--grid {
+  background-image:
+    repeating-linear-gradient(0deg, rgb(120 140 90 / 10%) 0 1px, transparent 1px 15px),
+    repeating-linear-gradient(90deg, rgb(120 140 90 / 10%) 0 1px, transparent 1px 15px);
+}
+
+/* 便签右下折角 */
+.dim-dogear::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 16px 16px;
+  border-color: transparent transparent var(--dim-desk) transparent;
+}
+
+/* 可打开的那张 —— 只有认知卡 */
+.dim-openable {
+  cursor: pointer;
+}
+
+.dim-openable .dim-hint {
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+
+.dim-openable:hover .dim-hint {
+  opacity: 1;
+}
+
+.dim-openable:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+/* ---------- 手帐点缀 ---------- */
+
+/* 和纸胶带:半透明 + 竖向纤维纹 */
+.dim-tape {
+  position: absolute;
+  height: 21px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgb(255 255 255 / 32%) 0 1px,
+    transparent 1px 3px
+  );
+  pointer-events: none;
+}
+
+/* 锚点卡右下的虚线弧,超出部分由纸片裁掉 */
+.dim-arc {
+  position: absolute;
+  right: -34px;
+  bottom: -58px;
+  width: 124px;
+  height: 124px;
+  border: 1px dashed var(--dim-line);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ◇ 菱形 bullet */
+.dim-diamond {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border: 1px solid var(--dim-olive);
+  transform: rotate(45deg);
+}
+
+/* ---------- 12 栅格 ---------- */
+
+/*
+ * 骨架恒定:上排 5+7,下排 4+4+4。卡片内容会变,格子不变
+ * (重构计划第 11 节「主页变化过度」那条风险的答案)。
+ * 列宽走 data-span 而不是内联 style —— 内联特异性最高,会让下面的降级失效。
+ */
+/*
+ * 降级用容器查询而不是媒体查询:决定挤不挤的是网格自己的宽度,
+ * 不是视口 —— 左边还站着 176px 的秘书栏。用视口断点会在
+ * 1200px 左右误判:视口够宽,主区其实只剩 1024px,4+4+4 已经挤了。
+ */
+.dim-grid-wrap {
+  container-type: inline-size;
+}
+
+.dim-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.dim-grid > [data-span="4"] { grid-column: span 4; }
+.dim-grid > [data-span="5"] { grid-column: span 5; }
+.dim-grid > [data-span="6"] { grid-column: span 6; }
+.dim-grid > [data-span="7"] { grid-column: span 7; }
+.dim-grid > [data-span="8"] { grid-column: span 8; }
+.dim-grid > [data-span="12"] { grid-column: span 12; }
+
+/* 1120px 应用窗扣除秘书栏后仍保留种子骨架；更窄的工具窗才开始降级。 */
+@container (max-width: 760px) {
+  .dim-grid > [data-span="4"] { grid-column: span 6; }
+  .dim-grid > [data-span="5"] { grid-column: span 12; }
+  .dim-grid > [data-span="7"] { grid-column: span 12; }
+}
+
+@container (max-width: 620px) {
+  .dim-grid > [data-span] { grid-column: span 12; }
+}
+
+/* ---------- 桌面 ↔ 本子 的转场 ---------- */
+
+/*
+ * 两层始终在 DOM 里叠着,只切 opacity 和 transform。
+ * 条件渲染会让 transition 无处可播 —— 这是这个隐喻的全部价值所在。
+ */
+.dim-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dim-layer {
+  position: absolute;
+  inset: 0;
+  transition: opacity 420ms cubic-bezier(0.22, 0.75, 0.28, 1),
+    transform 420ms cubic-bezier(0.22, 0.75, 0.28, 1);
+}
+
+.dim-layer--desk {
+  opacity: 1;
+  transform: none;
+  overflow-x: hidden;
+  background-color: var(--dim-desk);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 14%), transparent 28%);
+}
+
+.dim-stage--open .dim-layer--desk {
+  opacity: 0;
+  transform: scale(0.965) translateY(-8px);
+  pointer-events: none;
+}
+
+.dim-layer--book {
+  opacity: 0;
+  transform: scale(1.03) translateY(14px);
+  pointer-events: none;
+  background-color: var(--dim-page);
+  background-image:
+    repeating-linear-gradient(0deg, rgb(120 140 90 / 8.5%) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgb(120 140 90 / 8.5%) 0 1px, transparent 1px 24px);
+}
+
+.dim-stage--open .dim-layer--book {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* 活页装订孔 */
+.dim-punch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dim-desk);
+  border: 1px solid rgb(92 80 52 / 28%);
+}
+
+/* 橡皮章日期 */
+.dim-stamp {
+  transform: rotate(-7deg);
+  border: 2px solid rgb(195 94 74 / 45%);
+  border-radius: 3px;
+  padding: 3px 9px;
+  opacity: 0.8;
+}
+
+/* ---------- 秘书栏 ---------- */
+
+.dim-rail {
+  width: 176px;
+  flex-shrink: 0;
+  background: var(--dim-paper);
+  border-right: 1px solid var(--dim-line);
+  z-index: 2;
+}
+
+.dim-portrait {
+  position: relative;
+  aspect-ratio: 1 / 1.12;
+  background: linear-gradient(170deg, #f6f1df 0%, #ece5cf 100%);
+  border-radius: 2px;
+  border: 1px solid rgb(216 210 192 / 70%);
+  overflow: hidden;
+}
+
+.dim-portrait::after {
+  content: "";
+  position: absolute;
+  inset: 14% 12% 20%;
+  border: 1px dashed rgb(124 138 62 / 14%);
+  border-radius: 50%;
+  transform: scale(var(--dim-portrait-ring, 0.82));
+  transition: transform 560ms ease;
+  z-index: 0;
+}
+
+.dim-secretary-growth {
+  position: absolute;
+  inset: 2% 2% 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  transform: scale(var(--dim-portrait-growth, 0.82));
+  transform-origin: 50% 100%;
+  transition: transform 560ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.dim-secretary-sprite {
+  display: block;
+  width: auto;
+  /* 资源是全身立绘；桌面窄栏只取头肩到腰部，避免人物缩成框内小摆件。 */
+  height: 205%;
+  max-width: none;
+  object-fit: contain;
+  transform-origin: 50% 100%;
+  user-select: none;
+  pointer-events: none;
+}
+
+/*
+ * 首批五张扩展动作是与 --dim-paper 同色系的暖纸底资源。multiply 把纸底融进
+ * 固定立绘窗，同时保留人物线稿；以后替换为全透明 PNG 时删除这个兼容类即可。
+ */
+.dim-secretary-sprite-paper-matte {
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    #000 18%,
+    #000 82%,
+    transparent 100%
+  );
+  mix-blend-mode: multiply;
+}
+
+.dim-portrait-state-ready .dim-secretary-sprite {
+  animation: dim-secretary-ready 5.8s ease-in-out infinite;
+}
+
+.dim-portrait-state-thinking .dim-secretary-sprite {
+  animation: dim-secretary-thinking 3.9s ease-in-out infinite;
+}
+
+.dim-portrait-state-presenting .dim-secretary-sprite {
+  animation: dim-secretary-presenting 4.6s ease-in-out infinite;
+}
+
+/* 权能只显示已授权工具的层级，不参与人物体量。 */
+.dim-authority-tabs {
+  position: absolute;
+  top: 9px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dim-authority-tabs i {
+  display: block;
+  width: 12px;
+  height: 3px;
+  background: var(--dim-rust);
+  opacity: 0.34;
+}
+
+@keyframes dim-secretary-ready {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(calc(-1 * var(--dim-portrait-motion, 1px))) rotate(-0.18deg);
+  }
+}
+
+@keyframes dim-secretary-thinking {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(calc(-1 * var(--dim-portrait-motion, 1px))) rotate(-0.42deg);
+  }
+}
+
+@keyframes dim-secretary-presenting {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(calc(-0.65 * var(--dim-portrait-motion, 1px)));
+  }
+}
+
+.dim-badge {
+  position: absolute;
+  left: 0;
+  bottom: 12px;
+  z-index: 1;
+  background: var(--dim-lime);
+  color: var(--dim-olive-deep);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 0 2px 2px 0;
+}
+
+.dim-meter {
+  height: 3px;
+  background: var(--dim-line-soft);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.dim-meter i {
+  display: block;
+  height: 100%;
+  background: var(--tone, var(--dim-olive));
+}
+
+/* ---------- 按钮与输入 ---------- */
+
+.dim-btn {
+  background: #f4efdf;
+  border: 1px solid var(--dim-line);
+  border-radius: 1px;
+  padding: 6px 13px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: #5a5544;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.dim-btn:hover {
+  background: var(--dim-paper);
+}
+
+.dim-btn:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+.dim-btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--dim-ink-faint);
+}
+
+.dim-btn--quiet:hover {
+  background: rgb(253 250 242 / 70%);
+  border-color: var(--dim-line-soft);
+  color: var(--dim-ink);
+}
+
+.dim-btn--accent {
+  background: var(--dim-lime);
+  color: var(--dim-olive-deep);
+  font-weight: 500;
+}
+
+.dim-btn--accent:hover {
+  background: #d2e23c;
+}
+
+.dim-chip {
+  font-size: 11.5px;
+  color: #5a5544;
+  background: rgb(232 227 212 / 62%);
+  border: none;
+  border-radius: 1px;
+  padding: 5px 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.dim-chip:hover {
+  background: rgb(232 227 212 / 95%);
+}
+
+.dim-chip:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+.dim-send {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: var(--dim-olive-deep);
+  color: var(--dim-lime);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.dim-send:hover {
+  background: #384118;
+}
+
+.dim-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--dim-ink);
+  width: 100%;
+}
+
+.dim-input::placeholder {
+  color: var(--dim-ink-faint);
+}
+
+/* ---------- 无障碍 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .dim-paper,
+  .dim-layer,
+  .dim-openable .dim-hint,
+  .dim-secretary-growth,
+  .dim-portrait::after {
+    transition: none;
+  }
+
+  .dim-secretary-sprite {
+    animation: none !important;
+  }
+
+  /* 静止时也别让纸歪着 —— 前庭敏感的人对静态倾斜同样不适 */
+  .dim-paper {
+    transform: none !important;
+  }
+}

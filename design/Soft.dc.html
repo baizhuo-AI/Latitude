@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7c8a3e; } a:hover { color: #46521f; }
+    .m { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+
+    /* 边框全部换成影子:秩序不变,硬度没了 */
+    .soft {
+      background: #fdfaf2;
+      border-radius: 3px;
+      box-shadow: 0 1px 2px rgba(92, 80, 52, .05), 0 3px 9px rgba(92, 80, 52, .07);
+      transition: transform .24s cubic-bezier(.2, .8, .3, 1), box-shadow .24s ease;
+      position: relative;
+    }
+    .soft:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 2px 4px rgba(92, 80, 52, .06), 0 8px 20px rgba(92, 80, 52, .11);
+    }
+    /* 类别色不再是整条边框,只是标签上方的一小段 */
+    .tick {
+      display: block;
+      width: 22px;
+      height: 2px;
+      border-radius: 1px;
+      margin-bottom: 11px;
+    }
+    @media (prefers-reduced-motion: reduce) { .soft { transition: none; } }
+  </style>
+</helmet>
+
+<div style="width: 1060px; height: 620px; box-sizing: border-box; padding: 30px 32px; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif; color: #2a2a24; background: #efece0;">
+
+  <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px;">
+    <p class="m" style="margin: 0; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8d8878;">方向 C · 柔化的秩序</p>
+    <p class="m" style="margin: 0; font-size: 10px; letter-spacing: 0.1em; color: #a8a292;">网格还在 · 边框换成影子 · 高度随内容</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 18px; align-items: start;">
+
+    <!-- 认知卡:唯一的大字,内容撑开高度 -->
+    <div class="soft" style="grid-column: span 7; padding: 24px 26px 22px;">
+      <span class="tick" style="background: #7c8a3e;"></span>
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a8a292;">Cognition / Worth Rethinking</p>
+      <h3 style="margin: 11px 0 0; font-size: 18px; font-weight: 600; line-height: 1.62; letter-spacing: -0.01em; text-wrap: pretty;">你把「信息还不够」当成推迟的理由,但最近 6 次这样推迟的决定里,后来补到的信息只有 1 次真的改变了你的选择。</h3>
+
+      <div style="margin-top: 20px; padding: 13px 15px; background: #f3efe0; border-radius: 2px;">
+        <p class="m" style="margin: 0 0 5px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a8a292;">你说过 · 假设</p>
+        <p style="margin: 0; font-size: 12.5px; line-height: 1.75;">重要的决定要等信息足够了再做,不然会错。</p>
+      </div>
+
+      <p style="margin: 18px 0 0; font-size: 12.5px; line-height: 1.8; color: #6b6656; display: flex; gap: 10px; align-items: flex-start;">
+        <span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg); margin-top: 7px;"></span>
+        <span>可逆的决定不需要等信息 —— 它自己就是最快的信息来源。真正需要等的是那些改不回来的。</span>
+      </p>
+
+      <div style="margin-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+        <span class="m" style="font-size: 10px; letter-spacing: 0.06em; color: #a8a292;">支持 2 · 反证 3</span>
+        <span style="background: #f3efe0; border-radius: 2px; padding: 6px 13px; font-size: 11.5px; color: #5a5544;">看完整证据 →</span>
+      </div>
+    </div>
+
+    <!-- 待抉择 -->
+    <div class="soft" style="grid-column: span 5; padding: 24px 26px 20px;">
+      <span class="tick" style="background: #c35e4a;"></span>
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a8a292;">Decisions / Waiting</p>
+      <h3 style="margin: 11px 0 0; font-size: 15.5px; font-weight: 600;">4 个待抉择</h3>
+      <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 11px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px; line-height: 1.5;">主页自由度:模型能生成到什么程度</span><span class="m" style="font-size: 10px; color: #a8a292;">3D</span></div>
+        <div style="display: flex; align-items: center; gap: 11px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px; line-height: 1.5;">角色占比:秘书栏要不要可折叠</span><span class="m" style="font-size: 10px; color: #a8a292;">2D</span></div>
+        <div style="display: flex; align-items: center; gap: 11px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px; line-height: 1.5;">卡片权限:自定义 HTML 什么时候开</span><span class="m" style="font-size: 10px; color: #a8a292;">NEXT</span></div>
+        <div style="display: flex; align-items: center; gap: 11px;"><span style="width: 6px; height: 6px; flex-shrink: 0; border: 1px solid #c35e4a; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px; line-height: 1.5;">学习周期:多久重算一次关系参数</span><span class="m" style="font-size: 10px; color: #c35e4a;">TODAY</span></div>
+      </div>
+    </div>
+
+    <!-- 专注闸门:唯一的暖色块,不靠边框区分 -->
+    <div class="soft" style="grid-column: span 4; padding: 22px 24px 20px; background: #faf2d9;">
+      <span class="tick" style="background: #d9a441;"></span>
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #b0a173;">Focus Gate / Temporary</p>
+      <h3 style="margin: 11px 0 0; font-size: 15px; font-weight: 600; line-height: 1.5;">我先替你挡住低优先级提醒</h3>
+      <p style="margin: 12px 0 0; font-size: 12.5px; line-height: 1.8; color: #6b6656;">直到 16:00,只保留会阻塞你或今天到期的事项。</p>
+    </div>
+
+    <!-- 深度工作 -->
+    <div class="soft" style="grid-column: span 4; padding: 22px 24px 20px;">
+      <span class="tick" style="background: #5aa8ae;"></span>
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a8a292;">Today / Reshaped</p>
+      <h3 style="margin: 11px 0 0; font-size: 15px; font-weight: 600;">剩余 2 小时 10 分</h3>
+      <p style="margin: 4px 0 0; font-size: 12px; color: #6b6656;">可深度工作</p>
+      <div style="margin-top: 18px; display: flex; align-items: flex-end; gap: 5px; height: 54px;">
+        <span style="flex: 1; height: 25%; background: #8cc3c6; border-radius: 1px;"></span><span style="flex: 1; height: 45%; background: #8cc3c6; border-radius: 1px;"></span><span style="flex: 1; height: 62%; background: #6cb2b6; border-radius: 1px;"></span><span style="flex: 1; height: 85%; background: #5aa8ae; border-radius: 1px;"></span><span style="flex: 1; height: 50%; background: #6cb2b6; border-radius: 1px;"></span><span style="flex: 1; height: 95%; background: #5aa8ae; border-radius: 1px;"></span><span style="flex: 1; height: 55%; background: #6cb2b6; border-radius: 1px;"></span><span style="flex: 1; height: 30%; background: #8cc3c6; border-radius: 1px;"></span><span style="flex: 1; height: 70%; background: #6cb2b6; border-radius: 1px;"></span><span style="flex: 1; height: 35%; background: #8cc3c6; border-radius: 1px;"></span>
+      </div>
+      <p style="margin: 14px 0 0; font-size: 11.5px; color: #7c8a3e;">打开日历 →</p>
+    </div>
+
+    <!-- 下班锚点:内容少,高度就矮,不被拉伸 -->
+    <div class="soft" style="grid-column: span 4; padding: 22px 24px 20px;">
+      <span class="tick" style="background: #a8a292;"></span>
+      <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a8a292;">Life Anchor / Never Hidden</p>
+      <h3 style="margin: 11px 0 0; font-size: 19px; font-weight: 600; letter-spacing: -0.01em;">18:30 下班</h3>
+      <p style="margin: 11px 0 0; font-size: 12.5px; line-height: 1.8; color: #6b6656;">冲刺模式不会吞掉你设定的生活边界。</p>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

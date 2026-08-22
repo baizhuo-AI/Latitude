@@ -164,7 +164,7 @@ export interface SettingsState {
 export type { PersonaSpec };
 export type { ProactiveConfig };
 
-const STORAGE_KEY = "daybreak.settings";
+const STORAGE_KEY = "latitude.settings";
 
 /** 默认值:provider 从 .env.local 兜底(给开发期方便);用户在 Settings 里填会覆盖 */
 function defaults(): SettingsState {
@@ -354,7 +354,7 @@ function readStored(): SettingsState {
 /**
  * 直接从 localStorage 读最新飞书配置（跨窗口实时）。
  *
- * 为什么不用 useSettingsStore.getState()：Daybreak 是多窗口应用，每个窗口（工作台 / 对话悬浮条 /
+ * 为什么不用 useSettingsStore.getState()：Latitude 是多窗口应用，每个窗口（工作台 / 对话悬浮条 /
  * todo 浮窗）有各自独立的 Zustand store 实例，store 内存态只在该窗口 create 时读一次 localStorage、
  * 之后不重读。设置页（主窗）改了配置只更新主窗 store + localStorage，对话悬浮条窗口的 store 内存态
  * 仍是陈旧快照。localStorage 同源跨窗口共享，故对话里的 AI 工具必须直读 localStorage 才能拿到最新配置。

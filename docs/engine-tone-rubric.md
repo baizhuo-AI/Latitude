@@ -1,5 +1,10 @@
 # 跨引擎腔调 Rubric (Task 4.5b)
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](specs/2026-08-20-dimension-master-prd.md) · [工程实施计划](plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 > **定位**:人工评估文档,不进 CI 红绿。供将来真起三条引擎时,对比 API / Claude Code / Codex
 > 的腔调差异,判断"是腔调分歧"还是"行为 bug",决定是否需要在 system prompt 层做对齐。
 

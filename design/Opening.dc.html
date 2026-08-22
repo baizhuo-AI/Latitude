@@ -1,0 +1,271 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7c8a3e; } a:hover { color: #46521f; }
+    .m { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+    .hand { font-family: "Caveat", "Kaiti SC", STKaiti, KaiTi, "楷体", "Bradley Hand", cursive; }
+
+    /* 舞台:桌面和本子叠在同一个位置,靠 is-open 切换,transition 才有得可播 */
+    .stage { position: relative; width: 100%; height: 100%; }
+    .layer {
+      position: absolute; inset: 0;
+      transition: opacity .42s cubic-bezier(.22,.75,.28,1), transform .42s cubic-bezier(.22,.75,.28,1);
+    }
+
+    /* 桌面层:本子打开时整体后退、失焦,像被推到一边 */
+    .desk { opacity: 1; transform: none; }
+    .stage.is-open .desk { opacity: 0; transform: scale(.965) translateY(-8px); pointer-events: none; }
+
+    /* 本子层:从桌面中央摊开 */
+    .book { opacity: 0; transform: scale(1.03) translateY(14px); pointer-events: none; }
+    .stage.is-open .book { opacity: 1; transform: none; pointer-events: auto; }
+
+    /* 桌上的纸片 */
+    .paper {
+      background: #fdfaf2; border-radius: 1px; position: relative;
+      box-shadow: 0 1px 1px rgba(92,80,52,.06), 0 4px 10px rgba(92,80,52,.09), 0 12px 26px rgba(92,80,52,.05);
+      transition: transform .28s cubic-bezier(.2,.8,.3,1), box-shadow .28s ease;
+    }
+    .paper:hover {
+      transform: rotate(0deg) translateY(-3px) !important;
+      box-shadow: 0 2px 2px rgba(92,80,52,.07), 0 8px 18px rgba(92,80,52,.12), 0 20px 40px rgba(92,80,52,.08);
+      z-index: 5;
+    }
+    /* 能打开的那张:悬停时提示它是本子,不是纸 */
+    .openable { cursor: pointer; }
+    .openable .hint { opacity: 0; transition: opacity .24s ease; }
+    .openable:hover .hint { opacity: 1; }
+
+    .tape {
+      position: absolute; height: 21px;
+      background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.32) 0 1px, transparent 1px 3px);
+      box-shadow: 0 1px 2px rgba(92,80,52,.10); pointer-events: none;
+    }
+
+    .closebtn {
+      background: #f4efdf; border: none; border-radius: 1px; padding: 6px 13px;
+      font-size: 11.5px; color: #5a5544; cursor: pointer;
+      box-shadow: 0 1px 2px rgba(92,80,52,.12);
+      font-family: inherit;
+    }
+    .closebtn:hover { background: #fdfaf2; }
+
+    .ev { display: flex; gap: 9px; align-items: flex-start; }
+    .ev span:first-child { width: 6px; height: 6px; flex-shrink: 0; transform: rotate(45deg); margin-top: 6px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .layer, .paper { transition: none; }
+    }
+  </style>
+</helmet>
+
+<div class="stage {{stageClass}}" style="width: 1060px; height: 740px; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif; color: #2a2a24; overflow: hidden;">
+
+  <!-- ============ 桌面层 ============ -->
+  <div class="layer desk" style="padding: 28px 30px; box-sizing: border-box; background-color: #e9e4d6; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.30) 0 1px, transparent 1px 5px), repeating-linear-gradient(-45deg, rgba(138,124,94,.055) 0 1px, transparent 1px 5px);">
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px;">
+      <p class="m" style="margin: 0; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8d8878;">桌面 · 默认态</p>
+      <p class="hand" style="margin: 0; font-size: 17px; color: #a89a72;">点主纸打开本子 ↓</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 18px; align-items: start;">
+
+      <!-- 认知卡:唯一可以被"打开"的那张 -->
+      <div class="paper openable" onClick="{{open}}" style="grid-column: span 7; padding: 20px 22px 18px; transform: rotate(-0.5deg);">
+        <span class="tape" style="top: -10px; left: 32px; width: 84px; background-color: rgba(198,216,48,.5); transform: rotate(-2.5deg);"></span>
+
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Cognition / Worth Rethinking</p>
+          <span class="hint hand" style="font-size: 15px; color: #a89a72; white-space: nowrap;">摊开来看 →</span>
+        </div>
+
+        <h3 style="margin: 9px 0 0; font-size: 17px; font-weight: 600; line-height: 1.6; letter-spacing: -0.01em; text-wrap: pretty;">你把「信息还不够」当成推迟的理由,但最近 6 次这样推迟的决定里,后来补到的信息只有 1 次真的改变了你的选择。</h3>
+
+        <svg width="182" height="9" viewBox="0 0 182 9" style="display: block; margin: 3px 0 0 -2px;" aria-hidden="true">
+          <path d="M3 6 Q 46 2, 90 5 T 179 4" fill="none" stroke="#c35e4a" stroke-width="1.7" stroke-linecap="round" opacity=".5"/>
+        </svg>
+
+        <div style="margin-top: 16px; padding: 11px 13px; background: rgba(232,227,212,.5); border-radius: 1px;">
+          <p class="m" style="margin: 0 0 4px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">你说过 · 假设</p>
+          <p style="margin: 0; font-size: 12.5px; line-height: 1.7;">重要的决定要等信息足够了再做,不然会错。</p>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+          <span class="m" style="font-size: 10px; letter-spacing: 0.06em; color: #9a9482;">支持 2 · 反证 3</span>
+          <span class="m" style="font-size: 10px; letter-spacing: 0.06em; color: #9a9482;">◇ 可展开</span>
+        </div>
+      </div>
+
+      <!-- 待抉择:回形针夹住,不可展开,点了是下钻到待办 -->
+      <div class="paper" style="grid-column: span 5; padding: 20px 22px 16px; transform: rotate(0.8deg); margin-top: 8px;">
+        <svg width="20" height="44" viewBox="0 0 20 44" style="position: absolute; top: -13px; left: 18px;" aria-hidden="true">
+          <path d="M4.5 40 V9 a5.5 5.5 0 0 1 11 0 V34" fill="none" stroke="#9c9585" stroke-width="2" stroke-linecap="round"/>
+          <path d="M10 34 a4 4 0 0 1-8 0 V13" fill="none" stroke="#9c9585" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Decisions / Waiting</p>
+        <h3 style="margin: 9px 0 0; font-size: 15px; font-weight: 600;">4 个待抉择</h3>
+        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">主页自由度:模型能生成到什么程度</span><span class="m" style="font-size: 10px; color: #9a9482;">3D</span></div>
+          <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">角色占比:秘书栏要不要可折叠</span><span class="m" style="font-size: 10px; color: #9a9482;">2D</span></div>
+          <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #7c8a3e; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">卡片权限:自定义 HTML 什么时候开</span><span class="m" style="font-size: 10px; color: #9a9482;">NEXT</span></div>
+          <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 7px; height: 7px; flex-shrink: 0; border: 1px solid #c35e4a; transform: rotate(45deg);"></span><span style="flex: 1; font-size: 12.5px;">学习周期:多久重算一次关系参数</span><span class="m" style="font-size: 10px; color: #c35e4a;">TODAY</span></div>
+        </div>
+      </div>
+
+      <!-- 专注闸门:便利贴 -->
+      <div class="paper" style="grid-column: span 4; padding: 18px 20px 16px; transform: rotate(-1.1deg); background: #fbf0c8;">
+        <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a29656;">Focus Gate / Temporary</p>
+        <h3 style="margin: 9px 0 0; font-size: 14.5px; font-weight: 600; line-height: 1.5;">我先替你挡住低优先级提醒</h3>
+        <p class="hand" style="margin: 12px 0 0; font-size: 17px; color: #9a6b3c; line-height: 1.35;">直到 16:00 · 只放行会阻塞你的事</p>
+        <span style="position: absolute; right: 0; bottom: 0; width: 0; height: 0; border-style: solid; border-width: 0 0 16px 16px; border-color: transparent transparent #e9e4d6 transparent;"></span>
+      </div>
+
+      <!-- 深度工作:方格纸 -->
+      <div class="paper" style="grid-column: span 4; padding: 18px 20px 16px; transform: rotate(0.6deg); margin-top: 6px; background-color: #fdfaf2; background-image: repeating-linear-gradient(0deg, rgba(120,140,90,.10) 0 1px, transparent 1px 15px), repeating-linear-gradient(90deg, rgba(120,140,90,.10) 0 1px, transparent 1px 15px);">
+        <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Today / Reshaped</p>
+        <h3 style="margin: 9px 0 0; font-size: 14.5px; font-weight: 600;">剩余 2 小时 10 分</h3>
+        <div style="margin-top: 14px; display: flex; align-items: flex-end; gap: 4px; height: 46px;">
+          <span style="flex: 1; height: 25%; background: #6cb2b6;"></span><span style="flex: 1; height: 45%; background: #6cb2b6;"></span><span style="flex: 1; height: 62%; background: #6cb2b6;"></span><span style="flex: 1; height: 85%; background: #5aa8ae;"></span><span style="flex: 1; height: 50%; background: #6cb2b6;"></span><span style="flex: 1; height: 95%; background: #5aa8ae;"></span><span style="flex: 1; height: 55%; background: #6cb2b6;"></span><span style="flex: 1; height: 30%; background: #8cc3c6;"></span><span style="flex: 1; height: 70%; background: #6cb2b6;"></span><span style="flex: 1; height: 35%; background: #8cc3c6;"></span>
+        </div>
+      </div>
+
+      <!-- 下班锚点 -->
+      <div class="paper" style="grid-column: span 4; padding: 18px 20px 16px; transform: rotate(-0.7deg); margin-top: 12px;">
+        <span class="tape" style="top: -9px; right: 24px; width: 60px; background-color: rgba(195,94,74,.32); transform: rotate(3deg);"></span>
+        <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">Life Anchor / Never Hidden</p>
+        <h3 style="margin: 9px 0 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">18:30 下班</h3>
+        <p style="margin: 10px 0 0; font-size: 12.5px; line-height: 1.75; color: #6b6656;">冲刺模式不会吞掉你设定的生活边界。</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ 本子层:同一张卡摊开成内页 ============ -->
+  <div class="layer book" style="display: flex; background-color: #faf6e9; background-image: repeating-linear-gradient(0deg, rgba(120,140,90,.085) 0 1px, transparent 1px 24px), repeating-linear-gradient(90deg, rgba(120,140,90,.085) 0 1px, transparent 1px 24px); box-shadow: inset 0 0 70px rgba(150,135,100,.09);">
+
+    <!-- 装订边 -->
+    <div style="width: 46px; flex-shrink: 0; border-right: 1px solid rgba(195,94,74,.28); display: flex; flex-direction: column; align-items: center; justify-content: space-around; padding: 42px 0; background: rgba(238,231,213,.5);">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #e9e4d6; box-shadow: inset 0 1px 2px rgba(92,80,52,.28);"></span>
+    </div>
+
+    <div style="flex: 1; min-width: 0; padding: 22px 28px 20px; position: relative; overflow-y: auto;">
+
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+        <div>
+          <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #8d8878;">摊开 · Cognition</p>
+          <p class="hand" style="margin: 2px 0 0; font-size: 16px; color: #a89a72;">这一页是同一张纸的里面</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="transform: rotate(-7deg); border: 2px solid rgba(195,94,74,.45); border-radius: 3px; padding: 3px 9px; opacity: .8;">
+            <p class="m" style="margin: 0; font-size: 10.5px; letter-spacing: 0.18em; color: rgba(195,94,74,.85);">08 · 19</p>
+          </div>
+          <button type="button" class="closebtn" onClick="{{close}}">← 合上,回桌面</button>
+        </div>
+      </div>
+
+      <!-- 1 被挑战的判断 -->
+      <h3 style="margin: 16px 0 0; font-size: 19px; font-weight: 600; line-height: 1.58; letter-spacing: -0.012em; max-width: 660px; text-wrap: pretty;">你把「信息还不够」当成推迟的理由,但最近 6 次这样推迟的决定里,后来补到的信息只有 1 次真的改变了你的选择。</h3>
+      <svg width="290" height="10" viewBox="0 0 290 10" style="display: block; margin: 4px 0 0 -3px;" aria-hidden="true">
+        <path d="M4 6 Q 74 2, 146 5 T 286 4" fill="none" stroke="#c35e4a" stroke-width="1.8" stroke-linecap="round" opacity=".5"/>
+      </svg>
+
+      <div style="margin-top: 16px; padding-left: 14px; border-left: 2px solid rgba(124,138,62,.45);">
+        <p class="m" style="margin: 0 0 4px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">你说过 · 假设 · 记录于 109 天前</p>
+        <p style="margin: 0; font-size: 13px; line-height: 1.7; color: #4a463a;">重要的决定要等信息足够了再做,不然会错。</p>
+      </div>
+
+      <!-- 2 为什么是今天 -->
+      <p style="margin: 14px 0 0; font-size: 12px; line-height: 1.75; color: #6b6656; max-width: 660px;"><span class="m" style="font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">为什么是今天　</span>这周有三件事停在「再看看」超过 4 天,其中两件的信息量从周一到现在没有变化。</p>
+
+      <!-- 3 证据两栏,视觉平权 -->
+      <div style="margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 26px;">
+        <div>
+          <p class="m" style="margin: 0 0 10px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #7c8a3e;">支持这条判断　2</p>
+          <div style="display: flex; flex-direction: column; gap: 11px;">
+            <p class="ev" style="margin: 0; font-size: 12px; line-height: 1.65; color: #5a5544;"><span style="border: 1px solid #7c8a3e;"></span><span>8/12—8/16 连续 5 天出现「再确认一下技术方案」类记录,方案文档没有新增修改。</span></p>
+            <p class="ev" style="margin: 0; font-size: 12px; line-height: 1.65; color: #5a5544;"><span style="border: 1px solid #7c8a3e;"></span><span>「定重构顺序」这条待办创建于 8/13,已顺延 3 次。</span></p>
+          </div>
+        </div>
+        <div>
+          <p class="m" style="margin: 0 0 10px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #c35e4a;">反对这条判断　3</p>
+          <div style="display: flex; flex-direction: column; gap: 11px;">
+            <p class="ev" style="margin: 0; font-size: 12px; line-height: 1.65; color: #5a5544;"><span style="border: 1px solid #c35e4a;"></span><span>你说过「我的角色是出方案、定方向」—— 定方向本身就包含在信息不全时下判断。</span></p>
+            <p class="ev" style="margin: 0; font-size: 12px; line-height: 1.65; color: #5a5544;"><span style="border: 1px solid #c35e4a;"></span><span>6 月定飞书入口方案时你半天就拍板,后续两个月没返工。那次信息量并不比现在多。</span></p>
+            <p class="ev" style="margin: 0; font-size: 12px; line-height: 1.65; color: #5a5544;"><span style="border: 1px solid #c35e4a;"></span><span>可逆决策上,等信息的成本通常高于选错后改回来的成本。<span class="m" style="font-size: 9.5px; color: #9a9482;">　外部材料</span></span></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4+5 边界与不确定性:页边手写 -->
+      <div style="margin-top: 20px; padding: 13px 15px; background: rgba(232,227,212,.42); border-radius: 1px; max-width: 660px;">
+        <p style="margin: 0; font-size: 12px; line-height: 1.7; color: #5a5544;"><span class="m" style="font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">什么情况下成立　</span>信息可得、且补充信息的成本低于决策成本时。</p>
+        <p class="hand" style="margin: 8px 0 0; font-size: 16px; line-height: 1.4; color: #9a6b3c;">我可能哪里看错了:如果这几件事卡住是在等别人回复而不是等信息,这条对你不成立 —— 直接告诉我。</p>
+      </div>
+
+      <!-- 6 替代视角 -->
+      <div style="margin-top: 18px; display: flex; gap: 11px; align-items: flex-start; max-width: 660px;">
+        <svg width="24" height="28" viewBox="0 0 24 28" style="flex-shrink: 0; margin-top: 2px;" aria-hidden="true">
+          <path d="M3 3 Q 4 17, 19 21" fill="none" stroke="#7c8a3e" stroke-width="1.6" stroke-linecap="round" opacity=".65"/>
+          <path d="M13 17 L 20 21.5 L 13 25" fill="none" stroke="#7c8a3e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".65"/>
+        </svg>
+        <div>
+          <p style="margin: 0; font-size: 13px; line-height: 1.72; color: #4a463a;">可逆的决定不需要等信息 —— 它自己就是最快的信息来源。真正需要等的是那些改不回来的。</p>
+          <p style="margin: 6px 0 0; font-size: 11.5px; line-height: 1.6; color: #a08b3e;">什么时候别用它:涉及对外承诺、合同、招人辞人、公开发布这类,原来的谨慎是对的。</p>
+        </div>
+      </div>
+
+      <!-- 7 验证动作:贴在页面右下的便签 -->
+      <div style="margin-top: 20px; display: flex; gap: 20px; align-items: flex-start;">
+        <div style="flex: 1; min-width: 0;">
+          <p class="m" style="margin: 0 0 8px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9482;">哪里不对</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 7px;">
+            <span style="font-size: 11.5px; color: #5a5544; background: rgba(232,227,212,.62); border-radius: 1px; padding: 5px 11px;">这个前提不成立</span>
+            <span style="font-size: 11.5px; color: #5a5544; background: rgba(232,227,212,.62); border-radius: 1px; padding: 5px 11px;">这条证据不适用于我</span>
+            <span style="font-size: 11.5px; color: #5a5544; background: rgba(232,227,212,.62); border-radius: 1px; padding: 5px 11px;">我早就这么想了</span>
+          </div>
+        </div>
+
+        <div style="width: 286px; flex-shrink: 0; padding: 15px 17px 14px; background: #fbf0c8; border-radius: 1px; transform: rotate(1.2deg); box-shadow: 0 1px 2px rgba(92,80,52,.08), 0 5px 14px rgba(92,80,52,.10); position: relative;">
+          <span class="tape" style="top: -9px; left: 50%; margin-left: -30px; width: 60px; background-color: rgba(198,216,48,.5); transform: rotate(-2deg);"></span>
+          <p class="m" style="margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #a29656;">Verify / 25 min · 可逆</p>
+          <p style="margin: 8px 0 0; font-size: 13px; font-weight: 600; line-height: 1.5;">挑一件卡了 3 天以上的事,25 分钟内定一个可逆版本</p>
+          <p style="margin: 8px 0 0; font-size: 11.5px; line-height: 1.65; color: #6b6656;">一周后回看:没改,或改了但只损失几天 —— 两种都算这个视角站得住。</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { opened: false };
+  }
+  renderVals() {
+    return {
+      stageClass: this.state.opened ? "is-open" : "",
+      open: () => this.setState({ opened: true }),
+      close: () => this.setState({ opened: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

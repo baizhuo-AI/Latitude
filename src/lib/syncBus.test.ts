@@ -1,7 +1,7 @@
 /**
  * syncBus.test.ts — 跨窗口同步桥接单测(修复 4.2)
  *
- * 重点覆盖「后端 daybreak://data-changed → 前端 syncBus」的 memory 孤儿桥:
+ * 重点覆盖「后端 latitude://data-changed → 前端 syncBus」的 memory 孤儿桥:
  *  1. dataChangedToSyncTopic 纯函数:memory 转嫁,其余返回 null(不重复广播)
  *  2. bridgeDataChangedToSync:收到 payload="memory" 的 data-changed → emitSync("memory")
  *  3. 非 memory payload 不转嫁(避免与 useDataSync 的 data-changed 路径双触发 hydrate)
@@ -22,7 +22,7 @@ import {
   bridgeDataChangedToSync,
 } from "./syncBus";
 
-const EVENT_NAME = "daybreak-sync";
+const EVENT_NAME = "latitude-sync";
 
 beforeEach(() => {
   emitSpy.mockClear();
@@ -62,7 +62,7 @@ describe("bridgeDataChangedToSync", () => {
     bridgeDataChangedToSync(fake.listenFn);
     await Promise.resolve();
     expect(fake.raw).toHaveBeenCalledWith(
-      "daybreak://data-changed",
+      "latitude://data-changed",
       expect.any(Function)
     );
   });

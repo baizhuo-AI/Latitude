@@ -1,0 +1,47 @@
+<h2>研究口径</h2>
+<p>本报告按四层证据判断产品：第一层是当前官网和 App Store 的实际表述；第二层是公开文档与仓库中能运行的能力；第三层是提交时间、归档、关闭或转向等状态证据；第四层才是基于这些事实作出的产品分析。营销愿景与已经存在的产品机制没有被混为一谈。</p>
+<p>“失败”也没有被笼统使用：Mycroft、Dot、Humane 属于明确关停或归档；Personal AI、Inflection 属于战略转向；OpenDAN、旧 Sentient 属于缺少持续产品化证据；Leon、OpenHuman、Sentient OS、Nova 等仍然活跃或处于早期。</p>
+
+<h2>重点产品与项目</h2>
+<ul>
+  <li><a href="https://macaron.im/">Macaron 官网</a>；<a href="https://apps.apple.com/us/app/macaron-ai-your-personal-ai/id6747623785">Macaron App Store</a></li>
+  <li><a href="https://jamesos.app/">JamesOS</a></li>
+  <li><a href="https://github.com/tinyhumansai/openhuman">OpenHuman GitHub</a>；<a href="https://github.com/tinyhumansai/openhuman/blob/main/gitbooks/README.md">OpenHuman 官方文档</a></li>
+  <li><a href="https://www.os7.dev/">OS7</a>；<a href="https://xyra.dev/">Xyra</a></li>
+  <li><a href="https://replika.com/">Replika</a>；<a href="https://help.replika.com/hc/en-us/articles/360000874712-What-does-my-Replika-remember-about-me">Replika Memory 说明</a></li>
+  <li><a href="https://cloud.tencent.cn/product/workbuddy">腾讯云 WorkBuddy</a></li>
+  <li><a href="https://github.com/Sentient-OS-Labs/sentient-os">Sentient OS</a></li>
+  <li><a href="https://www.gethaloapp.com/">HALO</a></li>
+  <li><a href="https://1presence.com/">1Presence</a>；<a href="https://1presence.com/docs/guides/memory">1Presence Memory</a></li>
+  <li><a href="https://github.com/RedPlanetHQ/core">RedPlanet CORE</a></li>
+  <li><a href="https://github.com/HeliosNova/nova">Nova</a></li>
+  <li><a href="https://github.com/Mindverse/Second-Me">Second Me</a></li>
+</ul>
+
+<h2>历史项目、关停与转向</h2>
+<ul>
+  <li><a href="https://github.com/fiatrete/OpenDAN-Personal-AI-OS">OpenDAN Personal AI OS</a></li>
+  <li><a href="https://github.com/MycroftAI/mycroft-core">Mycroft Core</a>；<a href="https://community.openconversational.ai/t/mycroft-winding-down-operations/13350">Mycroft winding down</a></li>
+  <li><a href="https://new.computer/">Dot / New Computer 关闭说明</a></li>
+  <li><a href="https://www.axios.com/2024/08/26/inflection-pi-ai-chatbot-enterprise">Inflection Pi 转向报道</a>；<a href="https://inflection.ai/about">Inflection 当前定位</a></li>
+  <li><a href="https://www.personal.ai/your-true-personal-ai">Personal AI 早期消费产品</a>；<a href="https://www.personal.ai/about">Personal AI 当前定位</a></li>
+  <li><a href="https://www.hp.com/us-en/newsroom/press-releases/2025/hp-accelerates-ai-software-investments-to-transform-the-future-of-work.html">HP 收购 Humane 资产公告</a></li>
+  <li><a href="https://github.com/leon-ai/leon">Leon</a></li>
+  <li><a href="https://github.com/existence-master/Sentient">旧 Sentient 项目</a></li>
+</ul>
+
+<h2>大平台方向</h2>
+<ul>
+  <li><a href="https://openai.com/index/introducing-chatgpt-pulse/">OpenAI：ChatGPT Pulse</a></li>
+  <li><a href="https://openai.com/index/chatgpt-memory-dreaming/">OpenAI：ChatGPT memory dreaming</a></li>
+  <li><a href="https://blog.google/innovation-and-ai/products/gemini-app/next-evolution-gemini-app/">Google：Gemini Daily Brief 与 Spark</a></li>
+  <li><a href="https://blog.google/innovation-and-ai/products/gemini-app/personal-intelligence/">Google：Gemini Personal Intelligence</a></li>
+  <li><a href="https://news.microsoft.com/april-2025-copilot-news/">Microsoft：Copilot memory 与 actions</a></li>
+  <li><a href="https://www.meta.com/superintelligence/">Meta：Personal Superintelligence</a>；<a href="https://about.fb.com/news/2026/07/meta-ai-muse-spark-doesnt-just-think-it-acts/">Meta AI actions</a></li>
+</ul>
+
+<h2>最后的判断</h2>
+<p>维度不是没有竞争，而是尚未出现一个把所有关键层连接起来的清楚赢家。这个窗口不会永远存在：上下文获取、主动简报、应用操作和生成界面都在迅速商品化。维度最值得抢的不是某个功能，而是一个用户能够感觉到、能够验证、也能够带走的关系复利机制。</p>
+<callout emoji="🧩" background-color="light-blue" border-color="blue">
+  <p><b>最小战略公式：</b>一个高频生活切口 × 可纠正个人模型 × 有生命周期的首页 × 复盘进入运行时 × 逐步获得的权能 × 可迁移的关系资产。</p>
+</callout>

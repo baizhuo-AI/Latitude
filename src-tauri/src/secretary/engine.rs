@@ -6,7 +6,7 @@
 //! 常驻 tokio 任务，不受任何窗口可见性影响。
 //!
 //! **范式照搬 [`crate::feishu::engine`]：** 同款 `tokio::time::interval` 循环 + 同款
-//! [`Notifier`]（`Arc<dyn Fn(&str)>` emit `daybreak://data-changed`）+ 同款「连库失败退出本任务、
+//! [`Notifier`]（`Arc<dyn Fn(&str)>` emit `latitude://data-changed`）+ 同款「连库失败退出本任务、
 //! 单 tick 失败只记日志不致命」的长命任务原则。
 //!
 //! **只做 activity_capture 这一档**：晨报 / 会议将至 / ddl / 任务搁置 / 刚完成仍留在前端 TS 调度器。
@@ -43,7 +43,7 @@ const ACTIVITY_REF_ID: &str = "activity_capture";
 
 /// 写库后通知前端刷新的回调（与 feishu::engine::Notifier 同形态）。
 ///
-/// 复用 lib.rs setup() 里现成的 notify 闭包（emit `daybreak://data-changed`）。投递落库后调
+/// 复用 lib.rs setup() 里现成的 notify 闭包（emit `latitude://data-changed`）。投递落库后调
 /// `notify("conversations")`，前端 `App.tsx useDataSync` 据此重新 hydrate 对话列表。
 pub type Notifier = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -67,8 +67,8 @@ fn capture_title(lang: &str) -> &'static str {
 /// 系统通知标题（与前端一致）。
 fn notify_title(lang: &str) -> &'static str {
     match lang {
-        "en" => "Daybreak Activity",
-        _ => "Daybreak 活动记录",
+        "en" => "Latitude Activity",
+        _ => "Latitude 活动记录",
     }
 }
 
@@ -258,7 +258,7 @@ async fn tick_once(app: &AppHandle, pool: &SqlitePool, notify: &Notifier) {
 /// 兜住（不冒泡、不退出）。
 ///
 /// 参数：
-///  - `db_path`：daybreak.db 路径（与前端 / mcp / feishu 共享同一文件，WAL 并发安全）。
+///  - `db_path`：latitude.db 路径（与前端 / mcp / feishu 共享同一文件，WAL 并发安全）。
 ///  - `app`：发系统通知 + 读托管配置 state 用。
 ///  - `notify`：写库后刷新前端的回调（复用 lib.rs 现成闭包）。
 pub async fn run_scheduler(db_path: PathBuf, app: AppHandle, notify: Notifier) {
@@ -353,7 +353,7 @@ mod tests {
         assert!(capture_prompt("en").contains("what've you been up to"));
         // 未知语言回落中文（不空文案）。
         assert!(capture_prompt("fr").contains("最近在忙啥"));
-        assert_eq!(notify_title("zh"), "Daybreak 活动记录");
+        assert_eq!(notify_title("zh"), "Latitude 活动记录");
         assert_eq!(capture_title("en"), "Activity Check-in");
     }
 }

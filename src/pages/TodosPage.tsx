@@ -41,8 +41,8 @@ interface GroupNode {
   children?: GroupNode[];
 }
 
-const LS_VIEW_KEY = "daybreak-todos-view";
-const LS_GROUP_CONFIG_KEY = "daybreak-todos-group-config";
+const LS_VIEW_KEY = "latitude-todos-view";
+const LS_GROUP_CONFIG_KEY = "latitude-todos-group-config";
 
 const BUILTIN_GROUP_FIELDS = ["priority", "status", "tags", "deadline"] as const;
 

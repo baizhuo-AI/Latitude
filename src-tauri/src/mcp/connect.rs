@@ -44,7 +44,7 @@ pub fn mcp_connection_info(app: tauri::AppHandle) -> Result<ConnectionInfo, Stri
     let token = load_or_create_token(&config_dir);
     let port = crate::mcp::MCP_PORT;
     let command = format!(
-        "claude mcp add --transport http daybreak http://127.0.0.1:{port}/mcp \
+        "claude mcp add --transport http latitude http://127.0.0.1:{port}/mcp \
          --header \"Authorization: Bearer {token}\""
     );
     Ok(ConnectionInfo {

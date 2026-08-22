@@ -24,9 +24,9 @@
  *   引擎(messages 数组)等价。app 是唯一的会话状态持有者;CLI 当哑引擎,一轮算一轮。
  *
  * 工具能力(MCP):跑前现取本机 MCP server 的接入信息(mcp_connection_info),把 url/token
- *   透传给 cli_agent_send。Rust 端 codex.rs 据此用 `codex exec -c mcp_servers.daybreak.url=...
- *   -c mcp_servers.daybreak.http_headers={Authorization="Bearer <token>"}` 在调用时程序化注入
- *   daybreak MCP(不写文件、不改用户 ~/.codex/config.toml),让 codex 能调 app 已有的工具。
+ *   透传给 cli_agent_send。Rust 端 codex.rs 据此用 `codex exec -c mcp_servers.latitude.url=...
+ *   -c mcp_servers.latitude.http_headers={Authorization="Bearer <token>"}` 在调用时程序化注入
+ *   latitude MCP(不写文件、不改用户 ~/.codex/config.toml),让 codex 能调 app 已有的工具。
  *   拿不到 MCP 时降级为纯聊天(不传 url/token),不报错。注入细节见 codex.rs。
  *
  * 边界 / 已知限制(与 claudeCodeAdapter 一致):

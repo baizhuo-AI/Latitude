@@ -172,7 +172,7 @@ beforeEach(() => {
 describe("composeMorningBriefing — 首日分支(无任何往日纪要)", () => {
   it("首日(无纪要)→ system prompt 走首日分支,包含自我介绍/引导关键词", async () => {
     // 不向 _digestStore 写入任何数据 → 首日场景
-    engine.script = [{ content: "你好！我是你的 AI 秘书 Daybreak…", model: "deepseek-chat" }];
+    engine.script = [{ content: "你好！我是你的 AI 秘书 Latitude…", model: "deepseek-chat" }];
 
     const ctx: MorningBriefingCtx = {
       dateKey: "2026-06-15",

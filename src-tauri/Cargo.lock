@@ -945,35 +945,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daybreak"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "chrono",
- "chrono-tz",
- "keyring",
- "open",
- "rand 0.8.6",
- "reqwest",
- "rmcp",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-notification",
- "tauri-plugin-single-instance",
- "tauri-plugin-sql",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "dbus"
 version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2391,6 +2362,35 @@ dependencies = [
  "security-framework 2.11.1",
  "security-framework 3.7.0",
  "zeroize",
+]
+
+[[package]]
+name = "latitude"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "chrono-tz",
+ "keyring",
+ "open",
+ "rand 0.8.6",
+ "reqwest",
+ "rmcp",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-notification",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-sql",
+ "tokio",
+ "url",
+ "uuid",
 ]
 
 [[package]]

@@ -36,7 +36,7 @@ export function ConnectionsPage() {
           <Section
             icon={<CalendarClock className="w-4 h-4" />}
             title="连接飞书 / Lark 日历"
-            description="把飞书/Lark 的日程同步进 Daybreak 日历。用你自己企业的「自建应用」凭证，零后端、密钥只存本机系统钥匙串。"
+            description="把飞书/Lark 的日程同步进 Latitude 日历。用你自己企业的「自建应用」凭证，零后端、密钥只存本机系统钥匙串。"
           >
             <FeishuConnectSection />
           </Section>
@@ -106,7 +106,7 @@ function McpAccessSection() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-        在终端运行下面这条命令，把 Daybreak 接入 Claude
+        在终端运行下面这条命令，把 Latitude 接入 Claude
         Code（配一次永久有效，重启 / 升级都不用重配）：
       </p>
       <div className="relative">
@@ -122,7 +122,7 @@ function McpAccessSection() {
         </button>
       </div>
       <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-        端口 {info.port}，仅本机可连，需保持 Daybreak 运行。密钥已自动生成并保存。
+        端口 {info.port}，仅本机可连，需保持 Latitude 运行。密钥已自动生成并保存。
       </p>
     </div>
   );

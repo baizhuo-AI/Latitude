@@ -12,7 +12,7 @@
 
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-const EVENT_NAME = "daybreak-sync";
+const EVENT_NAME = "latitude-sync";
 
 export type SyncTopic =
   | "todos"
@@ -65,9 +65,9 @@ export function onSync(topic: SyncTopic, handler: () => void): () => void {
 /**
  * 后端事件 → 前端 syncBus 的桥接（纯函数,便于单测)。
  *
- * 背景:Daybreak 有两条独立通道——
- *  (1) 后端→前端桥 `daybreak://data-changed`:Rust(MCP / 飞书同步)写库后 emit 的就是这条;
- *  (2) 应用内 `daybreak-sync`(本文件 emitSync/onSync):前端写库后广播、各窗口订阅刷新。
+ * 背景:Latitude 有两条独立通道——
+ *  (1) 后端→前端桥 `latitude://data-changed`:Rust(MCP / 飞书同步)写库后 emit 的就是这条;
+ *  (2) 应用内 `latitude-sync`(本文件 emitSync/onSync):前端写库后广播、各窗口订阅刷新。
  * 两条事件名不同,本身不互通。多数数据域(todos/goals/activities/calendar_events)恰好被
  * useDataSync 的 data-changed 监听覆盖,所以没事;但 `memory` 不在那个列表里,又只有 onSync("memory")
  * 的消费者(AboutYouPanel),于是 MCP 经 data-changed 发的 "memory" 会被丢弃——面板不实时刷新。
@@ -81,7 +81,7 @@ export function dataChangedToSyncTopic(payload: string): SyncTopic | null {
 }
 
 /**
- * 在常驻窗口挂一次:监听后端 `daybreak://data-changed`,把需要转嫁的 payload re-emit 到 syncBus,
+ * 在常驻窗口挂一次:监听后端 `latitude://data-changed`,把需要转嫁的 payload re-emit 到 syncBus,
  * 让现有 onSync 消费者(如 AboutYouPanel 的 onSync("memory"))收到。返回同步取消函数。
  *
  * listen 参数可注入,默认用 Tauri 的 listen;测试时注入假 listen 即可断言转嫁行为。
@@ -91,7 +91,7 @@ export function bridgeDataChangedToSync(
 ): () => void {
   let unlisten: UnlistenFn | null = null;
   let cancelled = false;
-  listenFn<string>("daybreak://data-changed", (event) => {
+  listenFn<string>("latitude://data-changed", (event) => {
     const topic = dataChangedToSyncTopic(event.payload);
     if (topic) emitSync(topic, "data-changed-bridge");
   })

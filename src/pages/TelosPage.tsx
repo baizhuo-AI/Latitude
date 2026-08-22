@@ -18,7 +18,7 @@ import { useConfirm } from "../components/ConfirmDialog";
  *
  * 按 period 分三组(年/季/月)展示。
  * 这些 goal 会被注入 Briefing 的 system prompt 和 Chat 上下文,
- * 让 AI 排今日 / 早安生成都基于"用户的长期方向",这是 Daybreak 的产品差异化。
+ * 让 AI 排今日 / 早安生成都基于"用户的长期方向",这是 Latitude 的产品差异化。
  */
 
 const PERIODS: GoalPeriod[] = ["year", "quarter", "month"];

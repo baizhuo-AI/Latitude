@@ -13,7 +13,7 @@
  *
  * 语义约定(isCloudBackend):
  *   "deepseek-api" 是唯一的「直连云端 API」后端。
- *   "claude-cli" / "codex-cli" / "kiro-cli" 走本地 CLI,用户本地凭证,不直接暴露给 Daybreak 后端。
+ *   "claude-cli" / "codex-cli" / "kiro-cli" 走本地 CLI,用户本地凭证,不直接暴露给 Latitude 后端。
  */
 
 import type { ChatBackend } from "./settings";

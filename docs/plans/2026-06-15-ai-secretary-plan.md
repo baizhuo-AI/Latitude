@@ -1,5 +1,10 @@
 # Daybreak AI 秘书 实施计划
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](../specs/2026-08-20-dimension-master-prd.md) · [工程实施计划](../plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 > **给下游执行者**:本计划颗粒度到「做哪些事 / 先后 / 依赖 / 验收 / 改哪些模块」。每个 Task 领走后,执行时再用 `superpowers:subagent-driven-development` 或 `executing-plans` 展开成代码级 TDD 步骤。复选框(`- [ ]`)用于跟踪。
 >
 > 配套设计稿:[2026-06-15-ai-secretary-design.md](../specs/2026-06-15-ai-secretary-design.md)

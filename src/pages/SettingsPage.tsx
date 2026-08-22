@@ -805,12 +805,12 @@ function ChatBackendField() {
       return `✗ 未在 PATH 检测到 ${key === "kiro" ? "kiro-cli" : key} 命令。请先安装：${hint}`;
     }
     if (key === "kiro") {
-      return "✓ 已检测到 kiro-cli。还需在系统环境变量里设置 KIRO_API_KEY（Kiro headless 强制要 key），MCP 在 Kiro 配置里加 daybreak server。";
+      return "✓ 已检测到 kiro-cli。还需在系统环境变量里设置 KIRO_API_KEY（Kiro headless 强制要 key），MCP 在 Kiro 配置里加 latitude server。";
     }
     if (key === "claude") {
-      return "✓ 已检测到 claude。先 claude login 登录订阅。Daybreak 启动 claude 时会自动配 MCP 指向本机 server。";
+      return "✓ 已检测到 claude。先 claude login 登录订阅。Latitude 启动 claude 时会自动配 MCP 指向本机 server。";
     }
-    return "✓ 已检测到 codex。先 codex login 登录。Daybreak 启动 codex 时会自动配 MCP 指向本机 server（无需手动 codex mcp add）。";
+    return "✓ 已检测到 codex。先 codex login 登录。Latitude 启动 codex 时会自动配 MCP 指向本机 server（无需手动 codex mcp add）。";
   })();
 
   return (

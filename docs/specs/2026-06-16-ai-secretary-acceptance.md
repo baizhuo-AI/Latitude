@@ -1,5 +1,10 @@
 # Daybreak AI 秘书改造 — 验收交接
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](2026-08-20-dimension-master-prd.md) · [工程实施计划](../plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 - 日期:2026-06-16(夜间自动推进完成,留待验收)
 - 分支:`feature/ai-secretary`(`main` 是你原来的飞书基线,**未动、未合并**)
 - 规模:40 个提交,92 文件,+20685 / -222

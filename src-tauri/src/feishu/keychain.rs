@@ -11,7 +11,7 @@ use keyring::Entry;
 use crate::feishu::Region;
 
 /// 钥匙串 service 名（同一 App 下飞书相关密钥的命名空间）。
-const KEYRING_SERVICE: &str = "com.daybreak.desktop.feishu";
+const KEYRING_SERVICE: &str = "com.latitude.desktop.feishu";
 
 /// 三类要进钥匙串的密钥。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

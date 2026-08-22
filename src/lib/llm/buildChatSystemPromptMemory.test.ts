@@ -104,13 +104,13 @@ describe("buildChatSystemPrompt — 记忆全量注入(直读 DB)", () => {
   it("把全部 active 记忆事实拼进 prompt", async () => {
     listMemoryFactsImpl = async () => [
       fact({ content: "用户是产品经理", source: "told" }),
-      fact({ content: "用户在做 Daybreak 项目", source: "told" }),
+      fact({ content: "用户在做 Latitude 项目", source: "told" }),
     ];
 
     const prompt = await buildChatSystemPrompt();
 
     expect(prompt).toContain("用户是产品经理");
-    expect(prompt).toContain("用户在做 Daybreak 项目");
+    expect(prompt).toContain("用户在做 Latitude 项目");
   });
 
   it("inferred 事实带「(推断)」标注;told 不带", async () => {

@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Daybreak"
+    "name": "Latitude"
   },
   "nav": {
     "briefing": "Briefing",
@@ -20,11 +20,15 @@
     "moreInSettings": "More features in Settings"
   },
   "floating": {
-    "title": "Daybreak · Tasks",
+    "title": "Latitude · Tasks",
     "placeholder": "Jot something (Enter)",
     "empty": "No tasks today. Jot something above to start.",
     "emptyScope": "Nothing active in this range.",
-    "scope": { "today": "Today", "week": "Week", "all": "All" },
+    "scope": {
+      "today": "Today",
+      "week": "Week",
+      "all": "All"
+    },
     "progress": "{{done}}/{{total}} done",
     "added": "Added",
     "addedNoParse": "Added (AI didn't parse, used original)",
@@ -39,7 +43,7 @@
     "todayLog": "Today's log {{count}}"
   },
   "topbar": {
-    "placeholder": "Tell Daybreak what you need to do…",
+    "placeholder": "Tell Latitude what you need to do…",
     "parsing": "AI parsing…",
     "field": {
       "deadline": "Deadline",
@@ -54,7 +58,7 @@
   },
   "briefing": {
     "greeting": "Good morning. Today is {{date}}.",
-    "subtitle": "Daybreak has prepared today's optimal plan.",
+    "subtitle": "Latitude has prepared today's optimal plan.",
     "freeTime": {
       "label": "Available focus time today: {{hours}}",
       "note": "Booked {{conflicts}}",
@@ -203,7 +207,15 @@
     "syncing": "Syncing…",
     "synced": "Synced · +{{up}} / -{{del}}",
     "syncFailed": "Sync failed: {{msg}}",
-    "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "weekdays": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
     "noScheduled": "Unscheduled",
     "unscheduledHeader": "Unscheduled ({{count}})",
     "unscheduledHint": "Drag onto the grid to schedule",
@@ -214,14 +226,14 @@
   },
   "chat": {
     "title": "Chat",
-    "placeholder": "Ask Daybreak anything about your day… (⌘+Enter to send)",
+    "placeholder": "Ask Latitude anything about your day… (⌘+Enter to send)",
     "comingSoon": "Chat coming soon.",
     "newConv": "New chat",
     "noConvs": "No chats yet. Click above to start one.",
     "send": "Send",
     "stop": "Stop",
     "sendHint": "⌘+Enter to send · Today's todos and Telos are auto-attached as context",
-    "emptyTitle": "Talk to Daybreak about today",
+    "emptyTitle": "Talk to Latitude about today",
     "emptyBody": "Today's todos, Telos goals and the current time are auto-attached. Ask things like \"can I push these two meetings to tomorrow\" or \"which should I tackle first\".",
     "deleteConv": "Delete conversation",
     "reasoning": "Reasoning",
@@ -257,7 +269,7 @@
   },
   "telos": {
     "title": "Telos · Long-term goals",
-    "subtitle": "Tell Daybreak your direction. It'll factor these in when planning your day and briefing.",
+    "subtitle": "Tell Latitude your direction. It'll factor these in when planning your day and briefing.",
     "comingSoon": "Telos coming soon.",
     "period": {
       "year": "Yearly",
@@ -275,7 +287,7 @@
     },
     "fields": {
       "title": "Goal",
-      "titlePlaceholder": "e.g. Ship Daybreak desktop 1.0 by Q3",
+      "titlePlaceholder": "e.g. Ship Latitude desktop 1.0 by Q3",
       "description": "Description (optional)",
       "descriptionPlaceholder": "Why this matters, definition of done…",
       "targetDate": "Target date (optional)",
@@ -309,7 +321,7 @@
     "sectionTitle": "Privacy & Cost",
     "sectionDesc": "Control what data is sent to cloud AI, memory boundaries, and proactive nudge frequency.",
     "disclosureTitle": "Cloud memory disclosure",
-    "disclosureBody": "When you use a cloud AI (e.g. DeepSeek API, Anthropic API), Daybreak sends your memory facts and today's tasks as a system prompt to the respective API provider. This data is not uploaded to Daybreak's own servers, but it does pass through the third-party AI provider's infrastructure. To prevent memory from being sent to the cloud, enable \"Local brain only\".",
+    "disclosureBody": "When you use a cloud AI (e.g. DeepSeek API, Anthropic API), Latitude sends your memory facts and today's tasks as a system prompt to the respective API provider. This data is not uploaded to Latitude's own servers, but it does pass through the third-party AI provider's infrastructure. To prevent memory from being sent to the cloud, enable \"Local brain only\".",
     "localOnlyBrain": "Local brain only",
     "localOnlyBrainDesc": "When enabled, memory facts are only injected into local CLI engines (Claude Code / Codex). If you are using a cloud API backend, memories will not be sent to third-party APIs.",
     "localOnlyBrainWarning": "⚠ Current backend is a cloud API — memory will not be injected into this session. Switch to a local CLI backend (Claude Code / Codex) to get both memory and privacy protection.",

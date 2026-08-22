@@ -1,5 +1,10 @@
 # Daybreak Spec:间歇式时间日志 + 日期选择器改造
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](specs/2026-08-20-dimension-master-prd.md) · [工程实施计划](plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 > 状态:待评审 / 实现前
 > 技术栈:Tauri 2 + React 18 + Vite + Tailwind + zustand + SQLite(`tauri-plugin-sql`)
 > 范围:两个独立功能,可分别交付。**建议日期改造先行**(纯前端、零依赖),时间日志后做(末尾涉及系统通知插件 + 一次重启)。

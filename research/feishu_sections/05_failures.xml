@@ -1,0 +1,71 @@
+<h2>先区分三种状态</h2>
+<callout emoji="🔎" background-color="light-yellow" border-color="yellow">
+  <p><b>停止：</b>仓库或服务明确归档、关闭。<b>转向：</b>团队还在，但从消费个人 AI 转去企业、基础设施或其他业务。<b>停滞：</b>仍有页面或零星提交，却缺少持续产品化证据。原因分析是根据公开事实作出的推断，不等同于创始团队的官方解释。</p>
+</callout>
+
+<h2>OpenDAN：宏大架构先于日常价值</h2>
+<p><b>状态事实：</b>仓库长期停在早期版本，2024 年 8 月后间隔约十九个月才出现一次文档型提交；Agent 商店等路线长期停留在计划。使用者需要 Docker、模型 API token 和命令行。</p>
+<p><b>原因判断：</b>它同时承担操作系统、Agent 市场、知识库、工作流、IoT、分布式计算和多角色助手，系统边界远远大于可验证的日常闭环。架构对开发者很有吸引力，但普通用户第一次价值来得太晚，维护面却从第一天就很大。</p>
+<p><b>维度应避免：</b>不要以“搭好底层后什么都能做”为首版逻辑；先让一个用户在一周内体验到“纠正一次，系统真的变了”。</p>
+
+<h2>Mycroft：隐私与开源使命败给了硬件和经济现实</h2>
+<p><b>状态事实：</b>Mycroft Core 已归档且明确不再维护；公司在 2023 年裁员并进入收尾。公开说明与媒体报道提到硬件合作受挫、自研生产、零部件与供应链、认证成本、专利诉讼等压力。</p>
+<p><b>原因判断：</b>团队在软件助手尚未形成稳定商业闭环前承担了硬件制造、库存、交付、云服务和生态维护。隐私优先与开源赢得认同，却不能自动支付长期模型、连接和服务成本。</p>
+<p><b>维度应避免：</b>不以专用硬件作为成立前提；本地优先必须配套可持续的模型与同步经济；服务中断时用户的关系资产仍能继续使用。</p>
+<p>证据：<a href="https://github.com/MycroftAI/mycroft-core">Mycroft Core</a>、<a href="https://community.openconversational.ai/t/mycroft-winding-down-operations/13350">Mycroft winding down 说明</a>。</p>
+
+<h2>Dot：最残酷的不是关停，而是关系无法带走</h2>
+<p><b>状态事实：</b>Dot 曾服务数十万用户，团队最终因创始人的长期方向不同而关闭。官方给出有限时间让用户导出数据；此后用户失去一个被视作朋友、知己或陪伴者的服务。</p>
+<p><b>原因判断：</b>关系型产品不仅有数据锁定，还有情感锁定。团队战略变化会直接伤害用户，而普通聊天导出无法在另一系统中恢复“它了解我到哪里、我们形成了什么判断、我授权过什么”。</p>
+<p><b>维度应避免：</b>从第一天定义“关系迁移包”，至少包含原始记忆、个人模型、证据与置信度、关系阶段、首页模块、规则、权能账本和重要互动摘要。用户拥有的不只是聊天记录，而是可恢复的共同历史。</p>
+<p>证据：<a href="https://new.computer/">New Computer / Dot 关闭说明</a>。</p>
+
+<h2>Inflection Pi：温暖对话难以单独构成长期护城河</h2>
+<p><b>状态事实：</b>Pi 曾以高情商个人 AI 建立鲜明品牌；核心创始人与大量人才转入 Microsoft 后，Inflection 明显转向企业方向，Pi 的资源和使用策略受到影响。</p>
+<p><b>原因判断：</b>高质量语气和陪伴在基础模型迭代中容易被追平；消费者对话的计算与获客成本高，行动与生态又掌握在平台手中。当差异主要来自模型人格而不是用户拥有的关系系统，团队和模型变化会迅速削弱护城河。</p>
+<p><b>维度应避免：</b>不要把“更像人”当唯一价值；人格必须连接可迁移的个人模型、可见系统变化和真实承担。</p>
+<p>证据：<a href="https://www.axios.com/2024/08/26/inflection-pi-ai-chatbot-enterprise">Pi 与企业转向报道</a>、<a href="https://inflection.ai/about">Inflection 当前定位</a>。</p>
+
+<h2>Personal AI：个人模型与记忆可以成为基础设施，却未必自动成为消费习惯</h2>
+<p><b>状态事实：</b>早期 Personal AI 强调每个人训练自己的 Personal Language Model、Memory Stack、消息自动起草和 autopilot；目前公司的重心转向 carrier-native memory infrastructure、边缘部署和运营商经济。</p>
+<p><b>原因判断：</b>“用户拥有自己的模型和记忆”是强技术价值，却没有天然回答用户为什么每天打开、哪件事值得它介入、如何验证它越来越有用。基础设施可能比消费产品更容易获得清晰付费方。</p>
+<p><b>维度应避免：</b>不要把个人模型本身当产品终点；它必须通过首页、判断、行动和复盘被感知。</p>
+<p>证据：<a href="https://www.personal.ai/your-true-personal-ai">Personal AI 早期消费定位</a>、<a href="https://www.personal.ai/about">当前公司定位</a>。</p>
+
+<h2>Humane AI Pin：在软件习惯成立前替换交互范式</h2>
+<p><b>状态事实：</b>Humane 的核心资产被 HP 收购，AI Pin 的消费者云功能随后终止。产品承担了新硬件、蜂窝连接、投影交互、模型服务和售后等多重复杂度，并受到价格、可靠性和体验批评。</p>
+<p><b>原因判断：</b>用户尚未确认为什么每天需要这个助手，就先被要求购买新设备、学习新动作并接受更慢的交互。技术愿景把产品价值推迟到生态和硬件都成熟之后。</p>
+<p><b>维度应避免：</b>先在用户已有设备和习惯里证明关系闭环；硬件只能是未来的自然延伸。</p>
+<p>证据：<a href="https://www.hp.com/us-en/newsroom/press-releases/2025/hp-accelerates-ai-software-investments-to-transform-the-future-of-work.html">HP 收购公告</a>。</p>
+
+<h2>Leon：活着不等于已经跨过产品化鸿沟</h2>
+<p><b>状态事实：</b>Leon 仍在开发 2.0 developer preview，公开说明承认主要由维护者业余推进、进度不均、文档与新版本存在落差。因此它不是失败项目，但说明通用助手的长期维护成本。</p>
+<p><b>原因判断：</b>语音、模型、技能、系统兼容、集成与文档都会永久变化。单维护者可以守住理念，却很难同时提供消费级 onboarding、可靠性和更新速度。</p>
+<p><b>维度应避免：</b>控制自维护的集成面；把域内执行交给成熟工具；模块接口稳定、实现可替换。</p>
+<p>证据：<a href="https://github.com/leon-ai/leon">Leon 仓库</a>。</p>
+
+<h2>Second Me 与旧 Sentient：开发者兴趣不等于消费者留存</h2>
+<p><b>状态事实：</b>Second Me 的开源仓库更新放缓，同时大量 issue 指向 Apple Silicon、Docker、训练和模型配置门槛；较早的 existence-master/Sentient 以“personal superintelligence”起步，公开开发在 2025 年后停住。</p>
+<p><b>原因判断：</b>开源社区会为架构、隐私和宏大愿景点星，但普通用户衡量的是第一次帮助有多快、每天为什么回来、出错时能否信任。安装和训练越重，越容易得到开发者 demo 而不是生活习惯。</p>
+<p>证据：<a href="https://github.com/Mindverse/Second-Me">Second Me</a>、<a href="https://github.com/existence-master/Sentient">旧 Sentient 项目</a>。</p>
+
+<h2>跨案例的十二种失败模式</h2>
+<table>
+  <thead><tr><th background-color="light-gray">失败模式</th><th background-color="light-gray">它在产品里如何出现</th><th background-color="light-gray">维度的反向原则</th></tr></thead>
+  <tbody>
+    <tr><td>1. OS 先于入口</td><td>先造内核、市场、Agent 群，再寻找高频需求</td><td>先证明一个每日闭环，底层只为闭环服务</td></tr>
+    <tr><td>2. 第一次价值前的配置税</td><td>Docker、模型 key、权限、全盘访问、训练</td><td>默认形态先可用，自由度逐步展开</td></tr>
+    <tr><td>3. 广度维护税</td><td>连接器、语音、硬件、电脑控制同时维护</td><td>少量稳定接口，域内执行外包给专业系统</td></tr>
+    <tr><td>4. 记忆没有后果</td><td>能检索事实，却不改变建议和界面</td><td>每类记忆都映射到可观察行为</td></tr>
+    <tr><td>5. 行动先于信任</td><td>一开始就申请高风险权限</td><td>权能由成功经验逐级获得，可随时降级</td></tr>
+    <tr><td>6. 品类混乱</td><td>伙伴、分身、第二大脑、OS、商店同时讲</td><td>先讲一个用户结果，再解释底层自由度</td></tr>
+    <tr><td>7. Demo 与习惯脱节</td><td>多 Agent、全量摄取很惊艳，却没有每日理由</td><td>用一周内的“被懂且系统改变”作为激活</td></tr>
+    <tr><td>8. 星标误当留存</td><td>开发者认可理念，消费者仍不会使用</td><td>分别验证技术兴趣与生活行为</td></tr>
+    <tr><td>9. 经济与分发不成立</td><td>高计算、高支持，付费理由模糊</td><td>优先高价值判断与轻量交互，控制后台成本</td></tr>
+    <tr><td>10. 关系不可迁移</td><td>服务关闭等于共同历史消失</td><td>关系状态和规则采用开放、可导出格式</td></tr>
+    <tr><td>11. 硬件过早</td><td>习惯未成立就承担生产、库存和售后</td><td>先在现有设备证明软件循环</td></tr>
+    <tr><td>12. “本地优先”表述过度</td><td>关键模型、搜索或连接仍依赖托管服务</td><td>把每条数据路径、推断位置和外发原因讲清</td></tr>
+  </tbody>
+</table>
+
+<p>再补一条维度特有的风险：<b>系统自我修改如果没有 diff、理由、有效期和回滚，就会从“会成长”变成“不可预测”。</b>所有主页变化、判断规则和权限升级都必须可追踪。</p>

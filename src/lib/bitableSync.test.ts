@@ -24,7 +24,7 @@ const PROJECT_FIELD: FieldDefinition = {
   name: "项目",
   type: "single_select",
   options: [
-    { id: "opt_a", label: "Daybreak 飞书插件", color: "#111" },
+    { id: "opt_a", label: "Latitude 飞书插件", color: "#111" },
     { id: "opt_b", label: "日历同步", color: "#222" }
   ],
   sortOrder: 0,
@@ -74,14 +74,14 @@ describe("buildSyncPlan", () => {
     const plan = buildSyncPlan({
       todos: [makeTodo("推进解析", "opt_a")],
       fieldDefs: [PROJECT_FIELD],
-      existingRows: [row("rec_existing", "Daybreak 飞书插件")],
+      existingRows: [row("rec_existing", "Latitude 飞书插件")],
       tableFields: TABLE_FIELDS
     });
     expect(plan.needProjectField).toBe(false);
     expect(plan.groups).toHaveLength(1);
     expect(plan.groups[0].op).toBe("update");
     expect(plan.groups[0].recordId).toBe("rec_existing");
-    expect(plan.groups[0].project).toBe("Daybreak 飞书插件");
+    expect(plan.groups[0].project).toBe("Latitude 飞书插件");
     expect(plan.groups[0].items[0].title).toBe("推进解析");
   });
 
@@ -99,9 +99,9 @@ describe("buildSyncPlan", () => {
 
   it("项目名相近(子串) → suspectNew=true 但仍 create", () => {
     const plan = buildSyncPlan({
-      todos: [makeTodo("做点啥", "opt_a")], // label "Daybreak 飞书插件"
+      todos: [makeTodo("做点啥", "opt_a")], // label "Latitude 飞书插件"
       fieldDefs: [PROJECT_FIELD],
-      existingRows: [row("rec_y", "Daybreak")], // 现有"Daybreak"是子串
+      existingRows: [row("rec_y", "Latitude")], // 现有"Latitude"是子串
       tableFields: TABLE_FIELDS
     });
     expect(plan.groups[0].op).toBe("create");
@@ -110,9 +110,9 @@ describe("buildSyncPlan", () => {
 
   it("空格/大小写差异视为命中(归一化匹配)", () => {
     const plan = buildSyncPlan({
-      todos: [makeTodo("x", "opt_a")], // "Daybreak 飞书插件"
+      todos: [makeTodo("x", "opt_a")], // "Latitude 飞书插件"
       fieldDefs: [PROJECT_FIELD],
-      existingRows: [row("rec_z", "Daybreak飞书插件")], // 无空格
+      existingRows: [row("rec_z", "Latitude飞书插件")], // 无空格
       tableFields: TABLE_FIELDS
     });
     expect(plan.groups[0].op).toBe("update");

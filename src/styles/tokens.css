@@ -1,5 +1,5 @@
 /**
- * Daybreak design tokens
+ * Latitude design tokens
  * 暗色优先(html.dark),亮色作为可选
  *
  * 颜色全部用 "R G B" 三元组形式,以便 Tailwind 用 `rgb(var(--xxx) / <alpha-value>)`

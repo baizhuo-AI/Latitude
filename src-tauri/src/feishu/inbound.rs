@@ -1,11 +1,11 @@
-//! 飞书入站消费端 —— 监督 lark-cli 的事件长连接，把飞书 IM 消息接进 Daybreak。
+//! 飞书入站消费端 —— 监督 lark-cli 的事件长连接，把飞书 IM 消息接进 Latitude。
 //!
-//! 背景：Daybreak 的飞书集成原本只有「出站」（主动拉日历 / 写日历）。要让飞书成为对话入口，
+//! 背景：Latitude 的飞书集成原本只有「出站」（主动拉日历 / 写日历）。要让飞书成为对话入口，
 //! 需要「入站」：用户私聊 bot 的消息要能进到秘书核心。本模块负责入站：收到消息 → emit 给主窗
 //! 前端的飞书桥（feishuChat.ts），由其跑秘书核心并回复（出站见 feishu/outbound.rs）。
 //!
 //! 为什么走 lark-cli 而不是自己写长连接：飞书长连接协议 + bot 身份认证 lark-cli 全包，
-//! 旧 bot（claude-bridge）已用 `lark-cli event consume` 验证可行。Daybreak 的 cli_agent
+//! 旧 bot（claude-bridge）已用 `lark-cli event consume` 验证可行。Latitude 的 cli_agent
 //! 本来就在 spawn 外部 CLI，这里复用同一套二进制解析 + PATH 注入逻辑。
 //!
 //! 两个 spawn 血泪坑（旧 bot 验证过）：
@@ -164,7 +164,7 @@ fn handle_event(line: &str, app: &AppHandle) {
             event_id: event_id.to_string(),
             text: content.to_string(),
         };
-        // emit 给前端飞书桥（只主窗挂了监听）。用广播 emit，沿用 daybreak://data-changed 同款模式。
+        // emit 给前端飞书桥（只主窗挂了监听）。用广播 emit，沿用 latitude://data-changed 同款模式。
         if let Err(e) = app.emit("feishu://incoming", payload) {
             eprintln!("[feishu-inbound] emit 给前端失败: {e}");
         }

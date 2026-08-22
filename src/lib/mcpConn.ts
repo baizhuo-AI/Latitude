@@ -30,7 +30,7 @@ export interface McpConnInfo {
  *
  * 后端约定:streamable-http transport,server 在 127.0.0.1:<port>,服务路径 /mcp。
  * 这条 url 会原样传给 cli_agent_send 的 mcpUrl —— claude.rs 写进临时 mcp config 的 "url",
- * codex.rs 写进 `-c mcp_servers.daybreak.url="<url>"`。
+ * codex.rs 写进 `-c mcp_servers.latitude.url="<url>"`。
  *
  * @param conn 来自 `mcp_connection_info` 的返回;为 null(拿不到接入信息)时返回 undefined,
  *   调用方据此降级为纯聊天(不传 mcpUrl/mcpToken),与既有「拿不到 MCP 不报错」语义一致。

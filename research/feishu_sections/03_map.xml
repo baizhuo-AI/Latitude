@@ -1,0 +1,44 @@
+<h2>用六个维度看市场，而不是按“是不是 AI OS”分类</h2>
+<p>“个人 AI OS”这个标签混入了陪伴、第二大脑、数字分身、Agent 平台、应用生成器和硬件助手，容易造成假竞品。更有效的判断维度是：关系是否长期、个人上下文是否全面、界面是否自适应、是否能行动、是否有成长复盘、用户是否能拥有并迁移核心状态。</p>
+
+<table>
+  <thead><tr><th background-color="light-gray">产品</th><th background-color="light-gray">关系连续性</th><th background-color="light-gray">个人上下文</th><th background-color="light-gray">自适应界面</th></tr></thead>
+  <tbody>
+    <tr><td>Replika</td><td>强</td><td>中：个人事实与关系记忆</td><td>弱：以聊天和固定功能为主</td></tr>
+    <tr><td>JamesOS</td><td>强</td><td>强：为单一用户深度定制</td><td>中：围绕个人流程持续演化</td></tr>
+    <tr><td>OpenHuman</td><td>弱到中</td><td>强：广泛集成与知识结构</td><td>中：线程任务和后台活动</td></tr>
+    <tr><td>Sentient OS</td><td>弱到中</td><td>强：文件、消息、截图等</td><td>中：主动晨间卡片</td></tr>
+    <tr><td>Xyra</td><td>弱</td><td>弱到中：来自用户输入</td><td>强：生成 dashboard 与 tracker</td></tr>
+    <tr><td>OS7</td><td>弱</td><td>取决于生成应用</td><td>强：生成应用与工作流</td></tr>
+    <tr><td>1Presence</td><td>中</td><td>强：透明、可纠正的记忆</td><td>中：知识与工作表面</td></tr>
+    <tr><td>WorkBuddy</td><td>弱</td><td>强：办公上下文</td><td>中：项目空间与交付物</td></tr>
+    <tr><td>维度目标</td><td><b>强</b></td><td><b>强且有置信度</b></td><td><b>强且会生长、衰减</b></td></tr>
+  </tbody>
+</table>
+
+<table>
+  <thead><tr><th background-color="light-gray">产品</th><th background-color="light-gray">行动执行</th><th background-color="light-gray">成长复盘</th><th background-color="light-gray">可拥有、可迁移</th></tr></thead>
+  <tbody>
+    <tr><td>Replika</td><td>弱</td><td>中：鼓励、目标、习惯</td><td>弱</td></tr>
+    <tr><td>JamesOS</td><td>强：审批式代办</td><td>强：晨会、夜间整理、长期思考</td><td>强，但只服务创建者</td></tr>
+    <tr><td>OpenHuman</td><td>强：浏览器、电脑、代码、任务</td><td>弱到中</td><td>中：开源与本地 Vault，但含托管依赖</td></tr>
+    <tr><td>Sentient OS</td><td>强：借助 Codex Computer Use</td><td>弱到中：主动建议</td><td>中到强：本地知识库，仍依赖外部模型</td></tr>
+    <tr><td>Xyra</td><td>中：在生成表面内</td><td>弱</td><td>尚不清楚</td></tr>
+    <tr><td>OS7</td><td>强：在生成应用内</td><td>弱</td><td>尚不清楚</td></tr>
+    <tr><td>1Presence</td><td>中</td><td>中：模式、承诺和连续性</td><td>较强：Obsidian 兼容</td></tr>
+    <tr><td>WorkBuddy</td><td>强：办公执行</td><td>弱：不是其任务</td><td>中：依赖平台生态</td></tr>
+    <tr><td>维度目标</td><td><b>逐步获得、可撤销</b></td><td><b>复盘必须改变系统</b></td><td><b>关系状态完整可迁移</b></td></tr>
+  </tbody>
+</table>
+
+<h2>四类产品的典型终点</h2>
+<ul>
+  <li><b>陪伴型：</b>对话越多，下一次对话越亲密。代表 Replika、Dot、Pi。</li>
+  <li><b>执行型：</b>表达意图，系统把任务做完。代表 WorkBuddy、Codex、OpenHuman 的工具层。</li>
+  <li><b>生成式表面：</b>表达需求，系统生成应用、看板或小工具。代表 Xyra、OS7、Macaron。</li>
+  <li><b>第二大脑型：</b>数据进入后可被检索、关联和总结。代表 1Presence、RedPlanet CORE 以及 OpenHuman 的记忆层。</li>
+</ul>
+<p><b>维度要建立第五种终点：</b>关系越深，个人模型越准确；模型越准确，系统越贴合；系统越贴合，用户越愿意授权；行动结果再反过来校准关系。不是一次任务完成，而是个人运行方式被持续重构。</p>
+
+<h2>真正的竞争坐标</h2>
+<p>横轴不应是“功能多寡”，而是从固定界面到持续演化的系统；纵轴不应是“模型聪明程度”，而是从无关系的工具到长期、可验证的相互了解。大多数产品只在一个轴上很强：Replika 关系强但系统弱；Xyra 演化表面强但关系弱；OpenHuman 和 Sentient 上下文、行动强，但关系模型弱；JamesOS 最接近右上角，却是一个人为自己定制的封闭样本。维度要把右上角变成可规模化产品。</p>

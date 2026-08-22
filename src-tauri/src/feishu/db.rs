@@ -19,7 +19,7 @@ use std::time::Duration;
 use crate::feishu::Region;
 use crate::util::{gen_id, now_iso};
 
-/// 连接 daybreak.db（与 mcp/db.rs 的 connect 同款配置）。
+/// 连接 latitude.db（与 mcp/db.rs 的 connect 同款配置）。
 ///
 /// create_if_missing(false)：库由前端创建/建表，Rust 只读写既有库。空库上跑会 `no such
 /// table`——这是刻意的时序约束（必须先起一次前端建表，Rust 才能用），不在 Rust 侧兜底建表。

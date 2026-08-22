@@ -33,7 +33,7 @@ function newConvId(): string {
   return `c${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/** 找到（或新建）某个飞书会话对应的 Daybreak conversation，返回 conversationId。 */
+/** 找到（或新建）某个飞书会话对应的 Latitude conversation，返回 conversationId。 */
 async function resolveFeishuConv(chatId: string): Promise<string> {
   const existing = await dbFindConversationByExternal("feishu", chatId);
   if (existing) return existing.id;

@@ -28,7 +28,7 @@ const config: Config = {
         warning: rgbVar("--warning"),
         danger: rgbVar("--danger"),
 
-        // 调色盘(daybreak 大量直接用 zinc-XXX/indigo-XXX)
+        // 调色盘(latitude 大量直接用 zinc-XXX/indigo-XXX)
         zinc: {
           50: rgbVar("--zinc-50"),
           100: rgbVar("--zinc-100"),

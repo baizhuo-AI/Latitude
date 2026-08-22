@@ -154,8 +154,8 @@ export function Launcher() {
         onPointerDown={(e) => void handlePointerDown(e)}
         onPointerMove={(e) => void handlePointerMove(e)}
         onPointerUp={(e) => void handlePointerUp(e, "main")}
-        title="Daybreak"
-        aria-label="Daybreak"
+        title="Latitude"
+        aria-label="Latitude"
         className="flex h-10 w-10 flex-shrink-0 touch-none select-none items-center justify-center rounded-full bg-accent text-white transition-transform active:scale-95"
       >
         <Plus className={cn("h-5 w-5 transition-transform", expanded && "rotate-45")} />

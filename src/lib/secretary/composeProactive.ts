@@ -289,7 +289,7 @@ export async function composeMorningBriefing(
   await dbTouchConversation(convId).catch(() => undefined);
 
   // 6. 发出跨窗口数据变更事件:让监听 "conversations" 的窗口(含 ChatBar)hydrate 出这条新简报对话。
-  //    多窗口架构下各窗口有独立 chatStore,统一靠 emitSync + daybreak://data-changed 刷新,
+  //    多窗口架构下各窗口有独立 chatStore,统一靠 emitSync + latitude://data-changed 刷新,
   //    不在此处直接改 in-memory store(那只能影响本窗口,反而不一致)。
   emitSync("conversations");
 

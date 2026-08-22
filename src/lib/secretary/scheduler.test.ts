@@ -26,7 +26,7 @@ function makeControllableStorage(overrideOwnerId: string | null = null): Schedul
 } {
   const store = new Map<string, string>();
   let _override = overrideOwnerId;
-  const LOCK_KEY = "daybreak.secretary.scheduler.lock";
+  const LOCK_KEY = "latitude.secretary.scheduler.lock";
   return {
     getItem: (k) => {
       if (k === LOCK_KEY && _override !== null) {

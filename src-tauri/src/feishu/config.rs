@@ -1,4 +1,4 @@
-//! 飞书/Lark 的**非敏感**配置落盘（`feishu_config.json`，与 daybreak.db 同目录）。
+//! 飞书/Lark 的**非敏感**配置落盘（`feishu_config.json`，与 latitude.db 同目录）。
 //!
 //! 关键决策：敏感/非敏感分家——`app_id`（公开）、连接状态、token 过期时间走这份明文
 //! JSON；`app_secret`、access/refresh token 走 OS keychain（见 keychain.rs），绝不进这里。
@@ -76,7 +76,7 @@ mod tests {
 
     /// 每个测试用独立临时目录，避免相互干扰、可并行。
     fn tmp_dir() -> PathBuf {
-        let d = std::env::temp_dir().join(format!("daybreak_feishu_cfg_{}", uuid::Uuid::new_v4()));
+        let d = std::env::temp_dir().join(format!("latitude_feishu_cfg_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

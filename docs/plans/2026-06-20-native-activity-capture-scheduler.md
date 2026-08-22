@@ -1,5 +1,10 @@
 # 活动记录原生调度器(Native Activity-Capture Scheduler)实施方案
 
+> ⚠️ **文档状态：historical（已实现，口径可能过期）**
+> 本文描述的是 Latitude 早期（Daybreak 时期）的设计与实现，**不是当前产品规范**。
+> 当前权威：[产品总纲](../specs/2026-08-20-dimension-master-prd.md) · [工程实施计划](../plans/2026-08-20-dimension-implementation-plan.md)。
+> 保留原因：其中的实现细节与踩坑记录仍对工程有效。
+
 > **给下游执行的技术方案。** 任务用 `- [ ]` 跟踪。颗粒到"做哪几件事 / 顺序 / 依赖 / 验收",不逐行写代码——下游照仓库现有范式实现。
 >
 > **背景:** 活动记录("这阵在忙啥")的心跳目前是主工作台窗口渲染进程里的 `setInterval`(`src/lib/secretary/scheduler.ts` + `wiring.ts startSecretaryScheduler`,挂在 `App.tsx` MainWindow)。macOS 会冻结隐藏/最小化窗口里的 JS 定时器,而本 app 常态就是藏主窗只露悬浮条 → **藏窗即停**,主动提醒形同虚设。
