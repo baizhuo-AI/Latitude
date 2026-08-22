@@ -41,7 +41,7 @@
 | `src/lib/db.ts` | 拆分 | 按领域拆 `src/lib/db/migrations/` + `repositories/`，停止单文件膨胀 |
 | `src/components/BoardShell.tsx` / `Sidebar.tsx` | 替换 | 被布局文档渲染器与「桌面唯一入口」导航模型替换 |
 | 飞书 bridge | 复用改造 | 抽出 channel adapter 接口，微信 iLink 为第二实现 |
-| `src/dimension/`（dimension.css、types.ts） | 复用 | 视觉 token 直接用；types 升级为布局文档三层 schema |
+| `src/dimension/`（dimension.css、types.ts） | 复用 | 视觉 token 与原生卡 payload 直接用；布局三层 schema 独立放入 `src/runtime/layout/`，避免业务内容与排布耦合 |
 
 **目录边界**（新代码只进新边界，旧调用逐个替换，不为整洁而搬家）：
 
@@ -129,15 +129,15 @@ exitCriteria · rollbackVersion
 | §3.3 写模型 | 三层知识模型（Evidence / Observation / Claim）、AGM 修订、双时态 | 批次 0（六表）→ P1（全量本体） | `src/domain/graph/`、`src/lib/db/migrations/` | 未开工 |
 | §3.3 读模型 | 投影只读领域层，禁止投影间互读 | P1 → P3 | `src/projections/` | 未开工 |
 | §3.4 插件器官 | 感知=眼耳、通道=嘴、执行=手；共用授权与账本 | P4（授权体系）| `src/plugins/` | 未开工 |
-| §4.1 四象限 | 资讯 / 日程 / 复盘 / 规划 + 血缘链路 | 批次 0（种子布局）→ P2（全规格） | `src/dimension/`（原型）→ `src/runtime/layout/` | **原型**（`src/dimension/` 未挂载） |
-| §4.1 反茧房硬约束 | 日上限 ≤3、必须挂靠张力、异质加权 | 批次 0 | 资讯策展模块（待建），**写代码不写 prompt** | 未开工 |
+| §4.1 四象限 | 资讯 / 日程 / 复盘 / 规划 + 血缘链路 | 批次 0（种子布局）→ P2（全规格） | `src/runtime/layout/` + `src/projections/desktop/` | **原型**（默认关闭的主窗功能开关已挂载；当前为 seed projection） |
+| §4.1 反茧房硬约束 | 日上限 ≤3、必须挂靠张力、异质加权 | 批次 0 | `src/dimension/cards/FeedCard.tsx` + 资讯策展模块（待建） | 部分已实现（渲染硬上限与反馈三键已落地；策展算法未开工） |
 | §4.2 三档生产方式 | 自动 / 提案 / 共创 | 批次 0 | 复用 `src/lib/secretary/`（投递运行时） | 部分已实现（投递闸门在跑） |
 | §4.3 出场资格与留白 | 特异性判定；留白是正式内容 | 批次 0 | 出场资格代码化（待建） | 未开工 |
 | §4.4 认知沉淀低调 | 对话轻确认 + 小角落提示，不立大卡 | P2 | `src/dimension/cards/` | 原型（卡片壳已有） |
 | §4.5 大胆度四因子 | 证据 × 领域敏感度 × 用户偏好 × 当次许可 | P0（分级表）→ P1 | 候选挖掘模块 | 未开工 |
 | §4.6 外化语言 | 理论术语止于代码；语言人格可生长 | 贯穿 | `src/lib/persona/personaSpec.ts`、i18n | 部分已实现 |
 | §5.1 载体触点 | 桌面为核心；微信主窗口、飞书备用 | 批次 0（步 1b spike） | `src/runtime/channels/`、复用 `src-tauri/src/feishu/` | 飞书已实现，微信未开工 |
-| §5.2 布局即数据 | 背景 / 卡 / 排布三层，排布存规则不存坐标 | 批次 0（最小渲染器）→ P5（HTML 积木） | `src/runtime/layout/`；`src/dimension/types.ts` 需升级为三层 schema | 未开工（types.ts 仍是扁平卡片类型） |
+| §5.2 布局即数据 | 背景 / 卡 / 排布三层，排布存规则不存坐标 | 批次 0（最小渲染器）→ P5（HTML 积木） | `src/runtime/layout/` + `src/dimension/nativeRegistry.tsx` | **已实现（最小版）**：native 点亮；declarative / HTML 仅协议与安全降级 |
 | §5.3 共创流 | 候选异步状态机，跨触点续接；深聊为加速器 | 批次 0 | 回合状态机（待建） | 未开工 |
 | §5.4 节奏 | check-in 事件触发 + 每周兜底；日循环 ≤10 分钟 | 批次 0 | 复用 `src/lib/secretary/scheduler.ts` | 部分已实现（调度器在跑，触发条件需改） |
 | §5.5 养成系统 | 三参数（熟悉/默契/权能）；关系不做数值；阶段名外显 | 批次 0（不外显）→ P4（完整） | `src/dimension/types.ts`（schema 已对齐三条） | **schema 已对齐**，计算未开工 |

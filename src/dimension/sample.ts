@@ -1,11 +1,11 @@
 import type { Desk, JournalSpread } from "./types";
 
 /**
- * 桌面样例(前端先行阶段的唯一数据源)
+ * 旧卡片回归样例（仅供 Cards Story / 手帐内页使用）
  *
- * 为什么是写死的样例而不是接数据库:这一版要验证的不是「管道通不通」,
- * 而是「这张桌子上的话对不对得起用户的注意力」。先用够具体的内容把桌面撑起来,
- * 看清哪些字段真有人看,再倒推后端。
+ * 正式种子入口已经迁到 `runtime/layout/seedLayout.ts` 与
+ * `projections/desktop/seedProjection.ts`。这里保留旧的认知卡和各类纸张，
+ * 只用于视觉回归，不再是 DimensionApp 的生产数据源。
  *
  * 每张纸的倾斜角、纸质、胶带位置都写在数据里 —— 它们是内容的属性。
  * 交给组件随机生成的话,每次刷新桌面都会重排,用户会失去空间记忆。
@@ -21,7 +21,8 @@ export const DESK: Desk = {
   secretary: {
     eyebrow: "Your Secretary",
     state: "presenting",
-    stateCn: "递交",
+    gesture: "offering",
+    stateCn: "有事说",
     headline: "你先往前走，我替你守住节奏。",
     note: "该挡的提醒我先挡住，真正需要你拍板时再找你。",
     stageLabel: "默契 · 合拍",

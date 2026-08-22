@@ -16,6 +16,25 @@
 export type SecretaryState = "ready" | "thinking" | "presenting";
 
 /**
+ * 秘书动作。动作由当前任务语义明确选择，不做随机轮播：
+ * - ready: idle / listening / organizing
+ * - thinking: pondering / writing / comparing
+ * - presenting: offering / reminding / acknowledging
+ *
+ * 组件会再次校验动作与状态的组合；不合法时回退到该状态的默认动作。
+ */
+export type SecretaryGesture =
+  | "idle"
+  | "listening"
+  | "organizing"
+  | "pondering"
+  | "writing"
+  | "comparing"
+  | "offering"
+  | "reminding"
+  | "acknowledging";
+
+/**
  * 养成参数。**三条**:熟悉 / 默契 / 权能(总纲 §5.5)。
  *
  * 「关系」本身不做数值 —— 那会被理解成情感好感度;数值与阶段一律挂在三参数上。
@@ -36,6 +55,8 @@ export interface Secretary {
   /** 立绘上方的小标签,如 YOUR SECRETARY */
   eyebrow: string;
   state: SecretaryState;
+  /** 当前任务语义对应的动作；省略时按 state 使用确定性默认值。 */
+  gesture?: SecretaryGesture;
   /** 徽章右半的中文,如「在岗」「在想」「有事说」 */
   stateCn: string;
   /** 立绘下方的人格文案,两行以内 */
@@ -53,6 +74,18 @@ export interface Secretary {
 /** 行内强调色。用于 meta 标签这类小面积着色,不再用于卡片边框。 */
 export type CardAccent = "olive" | "rust" | "amber" | "teal";
 
+/** 原生卡片的九种闭集。增加 kind 时必须同步注册表与渲染测试。 */
+export type NativeCardKind =
+  | "cognition"
+  | "feed"
+  | "anchors"
+  | "count"
+  | "note"
+  | "chart"
+  | "text"
+  | "proposal"
+  | "progress";
+
 /** 和纸胶带。贴在纸片顶边,压住一角。 */
 export interface Tape {
   /** 贴在左边还是右边 */
@@ -66,14 +99,15 @@ export interface Tape {
   tilt: number;
 }
 
-/** 所有卡片共享的外壳字段。 */
-interface CardBase {
-  id: string;
+/**
+ * 卡片的纸面表现，与业务 payload 分开。
+ *
+ * 这些字段可以随布局文档变化，不应回写进资讯、日程或提案本身。
+ */
+export interface CardPresentation {
   /** 等宽大写英文标签,如 COGNITION / WORTH RETHINKING */
   eyebrow: string;
   title: string;
-  /** 12 栅格里占几列 */
-  span: number;
   /**
    * 纸片倾斜角度(度)。规范:绝对值不超过 1.2 ——
    * 再大就从「自然摊在桌上」变成「刻意做旧」。
@@ -90,6 +124,20 @@ interface CardBase {
   dogear?: boolean;
 }
 
+/** 布局渲染一张原生卡所需的定位与表现字段。 */
+export interface NativeCardLayout extends CardPresentation {
+  id: string;
+  /** 12 栅格里占几列 */
+  span: number;
+}
+
+/** 卡片上可追溯的上游实体。 */
+export interface LineageRef {
+  entityType: string;
+  entityId: string;
+  label: string;
+}
+
 /**
  * 认知卡 —— 独占 `7` 主位,整张桌面唯一需要停下来读的卡片。
  *
@@ -98,7 +146,7 @@ interface CardBase {
  * 见 PRD 06.1。density 是刻意设计的:格子和展开态的信息量差约 20 倍,
  * 不给密度信号用户就无法预判点开会看到什么。
  */
-export interface CognitionCard extends CardBase {
+export interface CognitionCardPayload {
   kind: "cognition";
   /** 盲点的一句话表述 —— 卡片上最重要的一行,也是整张桌面的主张 */
   blindSpot: string;
@@ -112,10 +160,46 @@ export interface CognitionCard extends CardBase {
   density: { support: number; contradict: number };
 }
 
+/** 资讯卡的单条内容。 */
+export interface FeedItem {
+  id: string;
+  title: string;
+  /** 为什么此刻给用户看。 */
+  why: string;
+  source: string;
+  lineage?: LineageRef;
+}
+
+/** 资讯反馈的稳定机器值。 */
+export type FeedFeedback = "new-angle" | "known" | "not-useful";
+
+export interface FeedCardPayload {
+  kind: "feed";
+  items: FeedItem[];
+  emptyHint?: string;
+}
+
+/** PRD 硬上限：资讯区每次最多展示三条。 */
+export const FEED_ITEM_LIMIT = 3;
+
+/**
+ * 用纯函数在渲染边界再收一次上限。
+ * 返回新数组，不修改投影层传入的原列表。
+ */
+export function limitFeedItems<T extends FeedItem>(items: readonly T[]): T[] {
+  return items.slice(0, FEED_ITEM_LIMIT);
+}
+
+export interface AnchorRow {
+  text: string;
+  meta: string;
+  lineage?: LineageRef;
+}
+
 /** ◇ 锚点列表:左侧菱形 + 文字,右侧对齐时间或状态标 */
-export interface AnchorCard extends CardBase {
+export interface AnchorCardPayload {
   kind: "anchors";
-  rows: { text: string; meta: string }[];
+  rows: AnchorRow[];
   /**
    * rows 为空时显示的说明。
    * 网格是等高的,空列表不给文案就会留下一个空盒子 —— 那看起来像加载失败,
@@ -127,7 +211,7 @@ export interface AnchorCard extends CardBase {
 }
 
 /** 大数字卡:一个数 + 单位 + 一句说明 */
-export interface CountCard extends CardBase {
+export interface CountCardPayload {
   kind: "count";
   count: number;
   unit: string;
@@ -135,7 +219,7 @@ export interface CountCard extends CardBase {
 }
 
 /** 便签卡:米黄底 + 左缘竖条 + 一句话 */
-export interface NoteCard extends CardBase {
+export interface NoteCardPayload {
   kind: "note";
   body: string;
   /** 竖条引出的重点句 */
@@ -143,7 +227,7 @@ export interface NoteCard extends CardBase {
 }
 
 /** 柱状图卡:一天的可用时段分布 */
-export interface ChartCard extends CardBase {
+export interface ChartCardPayload {
   kind: "chart";
   /** 每根柱的高度比例 0—1 */
   bars: number[];
@@ -152,14 +236,14 @@ export interface ChartCard extends CardBase {
 }
 
 /** 纯文字卡 */
-export interface TextCard extends CardBase {
+export interface TextCardPayload {
   kind: "text";
   body: string;
   link?: string;
 }
 
 /** 提案卡:等待用户回应,带两个动作 */
-export interface ProposalCard extends CardBase {
+export interface ProposalCardPayload {
   kind: "proposal";
   quote: string;
   accept: string;
@@ -167,7 +251,7 @@ export interface ProposalCard extends CardBase {
 }
 
 /** 进度卡:标题 + 说明 + 进度条 + 左右两个角标 */
-export interface ProgressCard extends CardBase {
+export interface ProgressCardPayload {
   kind: "progress";
   body: string;
   /** 0—100 */
@@ -175,15 +259,42 @@ export interface ProgressCard extends CardBase {
   leftMeta: string;
 }
 
-export type DeskCard =
-  | CognitionCard
-  | AnchorCard
-  | CountCard
-  | NoteCard
-  | ChartCard
-  | TextCard
-  | ProposalCard
-  | ProgressCard;
+/** 只包含业务内容，不带 id / span / 纸面表现。 */
+export type NativeCardPayload =
+  | CognitionCardPayload
+  | FeedCardPayload
+  | AnchorCardPayload
+  | CountCardPayload
+  | NoteCardPayload
+  | ChartCardPayload
+  | TextCardPayload
+  | ProposalCardPayload
+  | ProgressCardPayload;
+
+type MaterializedCard<P extends NativeCardPayload> = P & NativeCardLayout;
+
+/** 以下别名保持旧组件和 Story 的 props 兼容。 */
+export type CognitionCard = MaterializedCard<CognitionCardPayload>;
+export type FeedCard = MaterializedCard<FeedCardPayload>;
+export type AnchorCard = MaterializedCard<AnchorCardPayload>;
+export type CountCard = MaterializedCard<CountCardPayload>;
+export type NoteCard = MaterializedCard<NoteCardPayload>;
+export type ChartCard = MaterializedCard<ChartCardPayload>;
+export type TextCard = MaterializedCard<TextCardPayload>;
+export type ProposalCard = MaterializedCard<ProposalCardPayload>;
+export type ProgressCard = MaterializedCard<ProgressCardPayload>;
+
+/** 旧桌面原型仍可传扁平卡片；新渲染器传 payload + layout。 */
+export type DeskCard = NativeCardPayload & NativeCardLayout;
+
+/** 卡片交互由桌面容器接管，原生卡只上报语义事件。 */
+export interface CardHandlers {
+  onOpen?: (card: DeskCard) => void;
+  onAccept?: (card: DeskCard) => void;
+  onReject?: (card: DeskCard) => void;
+  onFeedFeedback?: (itemId: string, feedback: FeedFeedback) => void;
+  onLineage?: (lineage: LineageRef) => void;
+}
 
 /** 一张完整的桌面。 */
 export interface Desk {

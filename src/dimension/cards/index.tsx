@@ -1,33 +1,54 @@
-import { CognitionCard } from "./CognitionCard";
-import {
-  AnchorsCardView,
-  ChartCardView,
-  CountCardView,
-  NoteCardView,
-  ProgressCardView,
-  ProposalCardView,
-  TextCardView
-} from "./DeskCards";
-import type { DeskCard } from "../types";
+import { renderNativeCard } from "../nativeRegistry";
+import type {
+  CardHandlers,
+  DeskCard,
+  NativeCardLayout,
+  NativeCardPayload
+} from "../types";
 
 export { CardShell } from "./CardShell";
 export { CognitionCard } from "./CognitionCard";
+export { FeedCard } from "./FeedCard";
 export * from "./DeskCards";
+export type { CardHandlers } from "../types";
 
-/** 卡片动作。桌面层接管这些回调,纸片本身不知道点了之后会发生什么。 */
-export interface CardHandlers {
-  /** 打开成手帐本内页。目前只有认知卡会触发 */
-  onOpen?: (card: DeskCard) => void;
-  onAccept?: (card: DeskCard) => void;
-  onReject?: (card: DeskCard) => void;
+/** 把旧原型的扁平卡拆回新渲染器需要的 payload + layout。 */
+function splitDeskCard(card: DeskCard): {
+  payload: NativeCardPayload;
+  layout: NativeCardLayout;
+} {
+  const {
+    id,
+    span,
+    eyebrow,
+    title,
+    tilt,
+    paper,
+    offsetY,
+    tape,
+    clip,
+    dogear,
+    ...payload
+  } = card;
+
+  return {
+    payload: payload as NativeCardPayload,
+    layout: {
+      id,
+      span,
+      eyebrow,
+      title,
+      tilt,
+      paper,
+      offsetY,
+      tape,
+      clip,
+      dogear
+    }
+  };
 }
 
-/**
- * 按 kind 分发。
- *
- * default 分支用 never 收口:以后往 DeskCard 联合类型里加新 kind 却忘了在这里接,
- * TypeScript 会直接报错,不会静默渲染成空白。
- */
+/** 旧桌面 API 保留，内部改由穷尽的原生卡注册表分发。 */
 export function DeskCardView({
   card,
   handlers = {}
@@ -35,35 +56,8 @@ export function DeskCardView({
   card: DeskCard;
   handlers?: CardHandlers;
 }) {
-  switch (card.kind) {
-    case "cognition":
-      return <CognitionCard card={card} onOpen={() => handlers.onOpen?.(card)} />;
-    case "anchors":
-      return <AnchorsCardView card={card} />;
-    case "count":
-      return <CountCardView card={card} />;
-    case "note":
-      return <NoteCardView card={card} />;
-    case "chart":
-      return <ChartCardView card={card} />;
-    case "text":
-      return <TextCardView card={card} />;
-    case "proposal":
-      return (
-        <ProposalCardView
-          card={card}
-          onAccept={() => handlers.onAccept?.(card)}
-          onReject={() => handlers.onReject?.(card)}
-        />
-      );
-    case "progress":
-      return <ProgressCardView card={card} />;
-    default: {
-      const never: never = card;
-      console.error("[dimension] 未接入的卡片类型:", never);
-      return null;
-    }
-  }
+  const { payload, layout } = splitDeskCard(card);
+  return <>{renderNativeCard(payload, layout, handlers)}</>;
 }
 
 /**

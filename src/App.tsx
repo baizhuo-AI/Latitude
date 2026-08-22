@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BoardShell } from "./components/BoardShell";
 import { ChatBar } from "./components/ChatBar";
 import { Launcher } from "./components/Launcher";
@@ -18,6 +18,12 @@ import { useSettingsStore, pushProactiveConfig } from "./lib/settings";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "./components/Toaster";
+import { dimensionDesktopEnabled } from "./lib/featureFlags";
+
+const DimensionApp = lazy(async () => {
+  const module = await import("./dimension/DimensionApp");
+  return { default: module.DimensionApp };
+});
 
 /**
  * App 主壳:按「窗口角色」分发三种窗口。
@@ -128,7 +134,13 @@ function MainWindow() {
   return (
     <ErrorBoundary>
       <ConfirmDialogProvider>
-        <BoardShell />
+        {dimensionDesktopEnabled() ? (
+          <Suspense fallback={<div role="status">维度桌面正在加载…</div>}>
+            <DimensionApp />
+          </Suspense>
+        ) : (
+          <BoardShell />
+        )}
         <Toaster />
       </ConfirmDialogProvider>
     </ErrorBoundary>

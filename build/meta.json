@@ -86,6 +86,90 @@
       "filePath": "src/design-system/patterns/Patterns.stories.tsx",
       "namedExport": "ReportAndCapsule",
       "meta": {}
+    },
+    "dimension--桌面--cards": {
+      "name": "Cards",
+      "levels": [
+        "Dimension",
+        "桌面"
+      ],
+      "locStart": 27,
+      "locEnd": 37,
+      "filePath": "src/dimension/DimensionApp.stories.tsx",
+      "namedExport": "Cards",
+      "meta": {}
+    },
+    "dimension--桌面--desk": {
+      "name": "Desk",
+      "levels": [
+        "Dimension",
+        "桌面"
+      ],
+      "locStart": 20,
+      "locEnd": 24,
+      "filePath": "src/dimension/DimensionApp.stories.tsx",
+      "namedExport": "Desk",
+      "meta": {}
+    },
+    "dimension--秘书立绘--action-matrix": {
+      "name": "Action matrix",
+      "levels": [
+        "Dimension",
+        "秘书立绘"
+      ],
+      "locStart": 87,
+      "locEnd": 131,
+      "filePath": "src/dimension/SecretaryPortrait.stories.tsx",
+      "namedExport": "ActionMatrix",
+      "meta": {}
+    },
+    "dimension--秘书立绘--growth-matrix": {
+      "name": "Growth matrix",
+      "levels": [
+        "Dimension",
+        "秘书立绘"
+      ],
+      "locStart": 137,
+      "locEnd": 176,
+      "filePath": "src/dimension/SecretaryPortrait.stories.tsx",
+      "namedExport": "GrowthMatrix",
+      "meta": {}
+    },
+    "dimension--布局运行时--content-swap-same-skeleton": {
+      "name": "Content swap same skeleton",
+      "levels": [
+        "Dimension",
+        "布局运行时"
+      ],
+      "locStart": 51,
+      "locEnd": 58,
+      "filePath": "src/runtime/layout/LayoutRenderer.stories.tsx",
+      "namedExport": "ContentSwapSameSkeleton",
+      "meta": {}
+    },
+    "dimension--布局运行时--seed-layout": {
+      "name": "Seed layout",
+      "levels": [
+        "Dimension",
+        "布局运行时"
+      ],
+      "locStart": 28,
+      "locEnd": 35,
+      "filePath": "src/runtime/layout/LayoutRenderer.stories.tsx",
+      "namedExport": "SeedLayout",
+      "meta": {}
+    },
+    "dimension--布局运行时--unsupported-renderer-fallback": {
+      "name": "Unsupported renderer fallback",
+      "levels": [
+        "Dimension",
+        "布局运行时"
+      ],
+      "locStart": 68,
+      "locEnd": 75,
+      "filePath": "src/runtime/layout/LayoutRenderer.stories.tsx",
+      "namedExport": "UnsupportedRendererFallback",
+      "meta": {}
     }
   }
 }

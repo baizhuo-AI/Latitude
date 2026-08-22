@@ -1,78 +1,106 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppHeader, CommandBar, DeskHeader, SecretaryRail } from "./Shell";
+import type { CSSProperties } from "react";
+import { SEED_DESKTOP_PROJECTION } from "../projections/desktop/seedProjection";
+import {
+  runtimeStatusLabel,
+  type DesktopProjection
+} from "../projections/desktop/types";
+import { LayoutRenderer } from "../runtime/layout/LayoutRenderer";
+import { SEED_LAYOUT_DOCUMENT } from "../runtime/layout/seedLayout";
+import type { LayoutDocumentV1 } from "../runtime/layout/types";
 import { JournalPage } from "./JournalPage";
-import { DeskGrid } from "./cards";
-import { DESK, SPREADS } from "./sample";
-import type { CognitionCard, DeskCard } from "./types";
+import { AppHeader, CommandBar, DeskHeader, SecretaryRail } from "./Shell";
+import type { CardPresentation, CognitionCard, DeskCard } from "./types";
 import "./dimension.css";
 
+export interface DimensionAppProps {
+  layout?: LayoutDocumentV1<string, CardPresentation>;
+  projection?: DesktopProjection;
+}
+
 /**
- * 维度桌面 —— 可交互原型。**尚未挂载到主应用**(main.tsx 仍渲染旧 App/BoardShell),
- * 目前只从 DimensionApp.stories.tsx 进入。挂载属于批次 0,见 ./README.md。
+ * 维度桌面最小运行时。
  *
- * 隐喻:桌面上摊着纸片,其中一张是本子,点开摊成内页,合上回到桌面。
- * 定稿见 design/Opening.dc.html,规格见 docs/specs/2026-08-19-dimension-desktop-frontend-prd.md。
- *
- * 布局上有一个和定稿不同的判断:**秘书栏和应用头不参与转场**。
- * 定稿那张画板没画秘书栏,所以本子是全屏摊开的;但秘书栏是稳定外壳,
- * 而且读认知卡的时候恰恰最需要她在场,所以这里只让主区在桌面/本子之间切。
- *
- * 当前阶段的边界:
- *  - 数据来自 sample.ts 的写死样例,不读 SQLite、不调 LLM;
- *  - 除了「打开/合上」,所有动作只给原型提示,不写库 —— 真正落库要等
- *    Proposal / ChangeSet 那套变更控制到位,现在直接写会绕开确认闸门。
+ * 页面只承载稳定五区和交互外壳；卡位来自 LayoutDocument，内容来自
+ * DesktopProjection。默认值是明确标注的 seed，不读 SQLite、不调用 LLM，
+ * 也不会把任何占位动作伪装成已经写入。
  */
-export function DimensionApp() {
-  const [openedId, setOpenedId] = useState<string | null>(null);
+export function DimensionApp({
+  layout = SEED_LAYOUT_DOCUMENT,
+  projection = SEED_DESKTOP_PROJECTION
+}: DimensionAppProps = {}) {
+  const [openedCard, setOpenedCard] = useState<DeskCard | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
+  const deskLayer = useRef<HTMLDivElement>(null);
+  const bookLayer = useRef<HTMLDivElement>(null);
 
-  const say = useCallback((msg: string) => {
-    setToast(msg);
+  const say = useCallback((message: string) => {
+    setToast(message);
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
-  const opened = openedId ? DESK.cards.find((c) => c.id === openedId) : null;
-  const spread = openedId ? SPREADS[openedId] : null;
-  const isOpen = Boolean(opened && spread);
+  const spread = openedCard
+    ? projection.journalSpreads?.[openedCard.id]
+    : undefined;
+  const isOpen = openedCard?.kind === "cognition" && Boolean(spread);
 
-  // Esc 合上本子。摊开的东西必须有一个不用找按钮的退路
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenedId(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenedCard(null);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
+  // aria-hidden 不会阻止隐藏层里的按钮被 Tab 聚焦；inert 由 DOM 属性补齐。
+  useEffect(() => {
+    deskLayer.current?.toggleAttribute("inert", isOpen);
+    bookLayer.current?.toggleAttribute("inert", !isOpen);
   }, [isOpen]);
 
   function handleOpen(card: DeskCard) {
-    // 只有认知卡能摊成本子。其他卡以后是下钻到工具页,不是打开
     if (card.kind !== "cognition") {
-      say("原型阶段：这里之后会下钻到对应的工具页");
+      say("演示模式：这里会打开对应工具，并保留返回位置");
       return;
     }
-    if (!SPREADS[card.id]) {
-      say("这张卡还没有内页内容");
+    if (!projection.journalSpreads?.[card.id]) {
+      say("这张认知沉淀还没有可展开的内页");
       return;
     }
-    setOpenedId(card.id);
+    setOpenedCard(card);
   }
+
+  const backgroundTokens = layout.background.tokenOverrides as
+    | CSSProperties
+    | undefined;
 
   return (
     <div
       className="dimension-root"
-      style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+      style={{
+        ...backgroundTokens,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden"
+      }}
+      data-layout-document={layout.id}
+      data-layout-revision={layout.revision}
     >
-      <AppHeader onSettings={() => say("原型阶段：设置走这里，不占桌面位置")} />
+      <AppHeader
+        runtimeLabel={runtimeStatusLabel(projection.runtimeStatus)}
+        onSettings={() => say("演示模式：设置页暂未接入")}
+      />
 
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <SecretaryRail
-          secretary={DESK.secretary}
-          onReview={() => say("原型阶段：这里通往养成时间线（重构计划的「30 天」）")}
+          secretary={projection.secretary}
+          onReview={() => say("演示模式：这里会打开你们共同变化的时间线")}
         />
 
         <main
@@ -85,52 +113,74 @@ export function DimensionApp() {
             gap: 14
           }}
         >
-          <div className={`dim-stage${isOpen ? " dim-stage--open" : ""}`} style={{ flex: 1, minHeight: 0 }}>
-            {/* 桌面层 */}
+          <div
+            className={`dim-stage${isOpen ? " dim-stage--open" : ""}`}
+            style={{ flex: 1, minHeight: 0 }}
+          >
             <div
+              ref={deskLayer}
               className="dim-layer dim-layer--desk"
               style={{ padding: "22px 24px", overflowY: "auto" }}
-              // 本子摊开时桌面整层退出可达性树,免得读屏在看不见的内容里游走
               aria-hidden={isOpen}
             >
               <DeskHeader
-                breadcrumb={DESK.breadcrumb}
-                title={DESK.title}
-                subtitle={DESK.subtitle}
-                onWhy={() => say("原型阶段：这里会逐张说明「为什么现在出现」")}
-                onAdjust={() => say("原型阶段：这里会管卡片的保留 / 退出 / 钉住")}
+                breadcrumb={projection.header.breadcrumb}
+                title={projection.header.title}
+                subtitle={projection.header.subtitle}
+                onWhy={() => say(layout.arrangement.rationale.join("；"))}
+                onAdjust={() =>
+                  say("演示模式：调整桌面会先给你一份可撤销的预览")
+                }
               />
-              <DeskGrid
-                cards={DESK.cards}
+              <LayoutRenderer
+                document={layout}
+                bindings={projection.bindings}
                 handlers={{
                   onOpen: handleOpen,
-                  onAccept: () => say("原型阶段：接受后会记成一次 Change Set"),
-                  onReject: () => say("原型阶段：拒绝的理由也会被记下来")
+                  onAccept: () =>
+                    say("演示模式：已收到选择，本次不会保存"),
+                  onReject: () =>
+                    say("演示模式：已保持原样，本次不会保存"),
+                  onFeedFeedback: (_itemId, feedback) => {
+                    const label = {
+                      "new-angle": "有新角度",
+                      known: "已知道",
+                      "not-useful": "没用"
+                    }[feedback];
+                    say(`演示模式：已看到“${label}”，本次不会保存`);
+                  },
+                  onLineage: (lineage) => say(`来源线索：${lineage.label}`)
                 }}
               />
             </div>
 
-            {/* 本子层 */}
-            <div className="dim-layer dim-layer--book" aria-hidden={!isOpen}>
-              {opened && spread && opened.kind === "cognition" && (
+            <div
+              ref={bookLayer}
+              className="dim-layer dim-layer--book"
+              aria-hidden={!isOpen}
+            >
+              {openedCard?.kind === "cognition" && spread && (
                 <JournalPage
-                  card={opened as CognitionCard}
+                  card={openedCard as CognitionCard}
                   spread={spread}
-                  onClose={() => setOpenedId(null)}
+                  onClose={() => setOpenedCard(null)}
                   onCorrect={(choice) => {
-                    setOpenedId(null);
-                    say(`已记下「${choice}」——原型阶段还不会真的改认知模型`);
+                    setOpenedCard(null);
+                    say(`演示模式：已记下“${choice}”，本次不会保存`);
                   }}
                 />
               )}
             </div>
           </div>
 
-          <CommandBar onSend={(text) => say(`原型阶段：收到「${text}」，还没接秘书核心`)} />
+          <CommandBar
+            onSend={(text) =>
+              say(`演示模式：收到“${text}”，本次不会保存`)
+            }
+          />
         </main>
       </div>
 
-      {/* 轻量提示。所有占位动作都要明说是原型,不能做成看着能用但静默失败 */}
       {toast && (
         <div
           role="status"
@@ -143,8 +193,8 @@ export function DimensionApp() {
             color: "#f2f0dc",
             fontSize: 12,
             padding: "8px 16px",
+            border: "1px solid var(--dim-line)",
             borderRadius: 2,
-            boxShadow: "0 4px 14px rgb(70 82 31 / 30%)",
             zIndex: 20,
             maxWidth: "80%"
           }}

@@ -5,7 +5,7 @@
  * 核心隐喻:桌面上摊着纸片,其中一张是本子,点开摊成内页,合上回到桌面。
  *
  * 三条不能动的规则:
- *  1. 层次靠阴影和纸质,不靠边框 —— 卡片没有 1px 描边;
+ *  1. 层次靠纸质和 1px 细边框,不靠投影阴影;
  *  2. 纸片各自歪 ±1.2° 以内,再大就从"自然"变成"刻意做旧";
  *  3. 等宽大写英文标签压在中文标题之上,这是这套语言最强的识别特征。
  *
@@ -14,6 +14,8 @@
  */
 
 .dimension-root {
+  color-scheme: light;
+
   /* 纸张 */
   --dim-desk: #e9e4d6; /* 桌面底 */
   --dim-paper: #fdfaf2; /* 纸片 */
@@ -39,12 +41,6 @@
   --dim-rust: #c35e4a;
   --dim-amber: #d9a441;
   --dim-hand: #9a6b3c; /* 手写批注 */
-
-  /* 阴影:暖调,不是纯黑 —— 纸在暖光下的投影 */
-  --dim-lift-1: 0 1px 1px rgb(92 80 52 / 6%), 0 4px 10px rgb(92 80 52 / 9%),
-    0 12px 26px rgb(92 80 52 / 5%);
-  --dim-lift-2: 0 2px 2px rgb(92 80 52 / 7%), 0 8px 18px rgb(92 80 52 / 12%),
-    0 20px 40px rgb(92 80 52 / 8%);
 
   font-family: var(--font-sans);
   color: var(--dim-ink);
@@ -104,17 +100,15 @@
 .dim-paper {
   position: relative;
   background: var(--dim-paper);
-  border-radius: 1px;
-  box-shadow: var(--dim-lift-1);
+  border: 1px solid var(--dim-line);
+  border-radius: 2px;
   padding: 20px 22px 18px;
-  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.3, 1),
-    box-shadow 280ms ease;
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 /* 鼠标靠近时纸被扶正并抬起 —— rotate(0) 要盖掉逐张卡的内联角度 */
 .dim-paper:hover {
-  transform: rotate(0deg) translateY(-3px) !important;
-  box-shadow: var(--dim-lift-2);
+  transform: rotate(0deg) translateY(-1px) !important;
   z-index: 5;
 }
 
@@ -172,7 +166,6 @@
     rgb(255 255 255 / 32%) 0 1px,
     transparent 1px 3px
   );
-  box-shadow: 0 1px 2px rgb(92 80 52 / 10%);
   pointer-events: none;
 }
 
@@ -200,7 +193,7 @@
 /* ---------- 12 栅格 ---------- */
 
 /*
- * 骨架恒定:上排 7+5,下排 4+4+4。卡片内容会变,格子不变
+ * 骨架恒定:上排 5+7,下排 4+4+4。卡片内容会变,格子不变
  * (重构计划第 11 节「主页变化过度」那条风险的答案)。
  * 列宽走 data-span 而不是内联 style —— 内联特异性最高,会让下面的降级失效。
  */
@@ -216,7 +209,7 @@
 .dim-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 18px;
+  gap: 12px;
   align-items: start;
 }
 
@@ -227,8 +220,8 @@
 .dim-grid > [data-span="8"] { grid-column: span 8; }
 .dim-grid > [data-span="12"] { grid-column: span 12; }
 
-/* 下排 4+4+4 每格低于 ~310px 就读不了了 */
-@container (max-width: 960px) {
+/* 1120px 应用窗扣除秘书栏后仍保留种子骨架；更窄的工具窗才开始降级。 */
+@container (max-width: 760px) {
   .dim-grid > [data-span="4"] { grid-column: span 6; }
   .dim-grid > [data-span="5"] { grid-column: span 12; }
   .dim-grid > [data-span="7"] { grid-column: span 12; }
@@ -261,10 +254,9 @@
 .dim-layer--desk {
   opacity: 1;
   transform: none;
+  overflow-x: hidden;
   background-color: var(--dim-desk);
-  background-image:
-    repeating-linear-gradient(45deg, rgb(255 255 255 / 30%) 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(-45deg, rgb(138 124 94 / 5.5%) 0 1px, transparent 1px 5px);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 14%), transparent 28%);
 }
 
 .dim-stage--open .dim-layer--desk {
@@ -281,7 +273,6 @@
   background-image:
     repeating-linear-gradient(0deg, rgb(120 140 90 / 8.5%) 0 1px, transparent 1px 24px),
     repeating-linear-gradient(90deg, rgb(120 140 90 / 8.5%) 0 1px, transparent 1px 24px);
-  box-shadow: inset 0 0 70px rgb(150 135 100 / 9%);
 }
 
 .dim-stage--open .dim-layer--book {
@@ -296,7 +287,7 @@
   height: 12px;
   border-radius: 50%;
   background: var(--dim-desk);
-  box-shadow: inset 0 1px 2px rgb(92 80 52 / 28%);
+  border: 1px solid rgb(92 80 52 / 28%);
 }
 
 /* 橡皮章日期 */
@@ -314,7 +305,7 @@
   width: 176px;
   flex-shrink: 0;
   background: var(--dim-paper);
-  box-shadow: 1px 0 0 rgb(216 210 192 / 60%), 4px 0 14px rgb(92 80 52 / 5%);
+  border-right: 1px solid var(--dim-line);
   z-index: 2;
 }
 
@@ -323,7 +314,7 @@
   aspect-ratio: 1 / 1.12;
   background: linear-gradient(170deg, #f6f1df 0%, #ece5cf 100%);
   border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgb(216 210 192 / 70%);
+  border: 1px solid rgb(216 210 192 / 70%);
   overflow: hidden;
 }
 
@@ -331,8 +322,114 @@
   content: "";
   position: absolute;
   inset: 14% 12% 20%;
-  border: 1px dashed rgb(124 138 62 / 35%);
+  border: 1px dashed rgb(124 138 62 / 14%);
   border-radius: 50%;
+  transform: scale(var(--dim-portrait-ring, 0.82));
+  transition: transform 560ms ease;
+  z-index: 0;
+}
+
+.dim-secretary-growth {
+  position: absolute;
+  inset: 2% 2% 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  transform: scale(var(--dim-portrait-growth, 0.82));
+  transform-origin: 50% 100%;
+  transition: transform 560ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.dim-secretary-sprite {
+  display: block;
+  width: auto;
+  /* 资源是全身立绘；桌面窄栏只取头肩到腰部，避免人物缩成框内小摆件。 */
+  height: 205%;
+  max-width: none;
+  object-fit: contain;
+  transform-origin: 50% 100%;
+  user-select: none;
+  pointer-events: none;
+}
+
+/*
+ * 首批五张扩展动作是与 --dim-paper 同色系的暖纸底资源。multiply 把纸底融进
+ * 固定立绘窗，同时保留人物线稿；以后替换为全透明 PNG 时删除这个兼容类即可。
+ */
+.dim-secretary-sprite-paper-matte {
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    #000 18%,
+    #000 82%,
+    transparent 100%
+  );
+  mix-blend-mode: multiply;
+}
+
+.dim-portrait-state-ready .dim-secretary-sprite {
+  animation: dim-secretary-ready 5.8s ease-in-out infinite;
+}
+
+.dim-portrait-state-thinking .dim-secretary-sprite {
+  animation: dim-secretary-thinking 3.9s ease-in-out infinite;
+}
+
+.dim-portrait-state-presenting .dim-secretary-sprite {
+  animation: dim-secretary-presenting 4.6s ease-in-out infinite;
+}
+
+/* 权能只显示已授权工具的层级，不参与人物体量。 */
+.dim-authority-tabs {
+  position: absolute;
+  top: 9px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dim-authority-tabs i {
+  display: block;
+  width: 12px;
+  height: 3px;
+  background: var(--dim-rust);
+  opacity: 0.34;
+}
+
+@keyframes dim-secretary-ready {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(calc(-1 * var(--dim-portrait-motion, 1px))) rotate(-0.18deg);
+  }
+}
+
+@keyframes dim-secretary-thinking {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(calc(-1 * var(--dim-portrait-motion, 1px))) rotate(-0.42deg);
+  }
+}
+
+@keyframes dim-secretary-presenting {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(calc(-0.65 * var(--dim-portrait-motion, 1px)));
+  }
 }
 
 .dim-badge {
@@ -366,20 +463,18 @@
 
 .dim-btn {
   background: #f4efdf;
-  border: none;
+  border: 1px solid var(--dim-line);
   border-radius: 1px;
   padding: 6px 13px;
   font-size: 11.5px;
   font-family: inherit;
   color: #5a5544;
-  box-shadow: 0 1px 2px rgb(92 80 52 / 12%);
   cursor: pointer;
-  transition: background 140ms ease, box-shadow 140ms ease;
+  transition: background 140ms ease;
 }
 
 .dim-btn:hover {
   background: var(--dim-paper);
-  box-shadow: 0 2px 4px rgb(92 80 52 / 14%);
 }
 
 .dim-btn:focus-visible {
@@ -389,13 +484,13 @@
 
 .dim-btn--quiet {
   background: transparent;
-  box-shadow: none;
+  border-color: transparent;
   color: var(--dim-ink-faint);
 }
 
 .dim-btn--quiet:hover {
   background: rgb(253 250 242 / 70%);
-  box-shadow: none;
+  border-color: var(--dim-line-soft);
   color: var(--dim-ink);
 }
 
@@ -467,8 +562,14 @@
 @media (prefers-reduced-motion: reduce) {
   .dim-paper,
   .dim-layer,
-  .dim-openable .dim-hint {
+  .dim-openable .dim-hint,
+  .dim-secretary-growth,
+  .dim-portrait::after {
     transition: none;
+  }
+
+  .dim-secretary-sprite {
+    animation: none !important;
   }
 
   /* 静止时也别让纸歪着 —— 前庭敏感的人对静态倾斜同样不适 */

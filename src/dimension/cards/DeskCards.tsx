@@ -4,6 +4,7 @@ import type {
   CardAccent,
   ChartCard,
   CountCard,
+  LineageRef,
   NoteCard,
   ProgressCard,
   ProposalCard,
@@ -51,7 +52,13 @@ function shellProps(card: {
 
 /* ---------- ◇ 锚点列表 ---------- */
 
-export function AnchorsCardView({ card }: { card: AnchorCard }) {
+export function AnchorsCardView({
+  card,
+  onLineage
+}: {
+  card: AnchorCard;
+  onLineage?: (lineage: LineageRef) => void;
+}) {
   return (
     <CardShell {...shellProps(card)}>
       <div style={{ marginTop: 14, position: "relative" }}>
@@ -64,6 +71,7 @@ export function AnchorsCardView({ card }: { card: AnchorCard }) {
           {card.rows.map((row, i) => {
             // 最后一行常是「今天到期」,用暗红标出来
             const urgent = row.meta === "TODAY";
+            const lineage = row.lineage;
             return (
               <div
                 key={i}
@@ -85,6 +93,22 @@ export function AnchorsCardView({ card }: { card: AnchorCard }) {
                 >
                   {row.text}
                 </span>
+                {lineage && (
+                  <button
+                    type="button"
+                    className="dim-btn dim-btn--quiet"
+                    style={{
+                      flexShrink: 0,
+                      padding: "2px 4px",
+                      color: "var(--dim-olive)",
+                      fontSize: 9
+                    }}
+                    aria-label={`查看来源：${lineage.label}`}
+                    onClick={() => onLineage?.(lineage)}
+                  >
+                    ◇ 来源
+                  </button>
+                )}
                 <span
                   className="dim-meta"
                   style={{
@@ -270,19 +294,26 @@ export function ProgressCardView({ card }: { card: ProgressCard }) {
       <p className="dim-body" style={{ marginTop: 11 }}>
         {card.body}
       </p>
-      <div className="dim-meter" style={{ marginTop: 16 }}>
+      <div
+        className="dim-meter"
+        style={{ marginTop: 16 }}
+        role="progressbar"
+        aria-label={card.leftMeta}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.max(0, Math.min(100, card.percent))}
+      >
         <i style={{ width: `${Math.max(0, Math.min(100, card.percent))}%` }} />
       </div>
       <div
         style={{
           marginTop: 8,
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent: "flex-start",
           gap: 12
         }}
       >
         <span className="dim-meta">{card.leftMeta}</span>
-        <span className="dim-meta">{card.percent}%</span>
       </div>
     </CardShell>
   );

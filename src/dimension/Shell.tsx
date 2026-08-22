@@ -1,4 +1,5 @@
-import type { RelationMetric, Secretary, SecretaryState } from "./types";
+import { SecretaryPortrait } from "./SecretaryPortrait";
+import type { Secretary } from "./types";
 
 /**
  * 桌面的四个稳定区:应用头 / 秘书栏 / 标题区 / 对话条。
@@ -10,7 +11,13 @@ import type { RelationMetric, Secretary, SecretaryState } from "./types";
 
 /* ---------- A 应用头 ---------- */
 
-export function AppHeader({ onSettings }: { onSettings?: () => void }) {
+export function AppHeader({
+  runtimeLabel = "运行状态未知",
+  onSettings
+}: {
+  runtimeLabel?: string;
+  onSettings?: () => void;
+}) {
   return (
     <header
       style={{
@@ -21,7 +28,7 @@ export function AppHeader({ onSettings }: { onSettings?: () => void }) {
         justifyContent: "space-between",
         padding: "0 20px",
         background: "var(--dim-paper)",
-        boxShadow: "0 1px 0 rgb(216 210 192 / 70%)",
+        borderBottom: "1px solid var(--dim-line)",
         zIndex: 3
       }}
     >
@@ -45,8 +52,8 @@ export function AppHeader({ onSettings }: { onSettings?: () => void }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        {/* 这行是真状态指示,不是装饰:本地内核在跑、秘书在岗 */}
-        <span className="dim-eyebrow">Local Core · Secretary On Duty</span>
+        {/* 状态必须来自运行时投影。没有 adapter 时诚实地显示未知。 */}
+        <span className="dim-eyebrow">{runtimeLabel}</span>
         <button type="button" className="dim-btn dim-btn--quiet" onClick={onSettings}>
           设置
         </button>
@@ -56,18 +63,6 @@ export function AppHeader({ onSettings }: { onSettings?: () => void }) {
 }
 
 /* ---------- B 秘书栏 ---------- */
-
-const STATE_EN: Record<SecretaryState, string> = {
-  ready: "READY",
-  thinking: "THINKING",
-  presenting: "PRESENTING"
-};
-
-const METRIC_TONE: Record<RelationMetric["tone"], string> = {
-  olive: "var(--dim-olive)",
-  blue: "#2b5ca8",
-  rust: "var(--dim-rust)"
-};
 
 export function SecretaryRail({
   secretary,
@@ -88,11 +83,8 @@ export function SecretaryRail({
     >
       <p className="dim-eyebrow">{secretary.eyebrow}</p>
 
-      <div className="dim-portrait" style={{ marginTop: 10 }}>
-        {/* 立绘位。AI Listener 的档案秘书形象接进来之前先用画框占位 */}
-        <span className="dim-badge">
-          {STATE_EN[secretary.state]} / {secretary.stateCn}
-        </span>
+      <div style={{ marginTop: 10 }}>
+        <SecretaryPortrait secretary={secretary} />
       </div>
 
       <p
@@ -117,73 +109,14 @@ export function SecretaryRail({
         {secretary.note}
       </p>
 
-      <div
-        style={{
-          margin: "16px 0 14px",
-          height: 1,
-          background: "var(--dim-line-soft)"
-        }}
-      />
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: 8
-        }}
-      >
-        <span style={{ fontSize: 10, color: "var(--dim-ink-faint)" }}>
-          我们走到哪里了？
-        </span>
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 600 }}>{secretary.stageLabel}</span>
       </div>
 
-      <div className="dim-meter" style={{ marginTop: 8 }}>
-        <i style={{ width: `${secretary.stageProgress}%` }} />
-      </div>
-
-      <p
-        style={{
-          margin: "8px 0 0",
-          fontSize: 10,
-          lineHeight: 1.65,
-          color: "var(--dim-ink-faint)"
-        }}
-      >
-        {secretary.stageNote}
-      </p>
-
-      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        {secretary.metrics.map((m) => (
-          <div key={m.label}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-                marginBottom: 4
-              }}
-            >
-              <span style={{ fontSize: 10, color: "var(--dim-ink-soft)" }}>
-                {m.label}
-              </span>
-              <span
-                className="dim-meta"
-                style={{ fontVariantNumeric: "tabular-nums" }}
-              >
-                {m.value}
-              </span>
-            </div>
-            <div
-              className="dim-meter"
-              style={{ ["--tone" as string]: METRIC_TONE[m.tone] }}
-            >
-              <i style={{ width: `${m.value}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
+      {/*
+        熟悉 / 默契 / 权能仍会驱动立绘的体量、微动和工具页签，
+        但实验期不把内部裸值或近似百分比暴露给用户（总纲 §5.5）。
+      */}
 
       {/* 这个按钮就是「30 天」和「我们」的入口 —— 关系本来就是随时间长出来的 */}
       <button
@@ -251,7 +184,7 @@ export function DeskHeader({
       </div>
 
       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-        <button type="button" className="dim-btn" onClick={onWhy}>
+        <button type="button" className="dim-btn dim-btn--quiet" onClick={onWhy}>
           为什么这样排?
         </button>
         <button type="button" className="dim-btn" onClick={onAdjust}>
@@ -276,7 +209,7 @@ export function CommandBar({ onSend }: { onSend?: (text: string) => void }) {
         padding: "0 8px 0 16px",
         background: "var(--dim-paper)",
         borderRadius: 1,
-        boxShadow: "0 1px 2px rgb(92 80 52 / 8%), 0 3px 10px rgb(92 80 52 / 6%)"
+        border: "1px solid var(--dim-line)"
       }}
       onSubmit={(e) => {
         e.preventDefault();

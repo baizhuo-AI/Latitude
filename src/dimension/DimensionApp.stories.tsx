@@ -6,17 +6,17 @@ import { DESK } from "./sample";
 import "./dimension.css";
 
 /**
- * 维度桌面的可交互原型。
+ * 维度桌面的种子运行时与纸片回归图库。
  *
- * Desk —— 完整应用:点主纸摊开本子,Esc 或「合上」回桌面。
- * Cards —— 只看纸片系统,便于逐张检查纸质、倾斜和点缀。
+ * Desk —— 完整 5+7 / 4+4+4 种子桌面。
+ * Cards —— 保留旧卡型样例,便于逐张检查纸质、倾斜和点缀。
  */
 
 export default {
   title: "Dimension/桌面"
 } satisfies StoryDefault;
 
-/** 完整应用。整屏,可点。 */
+/** 完整种子应用。整屏,交互只给明确的原型反馈。 */
 export const Desk: Story = () => (
   <div style={{ position: "fixed", inset: 0 }}>
     <DimensionApp />
