@@ -44,15 +44,15 @@
 │ 候选观察：模式、言行差、重复主题、可能的信念     │
 │ 特性：可能错误；未经确认；有生命周期（会过期）    │
 └──────────────┬───────────────────────────┘
-               │ 用户裁决（共创流 / 提案确认）——唯一跨层通道
-┌─ Claim 层（确认的认知，真相层）───────────────┐
+               │ 统一 Domain Change Set（自动 / 提案 / 共创）
+┌─ Claim 层（可追溯、可修订的认知层）───────────┐
 │ 信念、假设、框架、价值、偏好、边界、事实         │
 │ + 张力、决策、实验、行动、结果                  │
 │ 特性：双时态、状态机、Toulmin 结构、全血缘       │
 └──────────────────────────────────────────┘
 ```
 
-三层分离是信任架构的根基：模型在 Observation 层可以大胆猜，Claim 层只进用户认过的东西。**跨层没有第二条通道**——包括秘书自己「很确定」的推断也不能绕过裁决（低风险 fact 类可走提案档：系统提出、用户一键确认，仍是裁决）。
+三层分离仍是信任架构的根基，但它分离的是**证据、推断和权威**，不是把模型永远锁在候选层。当前用户 standing grant 允许模型经统一 Domain Change Set 自动创建或修订 Claim；这类对象必须保持 `origin=model / authority=system_inferred`，并携带证据、版本、before/after、逆操作和回滚。只有用户直接陈述、纠正或裁决才能获得 `user_*` 权威。提案确认与共创仍是可选授权模式，不是当前自动模式的必经步骤。
 
 ---
 
@@ -64,7 +64,7 @@
 |---|---|---|
 | `evidence` | 原始证据元数据（内容或指针） | source（quick_note / chat / checkin / schedule / feed_feedback / recording* / computer_history*）、captured_at、privacy_level、content/media_ref、hash |
 | `observation` | 模型从证据提取的候选信息 | kind（pattern / say_do_gap / recurring_theme / possible_belief / outcome_signal / **commitment**——承诺三元组：对谁 / 承诺什么 / 期限，必须带原文证据引用）、confidence、extractor_version、status（proposed / touched / shaping / concluded / parked / expired） |
-| `claim` | 确认的认知节点 | kind（belief / assumption / frame / value / preference / boundary / fact）、statement、warrant、qualifier、confidence、specificity、domain、sensitivity、status |
+| `claim` | 可追溯的认知节点；权威字段明确区分用户陈述与模型推断 | kind（belief / assumption / frame / value / preference / boundary / fact）、statement、warrant、qualifier、confidence、specificity、domain、sensitivity、status、origin、authority |
 | `tension` | 张力：并存且相互矛盾的认知/证据的聚合点 | around（主题）、strength、status（open / eased / resolved） |
 | `decision` | 显式决策记录 | question、options、selected、rationale |
 | `experiment` | 行为实验 | hypothesis、trigger、action、success_signal、stop_condition、duration、status |
@@ -146,7 +146,7 @@ feed_item --about--> topic <--about-- claim --influences--> decision
 | **Dispute**（争议中） | 反证累积但用户未裁决 | contradicts 边 + tension 节点 | disputed（仍可见，标注争议） |
 | **Expire**（过期） | valid_to 到期或长期未确认且时效衰减到阈值 | 状态流转 | expired（不进上下文，可复活） |
 
-**硬规则**：每条 updates / supersedes 边必须挂原因节点（outcome 或用户纠正的 evidence）——「系统自己想通了」不是合法的修订理由。用户纠正永远即时生效、全端同步。
+**硬规则**：每条 updates / supersedes 边必须挂原因节点（outcome、用户纠正或新 evidence）——「系统自己想通了」不是合法的修订理由。模型可自动应用有证据的修订，但权威仍是 `system_inferred`；用户纠正永远即时生效、全端同步。
 
 ---
 
@@ -156,7 +156,7 @@ feed_item --about--> topic <--about-- claim --influences--> decision
 confidence = f(证据数与质量, 用户确认强度, 反证存在性, 时效)
 ```
 
-- **用户确认强度**分级：主动陈述 > 裁决确认 > 提案一键确认 > 未确认（observation 不入此列）。
+- **权威与确认强度分开计算**：用户主动陈述 > 用户裁决 > 用户一键确认；模型自动写入单列为 `system_inferred`，无论置信度多高都不冒充用户确认。observation 不进入用户确认强度。
 - **新鲜度**：`last_confirmed_at` + 按 kind 差异化的衰减曲线（value/boundary 衰减慢，preference/假设衰减快）。衰减到阈值不删除，转入「待重新确认」——复盘的候选来源之一（「你半年前说过 X，现在还这样想吗？」）。
 - **养成参数的供数**：熟悉 = active claim 的领域覆盖度 × 平均新鲜度；默契 = 候选命中率 + 建议被采纳后 outcome 的正确率（校准度）。两者都是图谱查询，不是独立计数器。
 - **冲突检测**：同一 claim 同时有 supports 与 contradicts 边、或两条 active claim 语义互斥 → 自动创建/更新 tension 节点。**tension 是资讯象限的挂靠点**（异质视角优先投向 open tension）和候选挖掘的高优先来源。
@@ -169,11 +169,11 @@ confidence = f(证据数与质量, 用户确认强度, 反证存在性, 时效)
 | 写入者 | 能写什么 | 机制 |
 |---|---|---|
 | 感知器官（代码） | evidence | 幂等（source + hash 去重）、只增 |
-| 提取器（模型，版本化） | observation + derived_from 边 | 每日批处理 + 事件触发；带 extractor_version 供回放 |
+| 提取器（模型，版本化） | observation + derived_from 边 | 事件触发或受限批处理；带 extractor_version 供回放 |
 | 用户裁决（共创流） | observation → claim 升格；warrant/qualifier 补全；修订操作 | 共创流状态机（harness 实验设计附录 B） |
 | 提案确认 | 低风险 fact/preference 的一键升格；形态变更 | Proposal / Change Set，可回滚 |
 | 用户直接编辑 | 任何自己的 claim 的陈述与边界 | 直接生效，记 correction evidence |
-| 模型（禁止） | **不能**直接写 claim、改状态、改规则 | 提取器输出全部落 observation 层 |
+| 模型（standing grant） | 可创建、版本化修订或撤回 observation / claim / tension / action 等领域对象 | 只能经统一 Domain Change Set 写入，固定 `origin=model / authority=system_inferred`，保留证据、before/after、逆操作与回滚；不得伪造 `user_*` 权威或绕过领域不变量 |
 
 所有跨层与修订操作产生 Change Set（before/after），支持回滚——图谱变更与形态变更共用同一套机制。
 
@@ -226,7 +226,7 @@ confidence = f(证据数与质量, 用户确认强度, 反证存在性, 时效)
 
 ### 8.4 可视化供数契约（想法地图）
 
-图谱的前端展示（界面规格见前端 PRD §6.4）由三个只读投影 API 供数：
+图谱的前端展示（产品边界见前端体验 PRD §6.4）由三个只读投影 API 供数：
 
 1. **宏观图**：社区分组 + 节点（大小=枢纽度、色=领域、张力热点标记）+ 主干边。过滤规则在供数层执行：generic 节点不输出；high sensitivity 领域输出为「折叠簇」（只给数量与领域名，展开需用户确认）；observation 层永不输出。
 2. **ego 子图**：单条 claim 的一跳邻域——证据（带 strength）、反证、影响的决策/行动、修订历史链。

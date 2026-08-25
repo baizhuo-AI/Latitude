@@ -17,12 +17,12 @@ export type ProactivePatch = Partial<Omit<ProactiveConfig, "events" | "activityC
 /**
  * 应用偏好设置
  *
- * 持久化:localStorage(简单方案)。P3 上 Tauri keychain 后,API key 部分搬过去。
+ * 持久化:localStorage 只保存非敏感偏好。模型凭证由 loopback Agent Host
+ * 从进程环境/安全存储读取，绝不进入 Vite bundle 或浏览器存储。
  *
  * 包含:
  *  - lang:中/英
  *  - llmProvider:当前激活 LLM
- *  - keys:各家的 API key(脱敏显示)
  *  - baseUrls / models:各家的可选覆盖
  *  - reminder:间歇式时间日志的定时提醒配置
  *
@@ -59,6 +59,10 @@ export interface FeishuPrefs {
 }
 
 interface ProviderConfig {
+  /**
+   * @deprecated 浏览器不再接受或持久化模型密钥。保留字段只为旧调用方平滑迁移；
+   * read/persist/set 都会主动丢弃它。
+   */
   apiKey?: string;
   baseUrl?: string;
   /** 默认 model(parseTask / 排今日 等结构化任务用) */
@@ -166,7 +170,7 @@ export type { ProactiveConfig };
 
 const STORAGE_KEY = "latitude.settings";
 
-/** 默认值:provider 从 .env.local 兜底(给开发期方便);用户在 Settings 里填会覆盖 */
+/** 默认值只读取非敏感的 Vite 配置；服务端模型配置不在浏览器可见范围内。 */
 function defaults(): SettingsState {
   const env = import.meta.env;
   return {
@@ -175,19 +179,16 @@ function defaults(): SettingsState {
       ((env.VITE_LLM_PROVIDER as ProviderName) ?? "deepseek") || "deepseek",
     providers: {
       deepseek: {
-        apiKey: env.VITE_DEEPSEEK_API_KEY,
-        baseUrl: env.VITE_DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-        model: env.VITE_DEEPSEEK_MODEL ?? "deepseek-chat"
+        baseUrl: "http://127.0.0.1:43120",
+        model: "deepseek-chat"
       },
       anthropic: {
-        apiKey: env.VITE_ANTHROPIC_API_KEY,
         baseUrl: "https://api.anthropic.com",
-        model: env.VITE_ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514"
+        model: "claude-sonnet-4-20250514"
       },
       openai: {
-        apiKey: env.VITE_OPENAI_API_KEY,
         baseUrl: "https://api.openai.com/v1",
-        model: env.VITE_OPENAI_MODEL ?? "gpt-4o"
+        model: "gpt-4o"
       }
     },
     chatBackend: "deepseek-api",
@@ -305,16 +306,16 @@ function readStored(): SettingsState {
     const parsed = JSON.parse(raw) as Partial<SettingsState>;
     const def = defaults();
     // 浅合并 + 嵌套合并
-    return {
+    const merged: SettingsState = {
       lang: parsed.lang === "en" || parsed.lang === "zh" ? parsed.lang : def.lang,
       llmProvider:
         parsed.llmProvider && validProvider(parsed.llmProvider)
           ? parsed.llmProvider
           : def.llmProvider,
       providers: {
-        deepseek: { ...def.providers.deepseek, ...(parsed.providers?.deepseek ?? {}) },
-        anthropic: { ...def.providers.anthropic, ...(parsed.providers?.anthropic ?? {}) },
-        openai: { ...def.providers.openai, ...(parsed.providers?.openai ?? {}) }
+        deepseek: withoutApiKey({ ...def.providers.deepseek, ...(parsed.providers?.deepseek ?? {}) }),
+        anthropic: withoutApiKey({ ...def.providers.anthropic, ...(parsed.providers?.anthropic ?? {}) }),
+        openai: withoutApiKey({ ...def.providers.openai, ...(parsed.providers?.openai ?? {}) })
       },
       chatBackend: validChatBackend(parsed.chatBackend) ? parsed.chatBackend : def.chatBackend,
       reminder: { ...def.reminder, ...(parsed.reminder ?? {}) },
@@ -345,6 +346,17 @@ function readStored(): SettingsState {
         ? parsed.sidebarHidden.filter((x): x is string => typeof x === "string")
         : []
     };
+    // 一次性清理旧版本曾写入 localStorage 的 API key。只在确实发现旧字段时
+    // 回写，避免每次读取都制造 storage 事件。
+    const hadLegacySecret = [
+      parsed.providers?.deepseek?.apiKey,
+      parsed.providers?.anthropic?.apiKey,
+      parsed.providers?.openai?.apiKey,
+    ].some((value) => typeof value === "string" && value.length > 0);
+    if (hadLegacySecret) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    }
+    return merged;
   } catch (err) {
     console.error("[settings] parse failed, falling back to defaults:", err);
     return defaults();
@@ -403,9 +415,26 @@ function validFeishuRegion(v: unknown): v is FeishuRegion {
   return v === "feishu" || v === "lark";
 }
 
+/** Strip legacy browser-stored secrets at every read/write boundary. */
+function withoutApiKey(config: ProviderConfig): ProviderConfig {
+  const { apiKey: _discarded, ...safe } = config;
+  return safe;
+}
+
+function withoutProviderSecrets(state: SettingsState): SettingsState {
+  return {
+    ...state,
+    providers: {
+      deepseek: withoutApiKey(state.providers.deepseek),
+      anthropic: withoutApiKey(state.providers.anthropic),
+      openai: withoutApiKey(state.providers.openai),
+    },
+  };
+}
+
 function persist(state: SettingsState) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(withoutProviderSecrets(state)));
   } catch (err) {
     console.error("[settings] persist failed:", err);
   }
@@ -486,7 +515,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     resetProviderCache();
   },
   setProviderConfig: (p, cfg) => {
-    const merged = { ...get().providers[p], ...cfg };
+    const merged = withoutApiKey({ ...get().providers[p], ...cfg });
     const providers = { ...get().providers, [p]: merged };
     set({ providers });
     persist({ ...get(), providers });

@@ -52,4 +52,22 @@ describe("dimensionDesktopEnabled", () => {
     window.history.replaceState({}, "", "/?dimension=1");
     expect(dimensionDesktopEnabled()).toBe(true);
   });
+
+  it("无任何显式信号时可由 fallbackWhenUnset 默认开启（浏览器预览）", () => {
+    expect(
+      dimensionDesktopEnabled({ envValue: "", search: "", fallbackWhenUnset: true })
+    ).toBe(true);
+    expect(
+      dimensionDesktopEnabled({ envValue: "", search: "", fallbackWhenUnset: false })
+    ).toBe(false);
+  });
+
+  it("显式关闭信号不被 fallback 覆盖", () => {
+    expect(
+      dimensionDesktopEnabled({ envValue: "0", search: "", fallbackWhenUnset: true })
+    ).toBe(false);
+    expect(
+      dimensionDesktopEnabled({ search: "?dimension=0", fallbackWhenUnset: true })
+    ).toBe(false);
+  });
 });

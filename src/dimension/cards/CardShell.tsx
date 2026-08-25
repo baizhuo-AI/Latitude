@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { Tape } from "../types";
 
 /**
@@ -32,7 +33,7 @@ export function CardShell({
   /** 主位卡:标题放大到 17px。整张桌面只应有一张开这个 */
   lead?: boolean;
   tilt?: number;
-  paper?: "plain" | "sticky" | "grid";
+  paper?: "plain" | "sticky" | "grid" | "newsprint";
   offsetY?: number;
   tape?: Tape;
   clip?: boolean;
@@ -46,10 +47,20 @@ export function CardShell({
   headerExtra?: ReactNode;
   children?: ReactNode;
 }) {
+  const openTimer = useRef<number | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(openTimer.current);
+    },
+    []
+  );
+
   const cls = [
     "dim-paper",
     paper === "sticky" && "dim-paper--sticky",
     paper === "grid" && "dim-paper--grid",
+    paper === "newsprint" && "dim-paper--newsprint",
     dogear && "dim-dogear",
     openable && "dim-openable"
   ]
@@ -64,12 +75,22 @@ export function CardShell({
   // 可打开的纸片要能用键盘操作 —— 它是这张桌面上唯一的主动作
   const interactive = openable
     ? {
+        "data-card-primary-action": "true",
         role: "button" as const,
         tabIndex: 0,
-        onClick: onOpen,
+        onClick: (event: ReactMouseEvent<HTMLElement>) => {
+          window.clearTimeout(openTimer.current);
+          // 鼠标单击要给整卡双击编辑留出判定窗；键盘 click(detail=0) 立即打开。
+          if (event.detail === 0) {
+            onOpen?.();
+          } else if (event.detail === 1) {
+            openTimer.current = window.setTimeout(() => onOpen?.(), 230);
+          }
+        },
         onKeyDown: (e: React.KeyboardEvent) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
+            window.clearTimeout(openTimer.current);
             onOpen?.();
           }
         }

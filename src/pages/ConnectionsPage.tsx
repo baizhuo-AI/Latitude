@@ -36,7 +36,7 @@ export function ConnectionsPage() {
           <Section
             icon={<CalendarClock className="w-4 h-4" />}
             title="连接飞书 / Lark 日历"
-            description="把飞书/Lark 的日程同步进 Latitude 日历。用你自己企业的「自建应用」凭证，零后端、密钥只存本机系统钥匙串。"
+            description="把飞书/Lark 日程同步进 Latitude；在 Latitude 修改可写日程时也会回传，因此需要日历读写权限。凭证只存本机系统钥匙串。"
           >
             <FeishuConnectSection />
           </Section>
@@ -45,7 +45,7 @@ export function ConnectionsPage() {
           <Section
             icon={<Sheet className="w-4 h-4" />}
             title="飞书多维表格"
-            description="把今天完成的项目进展，由 AI 整理后写入你指定的飞书多维表格。贴链接 + 开开关即可，平时用对话触发。"
+            description="开启后，对话中的写入请求会真实修改指定的飞书多维表格；当前没有统一的执行前确认或回滚。建议先读取表结构再开启。"
           >
             <FeishuBitableSection />
           </Section>
@@ -54,7 +54,7 @@ export function ConnectionsPage() {
           <Section
             icon={<Plug className="w-4 h-4" />}
             title="接入 AI 助手"
-            description="让 Claude Code 等 AI 通过 MCP 直接读写你的任务、目标、复盘和时间日志。"
+            description="让本机 AI 通过带访问密钥的 MCP 操作任务、目标、活动记录、记忆和自定义字段；当前写入与删除没有逐次确认或统一回滚。"
           >
             <McpAccessSection />
           </Section>
@@ -107,7 +107,7 @@ function McpAccessSection() {
     <div className="space-y-3">
       <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
         在终端运行下面这条命令，把 Latitude 接入 Claude
-        Code（配一次永久有效，重启 / 升级都不用重配）：
+        Code（连接配置会持久保存；Latitude 运行时，命令中的密钥可用）：
       </p>
       <div className="relative">
         <pre className="text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 pr-16 overflow-x-auto whitespace-pre-wrap break-all text-zinc-800 dark:text-zinc-200">
@@ -122,7 +122,7 @@ function McpAccessSection() {
         </button>
       </div>
       <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-        端口 {info.port}，仅本机可连，需保持 Latitude 运行。密钥已自动生成并保存。
+        端口 {info.port}，仅本机可连，需保持 Latitude 运行。命令含访问密钥，请勿公开分享；接入后 AI 可调用对应写工具。Latitude 当前不提供逐次审批、密钥轮换或最近动作列表，也不包含日历查询、提案和多维表写入能力。
       </p>
     </div>
   );
@@ -547,8 +547,8 @@ function FeishuBitableSection() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-        粘贴一张飞书多维表格的链接并开启，之后就能在对话里说「把今天的项目进展写进飞书表」，
-        AI 会自动按项目整理并写入。需先在上方连接好同一个飞书 / Lark 账号。
+        粘贴链接、读取表结构并开启后，在对话里说「把今天的项目进展写进飞书表」会真实修改外部记录。
+        当前写入前没有统一确认，发生后也不能从 Latitude 一键回滚；需先在上方连接同一个飞书 / Lark 账号。
       </p>
 
       <Field label="表格链接">
@@ -598,7 +598,7 @@ function FeishuBitableSection() {
 
       {err && <p className="text-xs text-red-500 whitespace-pre-line">{err}</p>}
 
-      <Field label="启用插件">
+      <Field label="启用外部写入">
         <SegmentControl<"on" | "off">
           value={enabled ? "on" : "off"}
           onChange={(v) =>

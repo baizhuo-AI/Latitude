@@ -24,6 +24,8 @@ export type LayoutValidationIssueCode =
   | "invalid_renderer"
   | "invalid_kind"
   | "invalid_span"
+  | "invalid_hidden"
+  | "invalid_composition"
   | "empty_binding"
   | "invalid_arrangement"
   | "invalid_strategy"
@@ -231,6 +233,14 @@ function validateCards(
         cardId
       );
     }
+    if (candidate.hidden !== undefined && typeof candidate.hidden !== "boolean") {
+      issue(
+        issues,
+        "invalid_hidden",
+        "card.hidden 必须是布尔值",
+        cardId
+      );
+    }
     if (!isNonEmptyString(candidate.binding)) {
       issue(issues, "empty_binding", "card.binding 不能为空", cardId);
     }
@@ -246,7 +256,8 @@ function validateCards(
 function validateArrangement(
   arrangement: unknown,
   cardsById: Map<string, LayoutCardDefinition>,
-  issues: LayoutValidationIssue[]
+  issues: LayoutValidationIssue[],
+  strictSeedGeometry: boolean
 ): void {
   if (!isRecord(arrangement)) {
     issue(issues, "invalid_arrangement", "arrangement 必须是对象");
@@ -345,28 +356,31 @@ function validateArrangement(
     .map((id) => (typeof id === "string" ? cardsById.get(id) : undefined))
     .filter((card): card is LayoutCardDefinition => card !== undefined);
 
-  const actualRegions = resolvedCards.map((card) => card.region);
-  if (
-    actualRegions.length !== SEED_REGION_ORDER.length ||
-    actualRegions.some((region, index) => region !== SEED_REGION_ORDER[index])
-  ) {
-    issue(
-      issues,
-      "invalid_seed_region_order",
-      "种子布局区域顺序必须是 feed、schedule、review-plan、rhythm、flex"
-    );
-  }
+  // 基准 seed 的几何是回归锚点；派生桌面允许在相同五区契约内重新排布。
+  if (strictSeedGeometry) {
+    const actualRegions = resolvedCards.map((card) => card.region);
+    if (
+      actualRegions.length !== SEED_REGION_ORDER.length ||
+      actualRegions.some((region, index) => region !== SEED_REGION_ORDER[index])
+    ) {
+      issue(
+        issues,
+        "invalid_seed_region_order",
+        "种子布局区域顺序必须是 feed、schedule、review-plan、rhythm、flex"
+      );
+    }
 
-  const actualSpans = resolvedCards.map((card) => card.span);
-  if (
-    actualSpans.length !== SEED_SPAN_ORDER.length ||
-    actualSpans.some((span, index) => span !== SEED_SPAN_ORDER[index])
-  ) {
-    issue(
-      issues,
-      "invalid_seed_span_order",
-      "种子布局 span 顺序必须是 5、7、4、4、4"
-    );
+    const actualSpans = resolvedCards.map((card) => card.span);
+    if (
+      actualSpans.length !== SEED_SPAN_ORDER.length ||
+      actualSpans.some((span, index) => span !== SEED_SPAN_ORDER[index])
+    ) {
+      issue(
+        issues,
+        "invalid_seed_span_order",
+        "种子布局 span 顺序必须是 5、7、4、4、4"
+      );
+    }
   }
 }
 
@@ -390,9 +404,30 @@ export function validateLayoutDocument(document: unknown): LayoutValidationResul
     issue(issues, "invalid_revision", "revision 必须是非负整数");
   }
 
+  const composition = document.composition;
+  const userCustomized =
+    isRecord(composition) &&
+    composition.mode === "user-customized" &&
+    isNonEmptyString(composition.changeSetId);
+  if (composition !== undefined && !userCustomized) {
+    issue(
+      issues,
+      "invalid_composition",
+      "composition 必须带有 user-customized 模式和有效的 changeSetId"
+    );
+  }
+
   validateBackground(document.background, issues);
   const cardsById = validateCards(document.cards, issues);
-  validateArrangement(document.arrangement, cardsById, issues);
+  validateArrangement(
+    document.arrangement,
+    cardsById,
+    issues,
+    // 只有由线索节点明确派生的桌面允许重排五区；普通/未知布局继续守住
+    // seed 几何护栏，不能仅凭换一个 id 就绕过顺序与 span 校验。
+    !userCustomized &&
+      !(typeof document.id === "string" && document.id.includes("--clue-"))
+  );
 
   return { valid: issues.length === 0, issues };
 }

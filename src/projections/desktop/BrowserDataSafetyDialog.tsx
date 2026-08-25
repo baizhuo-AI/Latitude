@@ -1,0 +1,504 @@
+import { useEffect, useState } from "react";
+
+export interface DangerousPreparation {
+  token: string;
+  confirmation: string;
+  expiresAt?: string;
+  recoveryBackupSavedAt?: string;
+}
+
+export interface ChangeSetSummary {
+  id: string;
+  title?: string;
+  summary?: string;
+  status?: string;
+  actor?: string;
+  createdAt?: string;
+  reversible?: boolean;
+}
+
+/**
+ * Typed deep-entry boundary. The panel never calls fetch or opens SQLite; the
+ * injected local runtime adapter owns transport, idempotency and audit.
+ */
+export interface BrowserDataSafetyActions {
+  exportAll: () => Promise<unknown>;
+  checkIntegrity: () => Promise<unknown>;
+  prepareDangerous: (request: {
+    operation: "restore" | "delete_all" | "purge_all";
+    snapshot?: unknown;
+  }) => Promise<DangerousPreparation>;
+  /** Restart-safe restore of the latest IndexedDB backup created before delete_all. */
+  prepareRecentRecovery?: () => Promise<DangerousPreparation>;
+  commitDangerous: (request: {
+    token: string;
+    confirmation: string;
+  }) => Promise<unknown>;
+  listChangeSets: () => Promise<ChangeSetSummary[]>;
+  rollbackChangeSet: (changeSetId: string) => Promise<unknown>;
+}
+
+export interface BrowserDataSafetyActionAvailability {
+  export: boolean;
+  integrity: boolean;
+  restore: boolean;
+  delete: boolean;
+  purge: boolean;
+  rollback: boolean;
+  close: boolean;
+}
+
+const DEFAULT_ACTION_AVAILABILITY: BrowserDataSafetyActionAvailability = {
+  export: true,
+  integrity: true,
+  restore: true,
+  delete: true,
+  purge: true,
+  rollback: true,
+  close: true,
+};
+
+type DangerousMode = "restore" | "delete_all" | "purge_all";
+
+export function BrowserDataSafetyDialog({
+  actions,
+  actionAvailability = DEFAULT_ACTION_AVAILABILITY,
+  onChanged,
+  onClose,
+}: {
+  actions?: BrowserDataSafetyActions;
+  actionAvailability?: BrowserDataSafetyActionAvailability;
+  onChanged: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<unknown>();
+  const [snapshotName, setSnapshotName] = useState<string | null>(null);
+  const [preparation, setPreparation] = useState<{
+    mode: DangerousMode;
+    value: DangerousPreparation;
+  } | null>(null);
+  const [confirmation, setConfirmation] = useState("");
+  const [changeSets, setChangeSets] = useState<ChangeSetSummary[]>([]);
+
+  useEffect(() => {
+    if (!actions) return;
+    setBusy("history");
+    void actions.listChangeSets()
+      .then(setChangeSets)
+      .catch((error) => setNotice(readableError(error, "ChangeSet 历史读取失败")))
+      .finally(() => setBusy(null));
+  }, [actions]);
+
+  async function exportAll() {
+    if (!actions) return;
+    setBusy("export");
+    try {
+      const document = await actions.exportAll();
+      downloadJson(document, `latitude-full-export-${new Date().toISOString().slice(0, 10)}.json`);
+      setNotice("完整导出已生成并下载；原数据没有被改动。文件是未加密的明文 JSON，请由你自行安全保管。");
+    } catch (error) {
+      setNotice(readableError(error, "完整导出失败"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function checkIntegrity() {
+    if (!actions) return;
+    setBusy("integrity");
+    try {
+      const report = await actions.checkIntegrity();
+      const ok = Boolean(
+        report && typeof report === "object" && !Array.isArray(report) &&
+        (report as Record<string, unknown>).ok,
+      );
+      setNotice(ok ? "完整性检查通过。" : "完整性检查返回异常，请先导出并查看诊断。");
+    } catch (error) {
+      setNotice(readableError(error, "完整性检查失败"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function prepare(mode: DangerousMode) {
+    const enabled = mode === "restore"
+      ? actionAvailability.restore
+      : mode === "purge_all"
+        ? actionAvailability.purge
+        : actionAvailability.delete;
+    if (!actions || !enabled || (mode === "restore" && snapshot === undefined)) return;
+    setBusy(`prepare-${mode}`);
+    setConfirmation("");
+    try {
+      const value = await actions.prepareDangerous({
+        operation: mode,
+        ...(mode === "restore" ? { snapshot } : {}),
+      });
+      setPreparation({ mode, value });
+      setNotice(value.recoveryBackupSavedAt
+        ? `完整可恢复备份已写入并读回（${formatTime(value.recoveryBackupSavedAt)}）；第一阶段已准备。只有输入下方完整确认短语才会提交。`
+        : "第一阶段已准备；只有输入下方完整确认短语才会提交。");
+    } catch (error) {
+      setNotice(readableError(error, "危险操作准备失败"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function prepareRecentRecovery() {
+    if (!actions?.prepareRecentRecovery || !actionAvailability.restore) return;
+    setBusy("prepare-recent-restore");
+    setConfirmation("");
+    try {
+      const value = await actions.prepareRecentRecovery();
+      setPreparation({ mode: "restore", value });
+      setNotice(
+        `已读回最近一次可恢复清空前的完整备份${value.recoveryBackupSavedAt
+          ? `（${formatTime(value.recoveryBackupSavedAt)}）`
+          : ""}；只有输入下方完整确认短语才会恢复。`,
+      );
+    } catch (error) {
+      setNotice(readableError(error, "最近可恢复备份没有通过校验"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function commit() {
+    const enabled = preparation?.mode === "restore"
+      ? actionAvailability.restore
+      : preparation?.mode === "purge_all"
+        ? actionAvailability.purge
+        : actionAvailability.delete;
+    if (!actions || !preparation || !enabled || confirmation !== preparation.value.confirmation) return;
+    setBusy(`commit-${preparation.mode}`);
+    try {
+      const result = await actions.commitDangerous({
+        token: preparation.value.token,
+        confirmation,
+      });
+      const resultRecord = result && typeof result === "object" && !Array.isArray(result)
+        ? result as Record<string, unknown>
+        : undefined;
+      const partial = resultRecord?.ok === false || resultRecord?.status === "partial";
+      const message =
+        typeof resultRecord?.message === "string"
+          ? resultRecord.message
+          : partial
+            ? "本次操作只完成了一部分；请检查各层 receipt 与保留项，不能把当前状态当成全部成功。"
+            : preparation.mode === "restore"
+            ? "完整 profile 已恢复；Agent Host 与页面需要重启。"
+            : preparation.mode === "purge_all"
+              ? "永久删除已完成；Agent Host 与页面需要重启。"
+              : "可恢复清空已完成；Agent Host 与页面需要重启。";
+      setNotice(message);
+      setPreparation(null);
+      setConfirmation("");
+      try {
+        await onChanged();
+      } catch (error) {
+        // The commit receipt is already final. A failed readback must never be
+        // relabelled as "not submitted" after one or both services changed.
+        setNotice(`${message} 当前页面重新读取失败：${readableError(error, "请重启后再检查")}`);
+      }
+    } catch (error) {
+      setNotice(readableError(error, "危险操作没有提交"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rollback(id: string) {
+    if (!actions || !actionAvailability.rollback) return;
+    setBusy(`rollback-${id}`);
+    try {
+      await actions.rollbackChangeSet(id);
+      setNotice(`ChangeSet ${id} 已通过逆操作回滚，并生成新的审计记录。`);
+      setChangeSets(await actions.listChangeSets());
+      await onChanged();
+    } catch (error) {
+      setNotice(readableError(error, "ChangeSet 回滚失败"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div
+      className="dimension-root"
+      style={backdropStyle}
+      role="dialog"
+      aria-modal="true"
+      aria-label="数据与安全"
+    >
+      <section className="dim-paper" style={paperStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <p className="dim-eyebrow">DATA &amp; SAFETY · 深入口</p>
+            <h2 style={{ margin: "5px 0 0", fontSize: 21 }}>数据与安全</h2>
+            <p className="dim-body" style={{ marginTop: 7 }}>
+              这里不出现在日常主路径；完整导出可直接执行，恢复和删除必须经过两阶段确认。
+            </p>
+          </div>
+          <button
+            type="button"
+            className="dim-btn"
+            onClick={onClose}
+            disabled={!actionAvailability.close}
+            aria-disabled={!actionAvailability.close}
+          >
+            合上
+          </button>
+        </div>
+
+        {!actions && (
+          <p role="status" className="dim-body">
+            当前 Domain adapter 还没有注入数据安全动作；面板不会绕过端口直接 fetch。
+          </p>
+        )}
+
+        <section className="dim-paper" style={sectionStyle}>
+          <p className="dim-eyebrow">完整导出</p>
+          <p className="dim-body">导出图谱、证据、ChangeSet、Agent 对话与任务账本、组件布局和当前会话身份。下载文件是未加密的明文 JSON，离开本产品后由你自行安全保管。</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="dim-btn dim-btn--accent"
+              disabled={!actions || !actionAvailability.export || busy !== null}
+              onClick={() => void exportAll()}
+            >
+              {busy === "export" ? "导出中…" : "下载完整导出"}
+            </button>
+            <button
+              type="button"
+              className="dim-btn"
+              disabled={!actions || !actionAvailability.integrity || busy !== null}
+              onClick={() => void checkIntegrity()}
+            >
+              {busy === "integrity" ? "检查中…" : "检查数据完整性"}
+            </button>
+          </div>
+        </section>
+
+        <section className="dim-paper" style={sectionStyle}>
+          <p className="dim-eyebrow">导入 / 完整恢复</p>
+          <label className="dim-body">
+            选择 Latitude 导出文件
+            <input
+              aria-label="选择恢复文件"
+              type="file"
+              accept="application/json,.json"
+              disabled={!actions || !actionAvailability.restore || busy !== null}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                setSnapshotName(file.name);
+                void file.text()
+                  .then((text) => setSnapshot(JSON.parse(text)))
+                  .then(() => setNotice(`已在浏览器内校验 JSON：${file.name}；尚未改动任何数据。`))
+                  .catch((error) => {
+                    setSnapshot(undefined);
+                    setNotice(readableError(error, "恢复文件不是有效 JSON"));
+                  });
+              }}
+            />
+          </label>
+          {snapshotName && <span className="dim-meta">待恢复 · {snapshotName}</span>}
+          <button
+            type="button"
+            className="dim-btn"
+            disabled={!actions || !actionAvailability.restore || snapshot === undefined || busy !== null}
+            onClick={() => void prepare("restore")}
+          >
+            第一步：准备完整恢复
+          </button>
+          <div style={{ borderTop: "1px solid var(--dim-line)", paddingTop: 9 }}>
+            <p className="dim-body" style={{ marginTop: 0 }}>
+              可恢复清空会先把无凭证的完整 Browser profile 写入本浏览器 IndexedDB 并读回校验；重启后仍可从这里恢复。永久删除会同时清掉这份备份。
+            </p>
+            <button
+              type="button"
+              className="dim-btn"
+              disabled={
+                !actions?.prepareRecentRecovery ||
+                !actionAvailability.restore ||
+                busy !== null
+              }
+              onClick={() => void prepareRecentRecovery()}
+            >
+              第一步：恢复最近可恢复备份
+            </button>
+          </div>
+        </section>
+
+        <section className="dim-paper" style={{ ...sectionStyle, borderColor: "var(--dim-rust)" }}>
+          <p className="dim-eyebrow">危险区 · 可恢复清空</p>
+          <p className="dim-body">清空当前本地数据，但保留服务侧安全备份和本浏览器的完整恢复副本。第一步会先写入并读回恢复副本，再生成短期令牌；任何备份失败都会阻止清空。</p>
+          <button
+            type="button"
+            className="dim-btn"
+            disabled={!actions || !actionAvailability.delete || busy !== null}
+            onClick={() => void prepare("delete_all")}
+          >
+            第一步：准备可恢复清空
+          </button>
+          <details style={{ width: "100%", marginTop: 4 }}>
+            <summary className="dim-eyebrow">更深一层 · 永久删除（不可恢复）</summary>
+            <p className="dim-body">
+              永久清空 Domain、Agent、组件与会话身份，并删除本产品控制的服务侧备份。
+              外部保存的导出文件不受影响，也无法由本产品代为删除。
+            </p>
+            <button
+              type="button"
+              className="dim-btn"
+              disabled={!actions || !actionAvailability.purge || busy !== null}
+              onClick={() => void prepare("purge_all")}
+            >
+              第一步：准备永久删除
+            </button>
+          </details>
+        </section>
+
+        {preparation && (
+          <section className="dim-paper" style={{ ...sectionStyle, borderColor: "var(--dim-rust)" }}>
+            <p className="dim-eyebrow">
+              第二阶段确认 · {preparation.mode === "restore"
+                ? "完整恢复"
+                : preparation.mode === "purge_all"
+                  ? "永久删除"
+                  : "可恢复清空"}
+            </p>
+            <p className="dim-body">
+              请输入完整短语：<strong>{preparation.value.confirmation}</strong>
+            </p>
+            {preparation.value.expiresAt && (
+              <p className="dim-meta">令牌失效 · {preparation.value.expiresAt}</p>
+            )}
+            <input
+              className="dim-input"
+              aria-label="危险操作确认短语"
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="dim-btn"
+                onClick={() => {
+                  setPreparation(null);
+                  setConfirmation("");
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="dim-btn dim-btn--accent"
+                disabled={
+                  busy !== null ||
+                  confirmation !== preparation.value.confirmation ||
+                  (preparation.mode === "restore"
+                    ? !actionAvailability.restore
+                    : preparation.mode === "purge_all"
+                      ? !actionAvailability.purge
+                      : !actionAvailability.delete)
+                }
+                onClick={() => void commit()}
+              >
+                第二步：确认执行
+              </button>
+            </div>
+          </section>
+        )}
+
+        <details>
+          <summary className="dim-eyebrow">ChangeSet 历史与回滚</summary>
+          {changeSets.length === 0 ? (
+            <p className="dim-meta">{busy === "history" ? "读取中…" : "没有可显示的 ChangeSet。"}</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
+              {changeSets.map((changeSet) => (
+                <div key={changeSet.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="dim-meta" style={{ flex: 1 }}>
+                    {changeSet.title || changeSet.summary || changeSet.id}
+                    {changeSet.createdAt ? ` · ${formatTime(changeSet.createdAt)}` : ""}
+                    {changeSet.status ? ` · ${changeSet.status}` : ""}
+                    {changeSet.reversible === false ? " · 不可回滚" : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="dim-btn dim-btn--quiet"
+                    disabled={
+                      busy !== null ||
+                      !actionAvailability.rollback ||
+                      changeSet.status !== "applied" ||
+                      changeSet.reversible !== true
+                    }
+                    onClick={() => void rollback(changeSet.id)}
+                  >
+                    {changeSet.reversible === true ? "回滚" : "不可回滚"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </details>
+
+        {notice && <p className="dim-body" role="status">{notice}</p>}
+      </section>
+    </div>
+  );
+}
+
+const backdropStyle = {
+  position: "fixed",
+  inset: 0,
+  // The independent secretary uses z-index 90; destructive controls must not
+  // be partially covered by her bubble.
+  zIndex: 100,
+  display: "grid",
+  placeItems: "center",
+  padding: 24,
+  background: "rgb(43 39 31 / 52%)",
+} as const;
+
+const paperStyle = {
+  width: "min(760px, 100%)",
+  maxHeight: "min(860px, 92vh)",
+  overflowY: "auto",
+  padding: 22,
+  display: "flex",
+  flexDirection: "column",
+  gap: 13,
+  color: "var(--dim-ink)",
+} as const;
+
+const sectionStyle = {
+  padding: 12,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
+  gap: 8,
+} as const;
+
+function downloadJson(value: unknown, filename: string) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function readableError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? `${fallback}：${error.message}` : fallback;
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
+}

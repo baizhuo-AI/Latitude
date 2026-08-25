@@ -2,8 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  Eye,
-  EyeOff,
   Languages,
   Palette,
   KeyRound,
@@ -47,7 +45,7 @@ import { SIDEBAR_NAV_ITEMS } from "../components/Sidebar";
  *
  * 4 个 section:
  *  1. 外观:语言 + 主题
- *  2. LLM:provider 切换 + 各家 API key 输入(密文显示,可切显)
+ *  2. LLM:provider 与模型偏好；凭据只由本机 Agent Host 从 .env.local 读取
  *  3. 用量:(留位,等 P3 接 llm_usage 表)
  *  4. 数据:重置设置 + 清空数据库
  */
@@ -485,58 +483,22 @@ function ProviderKeyEditor({
   const { t } = useTranslation();
   const settings = useSettingsStore();
   const cfg = settings.providers[provider];
-  const [showKey, setShowKey] = useState(false);
-  const [draft, setDraft] = useState(cfg.apiKey ?? "");
   const [model, setModel] = useState(cfg.model ?? "");
 
   function commit() {
     settings.setProviderConfig(provider, {
-      apiKey: draft.trim() || undefined,
       model: model.trim() || undefined
     });
   }
 
-  const placeholderKey =
-    provider === "deepseek"
-      ? "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-      : provider === "anthropic"
-        ? "sk-ant-xxxxxxxx"
-        : "sk-proj-xxxxxxxx";
-
   return (
     <>
       <Field label={t("settings.llm.apiKey")}>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <input
-              type={showKey ? "text" : "password"}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commit}
-              placeholder={placeholderKey}
-              className={cn(
-                "w-72 px-3 py-1.5 pr-9 rounded-lg text-sm outline-none transition-colors font-mono",
-                "bg-zinc-50 dark:bg-zinc-950",
-                "border border-zinc-200 dark:border-zinc-700",
-                "focus:border-indigo-500",
-                "text-zinc-900 dark:text-zinc-100",
-                "placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
-              )}
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey((v) => !v)}
-              aria-label={showKey ? "hide" : "show"}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-            >
-              {showKey ? (
-                <EyeOff className="w-3.5 h-3.5" />
-              ) : (
-                <Eye className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </div>
-        </div>
+        <p className="max-w-xl text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+          浏览器与设置页不会读取或保存模型密钥。请只在被 git 忽略、权限为 600 的
+          <code className="mx-1 font-mono">.env.local</code>
+          中配置服务端凭据，然后重启本机 Agent Host。
+        </p>
       </Field>
       <Field label={t("settings.llm.model")}>
         <div className="flex flex-col gap-1.5">

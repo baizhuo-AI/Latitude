@@ -4,7 +4,7 @@
 
 ## 与新规范的关系
 
-| 维度 | 本目录（旧） | 新桌面（[前端 PRD](../../docs/specs/2026-08-19-dimension-desktop-frontend-prd.md) §8） |
+| 维度 | 本目录（旧） | 新桌面（实现口径见 [`src/dimension/README.md`](../dimension/README.md)） |
 |---|---|---|
 | 主题 | `ThemeMode = "light" \| "dark"`，亮暗双主题 | **实验期无深色模式**——纸张语言依赖暖白底，反色会毁掉它；深色版单独立项 |
 | 色板 | 中性 + 语义 + 项目色 | 纸张色板（`src/dimension/dimension.css` 的 `--dim-*`） |

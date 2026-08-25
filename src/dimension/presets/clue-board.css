@@ -1,0 +1,860 @@
+/**
+ * 线索板 v3。
+ *
+ * 一块带框的板：木框 + 亚麻板面 + 细墨线。今日命题钉在顶梁，
+ * 事件维度（工作现状 / 个人项目 / 短期规划…）以纸条钉在四周，
+ * 金线连线索簇，暗红虚线连待验证的提案。点开线索纸，
+ * 右侧抽屉展开这条线的全部记录。
+ */
+
+.clue-board {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 5%), transparent 18% 82%, rgb(29 22 15 / 13%)),
+    repeating-linear-gradient(2deg, transparent 0 18px, rgb(64 47 29 / 7%) 19px 20px),
+    linear-gradient(145deg, #6d6754 0%, #555948 44%, #484b3c 100%);
+  color: var(--dim-ink, #2a2a24);
+  padding: 18px 26px 22px;
+}
+
+/* 接近桌面的一侧用一层暖雾软接；内容本身不做 filter blur。 */
+.clue-board::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 42px;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(180deg, rgb(233 234 223 / 24%), transparent);
+}
+
+.clue-board > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- 顶栏 ---------- */
+
+.clue-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-shrink: 0;
+  padding: 0 6px 12px;
+}
+
+.clue-kicker {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: #d7d2bf;
+  text-transform: uppercase;
+}
+
+.clue-topbar h1 {
+  margin: 5px 0 0;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #f2eee1;
+}
+
+.clue-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: #d7d2bf;
+}
+
+.clue-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.clue-legend-line {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 1.5px solid;
+}
+
+.clue-legend-gold { border-color: #a88a3c; }
+.clue-legend-red { border-color: #b0503f; border-top-style: dashed; }
+.clue-legend-related { border-color: #69746d; border-top-style: dotted; }
+
+.clue-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #d7d2bf;
+  font-variant-numeric: tabular-nums;
+}
+
+.clue-status-light {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim-olive, #7c8a3e);
+  box-shadow: 0 0 6px rgb(124 138 62 / 55%);
+}
+
+/* ---------- 板框 ---------- */
+
+/* 木框：四层阴影叠出截面 —— 外缘暗、受光面亮、内缘压板面 */
+.clue-frame {
+  position: relative;
+  flex: 1;
+  min-height: 560px;
+  display: flex;
+  border: 13px solid #65482f;
+  border-radius: 6px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 232 190 / 28%),
+    inset 0 -3px 0 rgb(31 20 10 / 48%),
+    inset 2px 0 0 rgb(255 232 190 / 14%),
+    0 24px 44px -20px rgb(19 15 10 / 74%);
+  background:
+    repeating-linear-gradient(88deg, rgb(255 237 199 / 5%) 0 3px, transparent 3px 14px),
+    #65482f;
+}
+
+.clue-surface {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(780px 420px at 50% -4%, rgb(255 246 213 / 34%), transparent 68%),
+    radial-gradient(circle at 18% 24%, rgb(92 68 41 / 12%) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 72% 68%, rgb(92 68 41 / 10%) 0 1px, transparent 1.5px),
+    repeating-linear-gradient(7deg, transparent 0 25px, rgb(103 76 45 / 5%) 25px 26px),
+    #c9ad7f;
+  background-size: auto, 17px 19px, 23px 21px, auto, auto;
+  box-shadow:
+    inset 0 0 30px rgb(58 39 21 / 28%),
+    inset 0 1px 0 rgb(255 248 223 / 34%);
+}
+
+/* ---------- 墨线 ---------- */
+
+.clue-threads {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.clue-thread-stroke {
+  fill: none;
+  stroke-width: 1.1;
+  pointer-events: none;
+}
+
+.clue-thread-support .clue-thread-stroke,
+.clue-thread-gold .clue-thread-stroke {
+  stroke: #a88a3c;
+  stroke-opacity: 0.6;
+}
+
+.clue-thread-verify .clue-thread-stroke,
+.clue-thread-red .clue-thread-stroke {
+  stroke: #b0503f;
+  stroke-opacity: 0.65;
+  stroke-dasharray: 4 3;
+}
+
+.clue-thread-related .clue-thread-stroke {
+  stroke: #69746d;
+  stroke-opacity: 0.55;
+  stroke-dasharray: 1 4;
+}
+
+/* 可见线仍然细；透明命中线把可点击宽度扩到 16px。 */
+.clue-thread-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.clue-thread-hit:focus {
+  stroke: rgb(255 248 218 / 26%);
+  outline: none;
+}
+
+.clue-knot {
+  fill: #4a4436;
+}
+
+/* ---------- 别针 ---------- */
+
+.clue-pin {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e3c478, #a88a3c 72%);
+  box-shadow: 0 2px 3px rgb(50 40 20 / 45%);
+}
+
+.clue-pin-red {
+  background: radial-gradient(circle at 35% 30%, #d98d7e, #b0503f 72%);
+}
+
+.clue-pin-plain {
+  background: radial-gradient(circle at 35% 30%, #b8b2a0, #6b6656 72%);
+}
+
+/* ---------- 纸（命题 / 线索 / 提案 / 剪报共用） ---------- */
+
+.clue-paper,
+.clue-thesis {
+  position: absolute;
+  transform: translateX(-50%);
+  background: var(--dim-paper, #fdfaf2);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  box-shadow: 0 2px 0 rgb(50 40 24 / 12%), 0 12px 20px -12px rgb(50 40 24 / 45%);
+  text-align: left;
+}
+
+/* 每张纸的稳定小角度：序位决定，不随机 */
+.clue-paper[data-slip-index="0"],
+.clue-thesis { transform: translateX(-50%) rotate(-0.7deg); }
+.clue-paper[data-slip-index="1"] { transform: translateX(-50%) rotate(0.9deg); }
+.clue-paper[data-slip-index="2"] { transform: translateX(-50%) rotate(0.4deg); }
+.clue-paper[data-slip-index="3"] { transform: translateX(-50%) rotate(-1.1deg); }
+.clue-paper[data-slip-index="4"] { transform: translateX(-50%) rotate(1.2deg); }
+.clue-paper[data-slip-index="5"] { transform: translateX(-50%) rotate(-0.5deg); }
+
+.clue-paper {
+  width: 230px;
+  padding: 15px 15px 12px;
+  cursor: pointer;
+  transition: box-shadow 0.25s ease;
+}
+
+article.clue-paper {
+  cursor: default;
+}
+
+.clue-paper:hover {
+  box-shadow: 0 3px 0 rgb(50 40 24 / 14%), 0 18px 26px -12px rgb(50 40 24 / 55%);
+}
+
+.clue-paper:focus-visible,
+.clue-thesis:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 3px;
+}
+
+.clue-paper.is-selected {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 2px;
+}
+
+.clue-paper-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim-ink-faint, #9a9482);
+}
+
+.clue-paper h3 {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+
+.clue-paper ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.clue-paper li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.clue-paper li.is-done {
+  color: var(--dim-ink-faint, #9a9482);
+  text-decoration: line-through;
+  text-decoration-color: rgb(70 82 31 / 40%);
+}
+
+.clue-row-time {
+  flex-shrink: 0;
+  min-width: 46px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--dim-rust, #c35e4a);
+  font-variant-numeric: tabular-nums;
+}
+
+.clue-more {
+  color: var(--dim-olive, #7c8a3e);
+  font-size: 10.5px;
+}
+
+/* 命题卡：顶梁中央，比线索纸大一号 */
+.clue-thesis {
+  width: 380px;
+  padding: 18px 24px 15px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: box-shadow 0.25s ease;
+}
+
+.clue-thesis:hover {
+  box-shadow: 0 3px 0 rgb(50 40 24 / 14%), 0 18px 30px -12px rgb(50 40 24 / 55%);
+}
+
+.clue-thesis-number {
+  display: block;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  color: var(--dim-rust, #c35e4a);
+  margin-bottom: 6px;
+}
+
+.clue-thesis strong {
+  font-size: 16.5px;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
+}
+
+.clue-thesis-copy {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--dim-ink-soft, #6b6656);
+}
+
+/* 提案纸：便签黄，暗红线连过来 */
+.clue-proposal-paper {
+  width: 280px;
+  background: var(--dim-sticky, #fbf0c8);
+  border-color: #e3d194;
+}
+
+.clue-pending-flag {
+  color: #b0503f;
+}
+
+.clue-proposal-paper blockquote {
+  margin: 8px 0 0;
+  padding: 8px 11px;
+  border-left: 2px solid var(--dim-olive, #7c8a3e);
+  background: rgb(124 138 62 / 8%);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.clue-consequence {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--dim-ink-sticky, #a29656);
+}
+
+/* 剪报：报纸上剪下来的一条，斜钉在板上缘 */
+.clue-clipping {
+  width: 210px;
+  background: #f8f4e6;
+  border-color: #cfc8b2;
+}
+
+.clue-clipping h3 {
+  font-size: 13px;
+}
+
+.clue-clipping-why {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--dim-ink-soft, #6b6656);
+}
+
+/* ---------- 按钮 ---------- */
+
+.clue-verdicts {
+  margin-top: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.clue-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--dim-line, #d8d2c0);
+  color: var(--dim-ink, #2a2a24);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.clue-btn:hover {
+  border-color: var(--dim-olive, #7c8a3e);
+  background: rgb(124 138 62 / 8%);
+}
+
+.clue-btn-accent {
+  border-color: var(--dim-olive, #7c8a3e);
+  color: var(--dim-olive-deep, #46521f);
+  font-weight: 600;
+}
+
+.clue-btn:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 1px;
+}
+
+.clue-lineage {
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  font-size: 10.5px;
+  color: var(--dim-olive, #7c8a3e);
+  cursor: pointer;
+  text-align: left;
+}
+
+.clue-lineage:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- 留白与边角 ---------- */
+
+.clue-blank {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%) rotate(-0.4deg);
+  width: 380px;
+  margin: 0;
+  padding: 16px 20px;
+  background: var(--dim-paper, #fdfaf2);
+  border: 1px dashed var(--dim-line, #d8d2c0);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--dim-ink-faint, #9a9482);
+}
+
+.clue-margin-note {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  margin: 0;
+  max-width: 340px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dim-hand, #9a6b3c);
+  font-style: italic;
+}
+
+.clue-margin-note span {
+  display: block;
+  margin-top: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  font-style: normal;
+  color: var(--dim-ink-faint, #9a9482);
+}
+
+/* ---------- 详情抽屉 ---------- */
+
+.clue-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  background: var(--dim-paper, #fdfaf2);
+  border-left: 1px solid var(--dim-line, #d8d2c0);
+  box-shadow: -18px 0 30px -18px rgb(50 40 24 / 50%);
+  padding: 20px 18px;
+  overflow-y: auto;
+  animation: clue-drawer-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 4;
+}
+
+@keyframes clue-drawer-in {
+  from {
+    translate: 24px 0;
+    opacity: 0;
+  }
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+.clue-drawer header {
+  position: relative;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid rgb(70 82 31 / 25%);
+}
+
+.clue-drawer h2 {
+  margin: 6px 0 0;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
+.clue-drawer-sub {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--dim-ink-soft, #6b6656);
+}
+
+.clue-drawer-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--dim-ink-faint, #9a9482);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.clue-drawer-close:hover {
+  color: var(--dim-ink, #2a2a24);
+}
+
+.clue-drawer-list {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.clue-drawer-list li.is-done .clue-drawer-row-text {
+  text-decoration: line-through;
+  text-decoration-color: rgb(70 82 31 / 40%);
+  color: var(--dim-ink-soft, #6b6656);
+}
+
+.clue-drawer-row-main {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.clue-drawer-row-text {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.clue-drawer-row-tools {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.clue-drawer-note {
+  margin: 18px 0 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--dim-line, #d8d2c0);
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--dim-ink-faint, #9a9482);
+}
+
+/* ---------- 线索纸的拖拽与层级入口（v4） ---------- */
+
+/* 拖动中：纸被拎起来——放大一点、影子拉长、压到最上 */
+.clue-paper.is-draggable,
+.clue-thesis.is-draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.clue-paper.is-dragging,
+.clue-thesis.is-dragging {
+  cursor: grabbing;
+  z-index: 6;
+  scale: 1.04;
+  box-shadow: 0 4px 0 rgb(50 40 24 / 12%), 0 26px 34px -12px rgb(50 40 24 / 60%);
+  transition: none;
+}
+
+/* 整纸主入口：透明热区盖在纸上，点按 = 进这条线索的桌面 */
+.clue-paper-hit {
+  position: absolute;
+  inset: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: inherit;
+}
+
+.clue-paper-hit:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 3px;
+}
+
+/* 「进这张桌面 →」： hover 时浮在纸的下缘 */
+.clue-paper-hit-label {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--dim-olive-deep, #46521f);
+  background: color-mix(in srgb, var(--dim-paper, #fdfaf2) 88%, transparent);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  border-radius: 999px;
+  padding: 3px 10px;
+  opacity: 0;
+  translate: 0 4px;
+  transition: opacity 0.22s ease, translate 0.22s ease;
+  pointer-events: none;
+}
+
+.clue-thread-paper:hover .clue-paper-hit-label,
+.clue-paper-hit:focus-visible .clue-paper-hit-label {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* 右上只保留详情与连接；纸片编辑统一由双击承担。 */
+.clue-paper-detail,
+.clue-paper-relation {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--dim-ink-faint, #9a9482);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+/* 双击是主编辑入口；此按钮只为键盘/读屏保留，Tab 聚焦时才显形。 */
+.clue-paper-edit-keyboard {
+  position: absolute;
+  z-index: 3;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.clue-paper-edit-keyboard:focus-visible {
+  right: 34px;
+  bottom: 7px;
+  width: auto;
+  height: 23px;
+  padding: 0 9px;
+  overflow: visible;
+  clip-path: none;
+  border: 1px solid var(--dim-olive, #7c8a3e);
+  border-radius: 999px;
+  background: var(--dim-paper, #fdfaf2);
+  color: var(--dim-olive-deep, #46521f);
+  font-size: 9px;
+}
+
+.clue-paper-relation {
+  inset: auto auto 7px 7px;
+  width: auto;
+  height: 23px;
+  padding: 0 8px;
+  display: inline-flex;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgb(253 250 242 / 90%);
+  border: 1px solid rgb(108 99 72 / 20%);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  opacity: 0.58;
+}
+
+.clue-paper-relation i,
+.clue-line-editor-options i {
+  display: inline-block;
+  width: 15px;
+  height: 0;
+  border-top: 1.5px solid #a88a3c;
+}
+
+.clue-paper-relation.is-verify i,
+.clue-line-editor-options i.is-verify {
+  border-color: #b0503f;
+  border-top-style: dashed;
+}
+
+.clue-paper-relation.is-related i,
+.clue-line-editor-options i.is-related {
+  border-color: #69746d;
+  border-top-style: dotted;
+}
+
+.clue-paper-relation.is-none i,
+.clue-line-editor-options i.is-none {
+  border-color: #99917f;
+  opacity: 0.5;
+  rotate: -24deg;
+}
+
+.clue-thread-paper:hover .clue-paper-detail,
+.clue-thread-paper:hover .clue-paper-relation,
+.clue-paper-detail:focus-visible,
+.clue-paper-relation:focus-visible {
+  opacity: 1;
+}
+
+.clue-paper-detail:hover {
+  background: rgb(60 55 40 / 8%);
+  color: var(--dim-ink, #2a2a24);
+}
+
+.clue-paper[data-card-editable="true"]:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 3px;
+}
+
+.clue-paper-relation:hover {
+  background: rgb(255 252 240 / 96%);
+  color: var(--dim-ink, #2a2a24);
+  border-color: rgb(108 99 72 / 40%);
+}
+
+/* ---------- 连接编辑：选一根线后出现的真实本地设置 ---------- */
+
+.clue-line-editor {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  z-index: 8;
+  width: 300px;
+  padding: 14px 15px 13px;
+  background: rgb(249 246 234 / 96%);
+  border: 1px solid rgb(93 80 52 / 28%);
+  box-shadow: 0 18px 38px -18px rgb(38 27 14 / 62%);
+  backdrop-filter: blur(8px);
+}
+
+.clue-line-editor-kicker {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--dim-rust, #c35e4a);
+}
+
+.clue-line-editor > strong {
+  font-size: 14px;
+}
+
+.clue-line-editor p {
+  margin: 5px 24px 9px 0;
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--dim-ink-soft, #6b6656);
+}
+
+.clue-line-editor-close {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 25px;
+  height: 25px;
+  border: 0;
+  background: none;
+  color: var(--dim-ink-faint, #9a9482);
+  cursor: pointer;
+}
+
+.clue-line-editor-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.clue-line-editor-options button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid rgb(108 99 72 / 20%);
+  background: transparent;
+  color: var(--dim-ink-soft, #6b6656);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.clue-line-editor-options button.is-active {
+  border-color: var(--dim-olive, #7c8a3e);
+  background: rgb(124 138 62 / 9%);
+  color: var(--dim-ink, #2a2a24);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clue-paper-hit-label,
+  .clue-paper-detail,
+  .clue-paper-relation,
+  .clue-paper-edit-keyboard {
+    transition: none;
+  }
+
+  .clue-drawer {
+    animation: none;
+  }
+
+  .clue-paper,
+  .clue-thesis,
+  .clue-btn {
+    transition: none;
+  }
+}

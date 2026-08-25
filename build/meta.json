@@ -135,6 +135,44 @@
       "namedExport": "GrowthMatrix",
       "meta": {}
     },
+    "dimension--桌面预设--clue-board": {
+      "name": "Clue board",
+      "levels": [
+        "Dimension",
+        "桌面预设"
+      ],
+      "locStart": 11,
+      "locEnd": 22,
+      "filePath": "src/dimension/presets/ClueBoardPreset.stories.tsx",
+      "namedExport": "ClueBoard",
+      "meta": {}
+    },
+    "dimension--预设--夜航星图--full-sky": {
+      "name": "Full sky",
+      "levels": [
+        "Dimension",
+        "预设",
+        "夜航星图"
+      ],
+      "locStart": 9,
+      "locEnd": 19,
+      "filePath": "src/dimension/presets/ConstellationPreset.stories.tsx",
+      "namedExport": "FullSky",
+      "meta": {}
+    },
+    "dimension--桌面预设--三层甲板--preset-lab": {
+      "name": "Preset lab",
+      "levels": [
+        "Dimension",
+        "桌面预设",
+        "三层甲板"
+      ],
+      "locStart": 10,
+      "locEnd": 14,
+      "filePath": "src/dimension/presets/DimensionPresetApp.stories.tsx",
+      "namedExport": "PresetLab",
+      "meta": {}
+    },
     "dimension--布局运行时--content-swap-same-skeleton": {
       "name": "Content swap same skeleton",
       "levels": [

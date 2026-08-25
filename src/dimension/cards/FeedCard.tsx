@@ -15,6 +15,9 @@ const FEEDBACK_ACTIONS: readonly {
   { value: "not-useful", label: "没用" }
 ];
 
+/** 双击里的第二次 click 不能重复落一条反馈或来源活动。 */
+const isFirstActivation = (detail: number) => detail <= 1;
+
 /**
  * 资讯卡。日上限在投影层控制，渲染边界再用 limitFeedItems
  * 防守一次，避免异常 payload 把早报变成信息流。
@@ -78,14 +81,37 @@ export function FeedCard({
                     gap: 6
                   }}
                 >
-                  <span className="dim-meta">来源 · {item.source}</span>
+                  {item.url ? (
+                    <a
+                      className="dim-meta dim-feed-source-link"
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      referrerPolicy="no-referrer"
+                    >
+                      来源 · {item.source} ↗
+                    </a>
+                  ) : (
+                    <span className="dim-meta">来源 · {item.source}</span>
+                  )}
+                  {item.publishedAt && (
+                    <span className="dim-meta">发布 · {item.publishedAt}</span>
+                  )}
+                  {item.freshness === "stale" && (
+                    <span className="dim-meta" data-freshness="stale">较早资料</span>
+                  )}
                   {lineage && (
                     <button
                       type="button"
                       className="dim-btn dim-btn--quiet"
                       style={{ padding: "2px 4px", color: "var(--dim-olive)", fontSize: 9 }}
                       aria-label={`查看来源：${lineage.label}`}
-                      onClick={() => onLineage?.(lineage)}
+                      aria-disabled={!onLineage}
+                      disabled={!onLineage}
+                      title={onLineage ? undefined : "这项动作已在组件设置中关闭"}
+                      onClick={(event) => {
+                        if (isFirstActivation(event.detail)) onLineage?.(lineage);
+                      }}
                     >
                       ◇ 关联
                     </button>
@@ -98,7 +124,14 @@ export function FeedCard({
                       type="button"
                       className="dim-btn dim-btn--quiet"
                       style={{ padding: "2px 5px" }}
-                      onClick={() => onFeedback?.(item.id, action.value)}
+                      aria-disabled={!onFeedback}
+                      disabled={!onFeedback}
+                      title={onFeedback ? undefined : "资讯反馈已在组件设置中关闭"}
+                      onClick={(event) => {
+                        if (isFirstActivation(event.detail)) {
+                          onFeedback?.(item.id, action.value);
+                        }
+                      }}
                     >
                       {action.label}
                     </button>

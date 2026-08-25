@@ -49,8 +49,8 @@ interface ChatStore {
   abort: AbortController | null;
 
   hydrate: () => Promise<void>;
-  selectConv: (id: string | null) => Promise<void>;
-  createConv: (title?: string) => Promise<string>;
+  selectConv: (id: string | null, opts?: { reload?: boolean }) => Promise<void>;
+  createConv: (title?: string, opts?: { deferSync?: boolean }) => Promise<string>;
   deleteConv: (id: string) => Promise<void>;
   renameConv: (id: string, title: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
@@ -251,6 +251,7 @@ export async function submitAgentRound(
           createdAt: now
         };
         await dbInsertActivity(actRec);
+        emitSync("activities");
         // 顺带提炼一条 ongoing 记忆事实（7 天过期，阶段性信息不永久保留）
         await dbInsertMemoryFact({
           category: "ongoing",
@@ -260,6 +261,7 @@ export async function submitAgentRound(
           pinned: false,
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
         });
+        emitSync("memory");
       }
     }
   } catch (err) {
@@ -340,13 +342,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  selectConv: async (id) => {
+  selectConv: async (id, opts) => {
     if (!id) {
       set({ currentId: null });
       return;
     }
     set({ currentId: id });
-    if (!get().messagesByConv[id]) {
+    if (opts?.reload || !get().messagesByConv[id]) {
       try {
         const msgs = await dbListMessages(id);
         set((s) => ({ messagesByConv: { ...s.messagesByConv, [id]: msgs } }));
@@ -356,7 +358,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  createConv: async (title) => {
+  createConv: async (title, opts) => {
     const id = newId("c");
     const now = new Date().toISOString();
     const conv: ConversationRow = {
@@ -371,7 +373,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       currentId: id,
       messagesByConv: { ...s.messagesByConv, [id]: [] }
     }));
-    emitSync("conversations");
+    // sendMessage 新建会话时，首条消息还没有落库。此时过早广播会让同窗口的
+    // 强制 reload 与消息追加竞争；该路径把广播延后到整轮提交的 finally。
+    if (!opts?.deferSync) emitSync("conversations");
     return id;
   },
 
@@ -418,7 +422,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     let convId = get().currentId;
     if (!convId) {
-      convId = await get().createConv(trimmed.slice(0, 24));
+      convId = await get().createConv(trimmed.slice(0, 24), { deferSync: true });
     }
     const cid = convId; // 收窄为非空，供下面的闭包使用
 
@@ -434,12 +438,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       await submitAgentRound(cid, trimmed, {
         hooks: {
           onUserPersisted: (msg) =>
-            set((s) => ({
-              messagesByConv: {
-                ...s.messagesByConv,
-                [cid]: [...(s.messagesByConv[cid] ?? []), msg]
-              }
-            })),
+            set((s) => {
+              const current = s.messagesByConv[cid] ?? [];
+              const existingIndex = current.findIndex((item) => item.id === msg.id);
+              const next =
+                existingIndex < 0
+                  ? [...current, msg]
+                  : current.map((item, index) => (index === existingIndex ? msg : item));
+              return {
+                messagesByConv: {
+                  ...s.messagesByConv,
+                  [cid]: next
+                }
+              };
+            }),
           onAssistantStart: (id) => {
             assistantId = id;
             set((s) => ({

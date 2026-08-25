@@ -1,0 +1,890 @@
+/**
+ * 垂直甲板样式（v5：工作空间内直角 + 群星汇聚景深）。
+ *
+ * 轨道仍保留三层常驻挂载与空间顺序，但不再把所有换层都做成模糊上滑：
+ * 纸面 <-> 线索板是同一空间的水平桌面与前方立面，沿共享内角随视线
+ * 俯仰，文字始终清晰；只有进出星图才用强 scale + blur 拉开近远。
+ * 落定后进入层仍播自己的隐喻——
+ *   桌面：便签从桌心散开排开（像刚把今天的任务铺开）；
+ *   线索板：纸条从上方落下、钉上板后轻轻晃荡；
+ *   星图：视角从近处拉远（小缩放），星体渐次显影。
+ * 纸片自身的倾斜角写在 transform，入场动效用独立的 translate/rotate/scale
+ * 属性，互不干扰；拖拽偏移在更内层的 .dim-drag / left·top，也不冲突。
+ */
+
+:where(.dim-preset-shell, .dim-deck) {
+  --deck-edge-height: 15%;
+  --deck-panel-outline-ink: rgb(61 56 42 / 0.18);
+  --deck-rail-inset: 14px;
+  --deck-center: 50%;
+  --deck-rail-gap: 14px;
+  --deck-rail-padding: 10px 8px;
+  --deck-stop-gap: 4px;
+  --deck-stop-padding: 2px 0;
+  --deck-ink-faint: var(--dim-ink-faint, #9a9482);
+  --deck-stop-size: 7px;
+  --deck-olive-deep: var(--dim-olive-deep, #46521f);
+  --deck-edge-gap: 6px;
+  --deck-edge-padding: 5px 14px;
+  --deck-ink-soft: var(--dim-ink-soft, #6b6656);
+  --deck-edge-position: 10px;
+  --deck-night-text: #b9c2e2;
+  --deck-night-border: #2c3554;
+  --deck-night-muted: #8d97bd;
+  --deck-night-accent: #f0c985;
+  --deck-toast-bottom: 24px;
+  --deck-toast-max-width: min(560px, 80vw);
+  --deck-toast-padding: 8px 15px;
+  --deck-toast-text: #f7f2e7;
+  --deck-corner-line: rgb(104 92 62 / 0.34);
+  --deck-corner-glow: rgb(255 247 218 / 0.38);
+  --deck-corner-side-inset: 5%;
+  --deck-corner-plane-size: 50%;
+  --deck-corner-hinge-size: 1px;
+  --deck-corner-wall-fill: rgb(111 96 65 / 0.08);
+  --deck-corner-desk-fill: rgb(241 231 203 / 0.18);
+  --deck-corner-hinge-filter: drop-shadow(0 0 9px var(--deck-corner-glow));
+}
+
+.dim-deck {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dim-desk, #e9e4d6);
+  perspective: 1200px;
+  perspective-origin: 50% 46%;
+}
+
+/* 上下缘的大气渐晕：上面是夜空方向，下面是暖桌方向，边缘不发硬 */
+.dim-deck::before,
+.dim-deck::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--deck-edge-height);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.dim-deck::before {
+  top: 0;
+  background: linear-gradient(180deg, rgb(12 16 30 / 0.18), transparent);
+}
+
+.dim-deck::after {
+  bottom: 0;
+  background: linear-gradient(0deg, rgb(233 228 214 / 0.22), transparent);
+}
+
+.dim-deck-track {
+  height: 100%;
+  transition: transform 0.9s cubic-bezier(0.2, 0.82, 0.2, 1);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.dim-deck-layer {
+  height: 100%;
+  overflow: hidden;
+}
+
+.dim-deck-layer-inner {
+  position: relative;
+  height: 100%;
+  backface-visibility: hidden;
+  transition:
+    translate 0.9s cubic-bezier(0.2, 0.82, 0.2, 1),
+    opacity 0.7s ease,
+    filter 0.62s ease;
+}
+
+/* 视差：高于当前层的（天空方向）内容向上飘远，低于的向下沉 */
+.dim-deck-layer[data-pos="above"] .dim-deck-layer-inner {
+  translate: 0 -3.5%;
+  opacity: 0.55;
+}
+
+.dim-deck-layer[data-pos="below"] .dim-deck-layer-inner {
+  translate: 0 3.5%;
+  opacity: 0.55;
+}
+
+.dim-deck-layer[data-pos="active"] .dim-deck-layer-inner {
+  translate: 0 0;
+  opacity: 1;
+}
+
+/* ---------- 两种换层语法 ---------- */
+
+/*
+ * 纸面 <-> 线索板：不是卡片外翻，而是人在桌前抬头。轨道把墙面从上方
+ * 带入、桌面向下带走；共享远端边作为墙脚，桌面正向 rotateX 下折，
+ * 形成“立面 + 水平面”的内直角。刻意不使用 blur。
+ */
+.dim-deck[data-moving][data-transition="corner"]
+  .dim-deck-layer[data-motion]
+  .dim-deck-layer-inner {
+  filter: none;
+  outline: 1px solid var(--deck-panel-outline-ink);
+  outline-offset: -1px;
+  will-change: transform, clip-path, opacity;
+}
+
+/*
+ * 星图边界：只有任一端是 constellation 时才启用近远与失焦，而且只作用
+ * 于 entering / leaving 两层，第三层不参与整屏滤镜与栅格化。
+ */
+.dim-deck[data-moving][data-transition="depth"]
+  .dim-deck-layer[data-motion]
+  .dim-deck-layer-inner {
+  transform-origin: 50% 42%;
+  will-change: transform, filter, opacity;
+}
+
+.dim-deck[data-moving][data-transition="corner"][data-direction="up"]
+  .dim-deck-layer[data-motion="leaving"]
+  .dim-deck-layer-inner {
+  transform-origin: 50% 0%;
+  animation: dim-corner-desk-fold-down 0.9s cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.dim-deck[data-moving][data-transition="corner"][data-direction="up"]
+  .dim-deck-layer[data-motion="entering"]
+  .dim-deck-layer-inner {
+  transform-origin: 50% 100%;
+  animation: dim-corner-wall-rise 0.9s cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.dim-deck[data-moving][data-transition="corner"][data-direction="down"]
+  .dim-deck-layer[data-motion="leaving"]
+  .dim-deck-layer-inner {
+  transform-origin: 50% 100%;
+  animation: dim-corner-wall-lower 0.9s cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.dim-deck[data-moving][data-transition="corner"][data-direction="down"]
+  .dim-deck-layer[data-motion="entering"]
+  .dim-deck-layer-inner {
+  transform-origin: 50% 0%;
+  animation: dim-corner-desk-unfold 0.9s cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+@keyframes dim-corner-desk-fold-down {
+  0% {
+    opacity: 1;
+    transform: perspective(1200px) rotateX(0) scale(1);
+    clip-path: inset(0 round 0);
+  }
+
+  54% {
+    opacity: 0.88;
+    transform: perspective(900px) rotateX(58deg) scale(1.075);
+    clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
+  }
+
+  100% {
+    opacity: 0.2;
+    transform: perspective(900px) rotateX(72deg) scale(1.11);
+    clip-path: polygon(15% 0, 85% 0, 100% 100%, 0 100%);
+  }
+}
+
+@keyframes dim-corner-wall-rise {
+  0% {
+    opacity: 0.16;
+    transform: perspective(1000px) rotateX(-24deg) scale(0.91);
+    clip-path: polygon(11% 0, 89% 0, 100% 100%, 0 100%);
+  }
+
+  54% {
+    opacity: 0.9;
+    transform: perspective(1000px) rotateX(-7deg) scale(0.985);
+    clip-path: polygon(4% 0, 96% 0, 100% 100%, 0 100%);
+  }
+
+  100% {
+    opacity: 1;
+    transform: perspective(1200px) rotateX(0) scale(1);
+    clip-path: inset(0 round 0);
+  }
+}
+
+@keyframes dim-corner-wall-lower {
+  0% {
+    opacity: 1;
+    transform: perspective(1200px) rotateX(0) scale(1);
+    clip-path: inset(0 round 0);
+  }
+
+  46% {
+    opacity: 0.88;
+    transform: perspective(1000px) rotateX(-7deg) scale(0.985);
+    clip-path: polygon(4% 0, 96% 0, 100% 100%, 0 100%);
+  }
+
+  100% {
+    opacity: 0.16;
+    transform: perspective(1000px) rotateX(-24deg) scale(0.91);
+    clip-path: polygon(11% 0, 89% 0, 100% 100%, 0 100%);
+  }
+}
+
+@keyframes dim-corner-desk-unfold {
+  0% {
+    opacity: 0.2;
+    transform: perspective(900px) rotateX(72deg) scale(1.11);
+    clip-path: polygon(15% 0, 85% 0, 100% 100%, 0 100%);
+  }
+
+  46% {
+    opacity: 0.88;
+    transform: perspective(900px) rotateX(58deg) scale(1.075);
+    clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
+  }
+
+  100% {
+    opacity: 1;
+    transform: perspective(1200px) rotateX(0) scale(1);
+    clip-path: inset(0 round 0);
+  }
+}
+
+/*
+ * 换层中段显出的空间骨架。上半部是前墙，下半部是从墙脚朝使用者展开的
+ * 桌面；两面的透视网格在中线汇合，强调看到的是“里面”。
+ */
+.dim-deck-inner-corner {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  perspective: 760px;
+}
+
+.dim-deck-inner-corner > i {
+  position: absolute;
+  left: var(--deck-corner-side-inset);
+  right: var(--deck-corner-side-inset);
+  display: block;
+}
+
+.dim-deck-inner-wall,
+.dim-deck-inner-desk {
+  height: var(--deck-corner-plane-size);
+  border-inline: 1px solid var(--deck-corner-line);
+  background-image:
+    linear-gradient(90deg, transparent 49.8%, rgb(104 92 62 / 0.12) 50%, transparent 50.2%),
+    linear-gradient(rgb(104 92 62 / 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(104 92 62 / 0.1) 1px, transparent 1px);
+  background-size: 100% 100%, 36px 36px, 36px 36px;
+}
+
+.dim-deck-inner-wall {
+  top: 0;
+  transform-origin: 50% 100%;
+  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  background-color: var(--deck-corner-wall-fill);
+}
+
+.dim-deck-inner-desk {
+  bottom: 0;
+  transform-origin: 50% 0;
+  transform: rotateX(58deg) scaleX(1.08);
+  clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
+  background-color: var(--deck-corner-desk-fill);
+}
+
+.dim-deck-inner-hinge {
+  top: var(--deck-corner-plane-size);
+  height: var(--deck-corner-hinge-size);
+  background: linear-gradient(90deg, transparent, var(--deck-corner-glow) 16%, var(--deck-corner-line) 50%, var(--deck-corner-glow) 84%, transparent);
+  filter: var(--deck-corner-hinge-filter);
+}
+
+.dim-deck[data-moving][data-perspective="inner-corner"] .dim-deck-inner-corner {
+  animation: dim-inner-corner-reveal 0.9s ease-in-out both;
+}
+
+.dim-deck[data-moving][data-perspective="inner-corner"][data-direction="down"]
+  .dim-deck-inner-corner {
+  animation-direction: reverse;
+}
+
+@keyframes dim-inner-corner-reveal {
+  0%, 100% { opacity: 0; }
+  32% { opacity: 0.22; }
+  52% { opacity: 0.82; }
+  72% { opacity: 0.18; }
+}
+
+.dim-deck[data-moving][data-transition="depth"][data-direction="up"]
+  .dim-deck-layer[data-motion="leaving"]
+  .dim-deck-layer-inner {
+  animation: dim-depth-away 0.9s cubic-bezier(0.18, 0.78, 0.16, 1) both;
+}
+
+/* 进入星图的整层不再缩放失焦：背景锚定，只安静淡入，星体自己飞 */
+.dim-deck[data-moving][data-transition="depth"][data-direction="up"]
+  .dim-deck-layer[data-motion="entering"]
+  .dim-deck-layer-inner {
+  animation: dim-depth-reveal 0.55s ease-out both;
+}
+
+.dim-deck[data-moving][data-transition="depth"][data-direction="down"]
+  .dim-deck-layer[data-motion="leaving"]
+  .dim-deck-layer-inner {
+  animation: dim-depth-approach-out 0.9s cubic-bezier(0.18, 0.78, 0.16, 1) both;
+}
+
+.dim-deck[data-moving][data-transition="depth"][data-direction="down"]
+  .dim-deck-layer[data-motion="entering"]
+  .dim-deck-layer-inner {
+  animation: dim-depth-approach-in 0.9s cubic-bezier(0.18, 0.78, 0.16, 1) both;
+}
+
+@keyframes dim-depth-away {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) saturate(1);
+  }
+
+  to {
+    opacity: 0.08;
+    transform: scale(0.64);
+    filter: blur(24px) saturate(0.58) brightness(0.7);
+  }
+}
+
+@keyframes dim-depth-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dim-depth-approach-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) saturate(1);
+  }
+
+  to {
+    opacity: 0.04;
+    transform: scale(2.05);
+    filter: blur(46px) saturate(0.5) brightness(1.4);
+  }
+}
+
+@keyframes dim-depth-approach-in {
+  0% {
+    opacity: 0.06;
+    transform: scale(0.64);
+    filter: blur(38px) saturate(0.6) brightness(0.72);
+  }
+
+  62% {
+    opacity: 0.94;
+    transform: scale(1.035);
+    filter: blur(1px) saturate(1.04) brightness(1.03);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) saturate(1);
+  }
+}
+
+/*
+ * 进入夜空：整层只做一次安静的淡入（背景锚定不动），随后是四层编排——
+ *   1) 北极星先亮：由大放小落定，从「大目标」收成「方向上的一个点」；
+ *   2) 群星（认知星 / 星径锚点）从视线外沿各自向径从容汇聚，过冲后稳定；
+ *   3) 星尘更远更快，作为前景流星群；
+ *   4) 星标文字与星云最后才出来。
+ * 模糊只跟着飞行中的星体走（远处来的更糊更亮），不再整屏失焦。
+ */
+.dim-deck-layer[data-star-gather="gathering"] .cst-star {
+  animation: dim-star-converge 1.5s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+  animation-delay: 0.34s;
+}
+
+.dim-deck-layer[data-star-gather="gathering"] .cst-star:nth-of-type(3) { animation-delay: 0.42s; }
+.dim-deck-layer[data-star-gather="gathering"] .cst-star:nth-of-type(4) { animation-delay: 0.48s; }
+.dim-deck-layer[data-star-gather="gathering"] .cst-star:nth-of-type(5) { animation-delay: 0.54s; }
+.dim-deck-layer[data-star-gather="gathering"] .cst-star:nth-of-type(6) { animation-delay: 0.60s; }
+.dim-deck-layer[data-star-gather="gathering"] .cst-star:nth-of-type(n+7) { animation-delay: 0.66s; }
+
+/* 北极星不参与位移汇聚：它是锚点，先亮，由大放小 */
+.dim-deck-layer[data-star-gather="gathering"] .cst-star-focus {
+  animation: dim-north-anchor-in 1.15s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  animation-delay: 0.05s;
+}
+
+.dim-deck-layer[data-star-gather="gathering"] .cst-dust-point {
+  animation: dim-dust-converge 1.35s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+  animation-delay: var(--gather-delay, 0.2s);
+}
+
+/* 星标文字最后落定 */
+.dim-deck-layer[data-star-gather="gathering"] .cst-star-label {
+  animation: dim-label-in 0.8s ease-out 1.4s both;
+}
+
+/* 星云在群星落稳后才从夜幕里浮出来 */
+.dim-deck-layer[data-star-gather="gathering"] .cst-root::before {
+  animation: cst-nebula-in 1.6s ease-out 1.15s both;
+}
+
+@keyframes dim-north-anchor-in {
+  0% {
+    opacity: 0;
+    scale: 5.4;
+    filter: blur(16px) brightness(2.8);
+  }
+
+  42% {
+    opacity: 1;
+    scale: 1.55;
+    filter: blur(4px) brightness(1.7);
+  }
+
+  68% {
+    scale: 0.94;
+    filter: blur(0) brightness(1.3);
+  }
+
+  100% {
+    opacity: 1;
+    scale: 1;
+    filter: none;
+  }
+}
+
+@keyframes dim-star-converge {
+  0% {
+    opacity: 0;
+    translate: var(--gx) var(--gy);
+    scale: 2.1;
+    filter: blur(10px) brightness(2.4);
+  }
+
+  58% {
+    opacity: 1;
+    translate: calc(var(--gx) * -0.05) calc(var(--gy) * -0.05);
+    scale: 0.93;
+    filter: blur(0) brightness(1.25);
+  }
+
+  80% {
+    translate: calc(var(--gx) * 0.018) calc(var(--gy) * 0.018);
+    scale: 1.05;
+    filter: blur(0) brightness(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+    filter: none;
+  }
+}
+
+@keyframes dim-dust-converge {
+  0% {
+    opacity: 0;
+    translate: var(--gx) var(--gy);
+    scale: 1.7;
+    filter: blur(4px) brightness(2.6);
+  }
+
+  56% {
+    opacity: 1;
+    translate: calc(var(--gx) * -0.05) calc(var(--gy) * -0.05);
+    scale: 0.95;
+    filter: blur(0) brightness(1.5);
+  }
+
+  80% {
+    translate: calc(var(--gx) * 0.018) calc(var(--gy) * 0.018);
+    scale: 1.04;
+  }
+
+  100% {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+    filter: none;
+  }
+}
+
+@keyframes dim-label-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 离开夜空：群星沿来路退回视线外，背景随离场层一起纵深退出 */
+.dim-deck-layer[data-star-gather="dispersing"] .cst-star {
+  animation: dim-star-disperse 0.82s cubic-bezier(0.55, 0, 0.84, 0.2) both;
+}
+
+.dim-deck-layer[data-star-gather="dispersing"] .cst-dust-point {
+  animation: dim-dust-disperse 0.74s cubic-bezier(0.55, 0, 0.84, 0.2) both;
+}
+
+@keyframes dim-star-disperse {
+  from {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+    filter: none;
+  }
+
+  to {
+    opacity: 0;
+    translate: var(--gx) var(--gy);
+    scale: 1.7;
+    filter: blur(9px) brightness(2.1);
+  }
+}
+
+@keyframes dim-dust-disperse {
+  from {
+    opacity: 1;
+    translate: 0 0;
+    filter: none;
+  }
+
+  to {
+    opacity: 0;
+    translate: var(--gx) var(--gy);
+    filter: blur(4px) brightness(2.2);
+  }
+}
+
+/* ---------- 入场隐喻（只在成为激活层时播放一次，下次进来重播） ---------- */
+
+/* 桌面：便签从桌心散开排开 —— 每张卡从偏向桌心的位置滑回自己的槽位 */
+@keyframes dim-spread-out {
+  from {
+    opacity: 0;
+    translate: var(--sx, 0) var(--sy, 26px);
+    rotate: var(--sr, 0deg);
+    scale: 0.94;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+    rotate: 0deg;
+    scale: 1;
+  }
+}
+
+.dim-deck-layer[data-deck-layer="paper"][data-pos="active"] [data-layout-card-id] {
+  animation: dim-spread-out 0.62s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 上排左（早报）· 上排右（日程）· 下排左（复盘）· 下排中（节奏）· 下排右（记忆点） */
+.dim-deck-layer[data-deck-layer="paper"][data-pos="active"] [data-layout-card-id]:nth-child(1) {
+  --sx: 48px; --sy: 56px; --sr: 1.6deg;
+
+ animation-delay: 0.06s;
+}
+
+.dim-deck-layer[data-deck-layer="paper"][data-pos="active"] [data-layout-card-id]:nth-child(2) {
+  --sx: -54px; --sy: 52px; --sr: -1.4deg;
+
+ animation-delay: 0.12s;
+}
+
+.dim-deck-layer[data-deck-layer="paper"][data-pos="active"] [data-layout-card-id]:nth-child(3) {
+  --sx: 44px; --sy: -44px; --sr: -1.2deg;
+
+ animation-delay: 0.18s;
+}
+
+.dim-deck-layer[data-deck-layer="paper"][data-pos="active"] [data-layout-card-id]:nth-child(4) {
+  --sx: 0px; --sy: -52px; --sr: 0.8deg;
+
+ animation-delay: 0.24s;
+}
+
+.dim-deck-layer[data-deck-layer="paper"][data-pos="active"] [data-layout-card-id]:nth-child(5) {
+  --sx: -46px; --sy: -42px; --sr: 1.2deg;
+
+ animation-delay: 0.30s;
+}
+
+/* 线索板：纸条从上方落下，钉上板后轻轻晃荡（像刚被拍上去的便签） */
+@keyframes clue-drop-swing {
+  0% {
+    opacity: 0;
+    translate: 0 -26px;
+    rotate: -3deg;
+  }
+
+  45% {
+    opacity: 1;
+    translate: 0 2px;
+    rotate: 2.1deg;
+  }
+
+  65% {
+    translate: 0 0;
+    rotate: -1.3deg;
+  }
+
+  82% {
+    rotate: 0.7deg;
+  }
+
+  100% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+}
+
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper,
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-thesis {
+  animation: clue-drop-swing 0.72s cubic-bezier(0.25, 0.9, 0.3, 1) both;
+}
+
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-thesis { animation-delay: 0.02s; }
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper[data-slip-index="0"] { animation-delay: 0.10s; }
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper[data-slip-index="1"] { animation-delay: 0.17s; }
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper[data-slip-index="2"] { animation-delay: 0.24s; }
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper[data-slip-index="3"] { animation-delay: 0.31s; }
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper[data-slip-index="4"] { animation-delay: 0.38s; }
+.dim-deck-layer[data-deck-layer="clue-board"][data-pos="active"] .clue-paper[data-slip-index="5"] { animation-delay: 0.45s; }
+
+/* 外壳：全局栏的绝对定位参照 */
+.dim-preset-shell {
+  position: relative;
+  overflow: hidden;
+  background: var(--dim-desk, #e9e4d6);
+}
+
+/* ---------- 全局秘书栏（层级在甲板之上） ---------- */
+
+.dim-global-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+}
+
+.dim-global-rail .dim-rail {
+  height: 100%;
+  filter: drop-shadow(1px 0 0 rgb(60 55 40 / 0.06))
+    drop-shadow(8px 0 12px rgb(60 55 40 / 0.18));
+}
+
+.dim-deck-wrap {
+  height: 100%;
+  min-height: 0;
+  transition: padding-left 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- 右缘层标 ---------- */
+
+.dim-deck-rail {
+  position: absolute;
+  right: var(--deck-rail-inset);
+  top: var(--deck-center);
+  transform: translateY(-50%);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: var(--deck-rail-gap);
+  padding: var(--deck-rail-padding);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dim-paper, #fdfaf2) 72%, transparent);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  backdrop-filter: blur(4px);
+  opacity: 0.42;
+  transition: opacity 0.25s ease;
+}
+
+.dim-deck-rail:hover,
+.dim-deck-rail:focus-within {
+  opacity: 1;
+}
+
+.dim-deck-rail-stop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--deck-stop-gap);
+  padding: var(--deck-stop-padding);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--deck-ink-faint);
+}
+
+.dim-deck-rail-dot {
+  width: var(--deck-stop-size);
+  height: var(--deck-stop-size);
+  transform: rotate(45deg);
+  border: 1.5px solid currentcolor;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+
+.dim-deck-rail-stop[data-on="true"] {
+  color: var(--deck-olive-deep);
+}
+
+.dim-deck-rail-stop[data-on="true"] .dim-deck-rail-dot {
+  background: currentcolor;
+  transform: rotate(45deg) scale(1.25);
+}
+
+.dim-deck-rail-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  writing-mode: vertical-lr;
+}
+
+.dim-deck-rail-stop:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ---------- 上下缘去向提示 ---------- */
+
+.dim-deck-edge {
+  position: absolute;
+  left: var(--deck-center);
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: var(--deck-edge-gap);
+  padding: var(--deck-edge-padding);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--deck-ink-soft);
+  background: color-mix(in srgb, var(--dim-paper, #fdfaf2) 78%, transparent);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.25s ease, translate 0.25s ease;
+  backdrop-filter: blur(4px);
+}
+
+.dim-deck-edge:hover,
+.dim-deck-edge:focus-visible {
+  opacity: 1;
+}
+
+.dim-deck-edge:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 2px;
+}
+
+/* 抬头提示贴在顶缘，回落提示贴在底缘 */
+.dim-deck-edge-lookup {
+  top: var(--deck-edge-position);
+  border-radius: 4px 4px 999px 999px;
+}
+
+.dim-deck-edge-lookup:hover {
+  translate: 0 -2px;
+}
+
+.dim-deck-edge-return {
+  bottom: var(--deck-edge-position);
+  border-radius: 999px 999px 4px 4px;
+}
+
+.dim-deck-edge-return:hover {
+  translate: 0 2px;
+}
+
+/* 星图层是深色底，提示与层标换夜行色 */
+.dim-deck[data-active="constellation"] .dim-deck-edge {
+  color: var(--deck-night-text);
+  background: rgb(20 25 45 / 0.72);
+  border-color: var(--deck-night-border);
+}
+
+.dim-deck[data-active="constellation"] .dim-deck-rail {
+  background: rgb(20 25 45 / 0.72);
+  border-color: var(--deck-night-border);
+}
+
+.dim-deck[data-active="constellation"] .dim-deck-rail-stop {
+  color: var(--deck-night-muted);
+}
+
+.dim-deck[data-active="constellation"] .dim-deck-rail-stop[data-on="true"] {
+  color: var(--deck-night-accent);
+}
+
+/* ---------- 演示 / 层内提示 toast ---------- */
+
+.dim-preset-toast {
+  position: fixed;
+  z-index: 200;
+  left: var(--deck-center);
+  bottom: var(--deck-toast-bottom);
+  max-width: var(--deck-toast-max-width);
+  padding: var(--deck-toast-padding);
+  color: var(--deck-toast-text);
+  border: 1px solid rgb(238 218 166 / 0.3);
+  border-radius: 2px;
+  background: rgb(21 29 25 / 0.94);
+  filter: drop-shadow(0 12px 16px rgb(0 0 0 / 0.24));
+  font-family: var(--font-sans, inherit);
+  font-size: 11.5px;
+  transform: translateX(-50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dim-deck-track,
+  .dim-deck-layer-inner {
+    transition: none;
+  }
+
+  .dim-deck-layer[data-pos="active"] [data-layout-card-id],
+  .dim-deck-layer[data-pos="active"] .clue-paper,
+  .dim-deck-layer[data-pos="active"] .clue-thesis,
+  .dim-deck-layer[data-pos="active"] .cst-star {
+    animation: none;
+  }
+
+  .dim-deck[data-moving] .dim-deck-layer-inner {
+    animation: none;
+    filter: none;
+    clip-path: none;
+  }
+
+  .dim-deck-layer[data-star-gather] .cst-star,
+  .dim-deck-layer[data-star-gather] .cst-dust-point,
+  .dim-deck-layer[data-star-gather] .cst-star-label,
+  .dim-deck-layer[data-star-gather] .cst-root::before,
+  .dim-deck[data-moving] .dim-deck-inner-corner {
+    animation: none;
+  }
+
+  .dim-deck[data-moving] .dim-deck-inner-corner {
+    opacity: 0;
+  }
+
+  .dim-deck-edge,
+  .dim-deck-rail,
+  .dim-deck-rail-dot {
+    transition: none;
+  }
+}

@@ -183,6 +183,7 @@ import {
   dbGetProactiveStats,
 } from "./proactiveLog";
 import { useChatStore } from "../chatStore";
+import { emitSync } from "../syncBus";
 import {
   dbLogProactiveSent as dbLogMock,
   dbMarkProactiveReplied as dbMarkMock,
@@ -210,6 +211,63 @@ beforeEach(() => {
     streamingReasoning: "",
     loading: false,
     abort: null,
+  });
+});
+
+describe("chatStore.selectConv — 跨入口消息刷新", () => {
+  it("reload=true 会覆盖已有缓存，读回其他窗口刚写入的消息", async () => {
+    const convId = "conv_reload";
+    const now = new Date().toISOString();
+    _conversations.set(convId, {
+      id: convId,
+      title: "共享会话",
+      createdAt: now,
+      updatedAt: now
+    });
+    _messages.set(convId, [
+      {
+        id: "fresh-message",
+        convId,
+        role: "assistant",
+        content: "来自另一个入口的新消息",
+        createdAt: now
+      }
+    ]);
+    useChatStore.setState({
+      currentId: convId,
+      messagesByConv: {
+        [convId]: [
+          {
+            id: "stale-message",
+            convId,
+            role: "assistant",
+            content: "旧缓存",
+            createdAt: now
+          }
+        ]
+      }
+    });
+
+    await useChatStore.getState().selectConv(convId, { reload: true });
+
+    expect(useChatStore.getState().messagesByConv[convId]).toEqual([
+      expect.objectContaining({ id: "fresh-message", content: "来自另一个入口的新消息" })
+    ]);
+  });
+});
+
+describe("chatStore.sendMessage — 新会话同步时序", () => {
+  it("首轮完成后只广播一次，避免空会话刷新与首条消息追加竞争", async () => {
+    await useChatStore.getState().sendMessage("从这里开始聊");
+
+    expect(emitSync).toHaveBeenCalledTimes(1);
+    expect(emitSync).toHaveBeenCalledWith("conversations");
+    const currentId = useChatStore.getState().currentId;
+    expect(currentId).toBeTruthy();
+    expect(useChatStore.getState().messagesByConv[currentId!]).toEqual([
+      expect.objectContaining({ role: "user", content: "从这里开始聊" }),
+      expect.objectContaining({ role: "assistant", content: "AI 回复" })
+    ]);
   });
 });
 

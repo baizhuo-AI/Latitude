@@ -70,7 +70,14 @@ export const NATIVE_CARD_REGISTRY = {
   },
   anchors: (payload, layout, handlers) => {
     const card = materializeTyped(payload, layout);
-    return <AnchorsCardView card={card} onLineage={handlers.onLineage} />;
+    return (
+      <AnchorsCardView
+        card={card}
+        onLineage={handlers.onLineage}
+        onComplete={handlers.onAnchorComplete}
+        onEdit={handlers.onAnchorEdit}
+      />
+    );
   },
   count: (payload, layout) => (
     <CountCardView card={materializeTyped(payload, layout)} />
@@ -85,6 +92,7 @@ export const NATIVE_CARD_REGISTRY = {
         card={card}
         onAccept={() => handlers.onAccept?.(card)}
         onReject={() => handlers.onReject?.(card)}
+        onVerdict={(verdict) => handlers.onVerdict?.(card, verdict)}
       />
     );
   },

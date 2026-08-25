@@ -3,6 +3,10 @@ dist
 coverage
 .DS_Store
 src-tauri/target
+src-tauri/domain-service/target
+
+# Local browser runtime state (DSH sessions, run ledger, SQLite backups)
+.latitude/
 
 # Superpowers skill 工具目录(brainstorm 工作区等),非项目代码
 .superpowers/

@@ -236,6 +236,23 @@ CREATE TABLE IF NOT EXISTS memory_facts (
 
 CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category);
 CREATE INDEX IF NOT EXISTS idx_memory_facts_created_at ON memory_facts(created_at);
+
+-- V12: proposals 表（提案—裁决语法的最小落地，维度桌面弹性格的数据源）
+-- 秘书经 propose_change 工具递交；用户五态裁决后写回 status / verdict_label / decided_at。
+-- 这是批次 0 的简化表，图谱全量（P1）落地后按 legacy_ref 思路迁移。
+CREATE TABLE IF NOT EXISTS proposals (
+  id            TEXT PRIMARY KEY,
+  quote         TEXT NOT NULL,
+  consequence   TEXT,
+  action_title  TEXT,
+  status        TEXT NOT NULL DEFAULT 'proposed',
+  verdict_label TEXT,
+  source        TEXT NOT NULL DEFAULT 'secretary',
+  created_at    TEXT NOT NULL,
+  decided_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
 `;
 
 /**
@@ -338,6 +355,8 @@ async function migrate(db: Database): Promise<void> {
   await db.execute(
     "CREATE INDEX IF NOT EXISTS idx_conversations_external ON conversations(channel, external_id)"
   );
+  // V14: proposals 表（提案—裁决语法的最小落地，维度桌面弹性格数据源）。
+  // 老库靠 V1 的 CREATE TABLE IF NOT EXISTS 直接建表；无需 ALTER。
 }
 
 export async function getDb(): Promise<Database> {
@@ -2406,4 +2425,101 @@ export async function dbListMemoryFacts(
     args
   );
   return rows.map(rowToMemoryFact);
+}
+
+
+/* ---------- proposals（提案—裁决最小落地，维度桌面弹性格数据源） ---------- */
+
+/** 提案状态机：proposed → accepted / rejected / parked / try。拒绝与搁置都是合法终点。 */
+export type ProposalStatus = "proposed" | "accepted" | "rejected" | "parked" | "try";
+
+export interface ProposalRecord {
+  id: string;
+  /** 提案内容，日常语言（用户看到的那句话） */
+  quote: string;
+  /** 接受前必须说明的影响 */
+  consequence?: string;
+  /** 用户说「要不试试」时要落地成的待办标题；空表示该提案没有行动面 */
+  actionTitle?: string;
+  status: ProposalStatus;
+  /** 用户点的那颗键的日常语言（审计用） */
+  verdictLabel?: string;
+  source: "secretary" | "system";
+  createdAt: string;
+  decidedAt?: string;
+}
+
+interface ProposalRow {
+  id: string;
+  quote: string;
+  consequence: string | null;
+  action_title: string | null;
+  status: string;
+  verdict_label: string | null;
+  source: string;
+  created_at: string;
+  decided_at: string | null;
+}
+
+function rowToProposal(r: ProposalRow): ProposalRecord {
+  return {
+    id: r.id,
+    quote: r.quote,
+    consequence: r.consequence ?? undefined,
+    actionTitle: r.action_title ?? undefined,
+    status: (r.status as ProposalStatus) ?? "proposed",
+    verdictLabel: r.verdict_label ?? undefined,
+    source: r.source === "system" ? "system" : "secretary",
+    createdAt: r.created_at,
+    decidedAt: r.decided_at ?? undefined
+  };
+}
+
+export async function dbInsertProposal(p: ProposalRecord): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO proposals (id, quote, consequence, action_title, status, verdict_label, source, created_at, decided_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      p.id,
+      p.quote,
+      p.consequence ?? null,
+      p.actionTitle ?? null,
+      p.status,
+      p.verdictLabel ?? null,
+      p.source,
+      p.createdAt,
+      p.decidedAt ?? null
+    ]
+  );
+}
+
+/** 列出提案，默认按创建时间倒序；可按状态过滤。 */
+export async function dbListProposals(status?: ProposalStatus): Promise<ProposalRecord[]> {
+  const db = await getDb();
+  const rows = status
+    ? await db.select<ProposalRow[]>(
+        "SELECT * FROM proposals WHERE status = $1 ORDER BY created_at DESC",
+        [status]
+      )
+    : await db.select<ProposalRow[]>("SELECT * FROM proposals ORDER BY created_at DESC");
+  return rows.map(rowToProposal);
+}
+
+/**
+ * 裁决写回：状态 + 用户点的键 + 决定时刻。一次性动作，不重复裁决；
+ * 调用方负责 UI 语义（拒绝/搁置不追问）。
+ */
+export async function dbDecideProposal(
+  id: string,
+  status: Exclude<ProposalStatus, "proposed">,
+  verdictLabel: string
+): Promise<boolean> {
+  const db = await getDb();
+  const result = await db.execute(
+    `UPDATE proposals SET status = $1, verdict_label = $2, decided_at = $3
+     WHERE id = $4 AND status = 'proposed'`,
+    [status, verdictLabel, new Date().toISOString(), id]
+  );
+  return result.rowsAffected > 0;
 }

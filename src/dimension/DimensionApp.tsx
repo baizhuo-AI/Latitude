@@ -1,21 +1,54 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { SEED_DESKTOP_PROJECTION } from "../projections/desktop/seedProjection";
 import {
   runtimeStatusLabel,
   type DesktopProjection
 } from "../projections/desktop/types";
-import { LayoutRenderer } from "../runtime/layout/LayoutRenderer";
+import {
+  LayoutRenderer,
+  type LayoutCompositionSurface,
+} from "../runtime/layout/LayoutRenderer";
 import { SEED_LAYOUT_DOCUMENT } from "../runtime/layout/seedLayout";
 import type { LayoutDocumentV1 } from "../runtime/layout/types";
 import { JournalPage } from "./JournalPage";
-import { AppHeader, CommandBar, DeskHeader, SecretaryRail } from "./Shell";
-import type { CardPresentation, CognitionCard, DeskCard } from "./types";
+import { AppHeader, CommandBar, DeskHeader, DimToast, SecretaryRail, useDimToast } from "./Shell";
+import type { CardHandlers, CardPresentation, CognitionCard, DeskCard, SecretaryIntent } from "./types";
 import "./dimension.css";
 
 export interface DimensionAppProps {
   layout?: LayoutDocumentV1<string, CardPresentation>;
   projection?: DesktopProjection;
+  /**
+   * 卡片语义事件的真实出口。省略的键回退到演示提示；
+   * LiveDimensionApp 会注入接真实数据的实现。
+   */
+  handlers?: CardHandlers;
+  /** Browser-only trusted V2 surface; omitted by the existing Tauri desktop. */
+  composition?: LayoutCompositionSurface;
+  /** 对话条出口。省略时回退到演示提示。 */
+  onSendMessage?: (text: string) => void;
+  /** Browser UiSurfaceV2 may hide or unbind the host-owned command bar. */
+  commandBarVisible?: boolean;
+  commandBarSendEnabled?: boolean;
+  /** 对话层（升起在桌面与对话条之间的一张纸）。由真实接线方提供。 */
+  thread?: ReactNode;
+  onOpenSettings?: () => void;
+  onOpenReview?: () => void;
+  onAdjustDesktop?: () => void;
+  /** 点秘书立绘的出口（聊聊 / 要我定的 / 回顾）。 */
+  onSecretaryInteract?: (intent: SecretaryIntent) => void;
+  /**
+   * 秘书栏渲染方式。inline = 桌面自带的栏（独立使用时的默认）；
+   * none = 不渲染（三层甲板场景下由外层提供全局常驻栏，层级在甲板之上）。
+   */
+  railMode?: "inline" | "none";
+  /**
+   * 线索聚焦：从线索板点进某条事件维度时带上它的标签，
+   * 桌面上不属于这条线的锚点退焦，顶部出现可退出的胶囊。
+   */
+  focusTag?: string | null;
+  onExitFocus?: () => void;
 }
 
 /**
@@ -27,21 +60,25 @@ export interface DimensionAppProps {
  */
 export function DimensionApp({
   layout = SEED_LAYOUT_DOCUMENT,
-  projection = SEED_DESKTOP_PROJECTION
+  projection = SEED_DESKTOP_PROJECTION,
+  handlers,
+  composition,
+  onSendMessage,
+  commandBarVisible = true,
+  commandBarSendEnabled = true,
+  thread,
+  onOpenSettings,
+  onOpenReview,
+  onAdjustDesktop,
+  onSecretaryInteract,
+  railMode = "inline",
+  focusTag = null,
+  onExitFocus
 }: DimensionAppProps = {}) {
   const [openedCard, setOpenedCard] = useState<DeskCard | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<number | undefined>(undefined);
+  const { toast, say } = useDimToast();
   const deskLayer = useRef<HTMLDivElement>(null);
   const bookLayer = useRef<HTMLDivElement>(null);
-
-  const say = useCallback((message: string) => {
-    setToast(message);
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2600);
-  }, []);
-
-  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   const spread = openedCard
     ? projection.journalSpreads?.[openedCard.id]
@@ -75,9 +112,52 @@ export function DimensionApp({
     setOpenedCard(card);
   }
 
+  const resolvedHandlers: CardHandlers = {
+    onOpen: handlers?.onOpen ?? handleOpen,
+    onAccept:
+      handlers?.onAccept ?? (() => say("演示模式：已收到选择，本次不会保存")),
+    onReject:
+      handlers?.onReject ?? (() => say("演示模式：已保持原样，本次不会保存")),
+    onVerdict: handlers?.onVerdict,
+    onFeedFeedback:
+      handlers?.onFeedFeedback ??
+      ((_itemId, feedback) => {
+        const label = {
+          "new-angle": "有新角度",
+          known: "已知道",
+          "not-useful": "没用"
+        }[feedback];
+        say(`演示模式：已看到“${label}”，本次不会保存`);
+      }),
+    onLineage:
+      handlers?.onLineage ?? ((lineage) => say(`来源线索：${lineage.label}`)),
+    onAnchorComplete: handlers?.onAnchorComplete,
+    onAnchorEdit:
+      handlers?.onAnchorEdit ??
+      (() => say("演示模式：改名会写回你的待办，演示里不保存")),
+    onCardEdit: handlers?.onCardEdit
+  };
+
   const backgroundTokens = layout.background.tokenOverrides as
     | CSSProperties
     | undefined;
+
+  // 聚焦某条线索时，不属于这条线的锚点退焦（派生投影，不改原始数据）。
+  const visibleBindings = useMemo(() => {
+    if (!focusTag) return projection.bindings;
+    const next: typeof projection.bindings = { ...projection.bindings };
+    for (const [key, payload] of Object.entries(next)) {
+      if (payload?.kind !== "anchors") continue;
+      next[key] = {
+        ...payload,
+        rows: payload.rows.map((row) => ({
+          ...row,
+          dimmed: !row.tags?.includes(focusTag)
+        }))
+      };
+    }
+    return next;
+  }, [projection.bindings, focusTag]);
 
   return (
     <div
@@ -92,16 +172,29 @@ export function DimensionApp({
       data-layout-document={layout.id}
       data-layout-revision={layout.revision}
     >
-      <AppHeader
-        runtimeLabel={runtimeStatusLabel(projection.runtimeStatus)}
-        onSettings={() => say("演示模式：设置页暂未接入")}
-      />
+      <AppHeader runtimeLabel={runtimeStatusLabel(projection.runtimeStatus)} />
 
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <SecretaryRail
-          secretary={projection.secretary}
-          onReview={() => say("演示模式：这里会打开你们共同变化的时间线")}
-        />
+        {railMode === "inline" && (
+          <SecretaryRail
+            secretary={projection.secretary}
+            onReview={
+              onOpenReview ??
+              (() => say("演示模式：这里会打开你们共同变化的时间线"))
+            }
+            onInteract={
+              onSecretaryInteract ??
+              ((intent) => {
+                if (intent === "chat") say("演示模式：在下面对话条里直接说就行");
+                else if (intent === "decide") say("演示模式：等你决定的事会出现在桌上");
+                else onOpenReview?.();
+              })
+            }
+            onSettings={
+              onOpenSettings ?? (() => say("演示模式：设置页暂未接入"))
+            }
+          />
+        )}
 
         <main
           style={{
@@ -122,35 +215,34 @@ export function DimensionApp({
               className="dim-layer dim-layer--desk"
               style={{ padding: "22px 24px", overflowY: "auto" }}
               aria-hidden={isOpen}
+              data-deck-scroll
             >
               <DeskHeader
                 breadcrumb={projection.header.breadcrumb}
                 title={projection.header.title}
                 subtitle={projection.header.subtitle}
                 onWhy={() => say(layout.arrangement.rationale.join("；"))}
-                onAdjust={() =>
-                  say("演示模式：调整桌面会先给你一份可撤销的预览")
+                onAdjust={
+                  onAdjustDesktop ??
+                  (() =>
+                    say("演示模式：调整桌面会先给你一份可撤销的预览"))
                 }
               />
+              {focusTag && (
+                <div className="dim-focus-capsule" role="status">
+                  <span>
+                    正在看线索 · <strong>{focusTag}</strong>
+                  </span>
+                  <button type="button" onClick={onExitFocus}>
+                    退出聚焦
+                  </button>
+                </div>
+              )}
               <LayoutRenderer
                 document={layout}
-                bindings={projection.bindings}
-                handlers={{
-                  onOpen: handleOpen,
-                  onAccept: () =>
-                    say("演示模式：已收到选择，本次不会保存"),
-                  onReject: () =>
-                    say("演示模式：已保持原样，本次不会保存"),
-                  onFeedFeedback: (_itemId, feedback) => {
-                    const label = {
-                      "new-angle": "有新角度",
-                      known: "已知道",
-                      "not-useful": "没用"
-                    }[feedback];
-                    say(`演示模式：已看到“${label}”，本次不会保存`);
-                  },
-                  onLineage: (lineage) => say(`来源线索：${lineage.label}`)
-                }}
+                bindings={visibleBindings}
+                handlers={resolvedHandlers}
+                composition={composition}
               />
             </div>
 
@@ -173,35 +265,21 @@ export function DimensionApp({
             </div>
           </div>
 
-          <CommandBar
-            onSend={(text) =>
-              say(`演示模式：收到“${text}”，本次不会保存`)
-            }
-          />
+          {thread}
+
+          {commandBarVisible && (
+            <CommandBar
+              disabled={!commandBarSendEnabled}
+              onSend={
+                onSendMessage ??
+                ((text) => say(`演示模式：收到“${text}”，本次不会保存`))
+              }
+            />
+          )}
         </main>
       </div>
 
-      {toast && (
-        <div
-          role="status"
-          style={{
-            position: "fixed",
-            left: "50%",
-            bottom: 26,
-            transform: "translateX(-50%)",
-            background: "var(--dim-olive-deep)",
-            color: "#f2f0dc",
-            fontSize: 12,
-            padding: "8px 16px",
-            border: "1px solid var(--dim-line)",
-            borderRadius: 2,
-            zIndex: 20,
-            maxWidth: "80%"
-          }}
-        >
-          {toast}
-        </div>
-      )}
+      <DimToast message={toast} />
     </div>
   );
 }

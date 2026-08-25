@@ -1,0 +1,31 @@
+[Unit]
+Description=Latitude Agent Host
+After=network-online.target latitude-domain.service
+Wants=network-online.target
+Requires=latitude-domain.service
+
+[Service]
+Type=simple
+User=apple
+Group=apple
+WorkingDirectory=/opt/latitude/current
+EnvironmentFile=/etc/latitude/latitude.env
+Environment=LATITUDE_AGENT_PORT=43120
+Environment=LATITUDE_DOMAIN_URL=http://127.0.0.1:43121
+Environment=LATITUDE_STATE_DIR=/var/lib/latitude/agent
+Environment=LATITUDE_WEB_ORIGIN=https://latitude.baizhuo.online
+Environment=LATITUDE_WEB_PORT=1420
+# Keep the stable current path as import.meta.url so the bundled entrypoint's
+# direct-execution guard remains true across atomic release symlink swaps.
+ExecStart=/usr/bin/node --preserve-symlinks-main /opt/latitude/current/agent/index.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/latitude
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

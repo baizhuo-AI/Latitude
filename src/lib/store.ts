@@ -6,7 +6,8 @@ import {
   dbSeedIfEmpty,
   dbUpdateTodo,
   dbUpdateTodoStatus,
-  dbUpdateTodoSchedule
+  dbUpdateTodoSchedule,
+  getDb
 } from "./db";
 import { emitSync } from "./syncBus";
 
@@ -137,16 +138,22 @@ interface TodoStore {
   todos: Todo[];
   /** 是否已从 SQLite 加载完毕 */
   loaded: boolean;
+  /** hydrate 失败时的错误；成功或尚未加载时为 null。数据源状态如实上报。 */
+  error: string | null;
   /** 启动时调:种子(if empty)+ 读全表 */
   hydrate: () => Promise<void>;
   /** 增 */
   addTodo: (todo: Todo) => Promise<void>;
   /** 切换完成态 */
   toggleComplete: (id: string) => Promise<void>;
+  /** 幂等完成：已完成时不反向切回；找不到记录时抛错。 */
+  completeTodo: (id: string) => Promise<void>;
   /** 删 */
   removeTodo: (id: string) => Promise<void>;
   /** 编辑（全字段覆盖；id / createdAt 保持不变） */
   updateTodo: (todo: Todo) => Promise<void>;
+  /** 只改标题，避免用旧 Todo 快照覆盖其它字段；找不到记录时抛错。 */
+  renameTodo: (id: string, title: string) => Promise<void>;
   /** 批量更新 schedule(AI 排今日、拖拽改时段) */
   applySchedules: (updates: ScheduleUpdate[]) => Promise<void>;
 }
@@ -154,6 +161,7 @@ interface TodoStore {
 export const useTodoStore = create<TodoStore>((set, get) => ({
   todos: [],
   loaded: false,
+  error: null,
 
   hydrate: async () => {
     try {
@@ -162,11 +170,11 @@ export const useTodoStore = create<TodoStore>((set, get) => ({
       // emitSync 触发 hydrate 看到表空就把 SEED 又塞回来"的 bug。
       // 现在删了就是删了，空就是空。SEED_TODOS 保留供未来的"重置示例"按钮复用。
       const todos = await dbListTodos();
-      set({ todos, loaded: true });
+      set({ todos, loaded: true, error: null });
     } catch (err) {
       console.error("[store] hydrate failed:", err);
       // 兜底：db 出错时显示空，而不是强塞 SEED（避免上面那个回填 bug）
-      set({ todos: [], loaded: true });
+      set({ todos: [], loaded: true, error: String(err) });
     }
   },
 
@@ -187,6 +195,30 @@ export const useTodoStore = create<TodoStore>((set, get) => ({
     emitSync("todos");
   },
 
+  completeTodo: async (id) => {
+    const current = get().todos.find((t) => t.id === id);
+    if (!current) throw new Error(`Todo not found: ${id}`);
+
+    // 已经完成且完成时刻齐全时直接成功，避免“完成”动作意外变成撤销。
+    if (current.status === "done" && current.completedAt) return;
+
+    const completedAt = current.completedAt ?? new Date().toISOString();
+    await dbUpdateTodoStatus(id, "done");
+    set((state) => ({
+      todos: state.todos.map((todo) =>
+        todo.id === id
+          ? {
+              ...todo,
+              status: "done",
+              // DB 写入层也会维护 completed_at；这里同步补齐，桌面投影无需等 hydrate。
+              completedAt: todo.completedAt ?? completedAt
+            }
+          : todo
+      )
+    }));
+    emitSync("todos");
+  },
+
   removeTodo: async (id) => {
     await dbDeleteTodo(id);
     set((state) => ({ todos: state.todos.filter((t) => t.id !== id) }));
@@ -197,6 +229,28 @@ export const useTodoStore = create<TodoStore>((set, get) => ({
     await dbUpdateTodo(todo);
     set((state) => ({
       todos: state.todos.map((t) => (t.id === todo.id ? todo : t))
+    }));
+    emitSync("todos");
+  },
+
+  renameTodo: async (id, title) => {
+    const current = get().todos.find((todo) => todo.id === id);
+    if (!current) throw new Error(`Todo not found: ${id}`);
+
+    const nextTitle = title.trim();
+    if (!nextTitle) throw new Error("Todo title cannot be empty");
+    if (nextTitle === current.title) return;
+
+    // 标题写回必须是窄 UPDATE；不能把渲染时捕获的整条 Todo 覆盖回数据库。
+    const db = await getDb();
+    await db.execute(
+      "UPDATE todos SET title = $1, updated_at = $2 WHERE id = $3",
+      [nextTitle, new Date().toISOString(), id]
+    );
+    set((state) => ({
+      todos: state.todos.map((todo) =>
+        todo.id === id ? { ...todo, title: nextTitle } : todo
+      )
     }));
     emitSync("todos");
   },

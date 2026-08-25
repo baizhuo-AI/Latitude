@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { CardShell } from "./CardShell";
+import "./card-interactions.css";
 import type {
   AnchorCard,
+  AnchorRow,
   CardAccent,
   ChartCard,
   CountCard,
@@ -8,6 +11,7 @@ import type {
   NoteCard,
   ProgressCard,
   ProposalCard,
+  ProposalVerdict,
   TextCard
 } from "../types";
 
@@ -27,12 +31,15 @@ const ACCENT: Record<CardAccent, string> = {
   teal: "var(--dim-teal)"
 };
 
+/** 浏览器双击会先派发两次 click；有副作用的按钮只接受第一次或键盘激活。 */
+const isFirstActivation = (detail: number) => detail <= 1;
+
 /** 把 CardBase 的外壳字段一次性摊给 CardShell,免得每种卡抄一遍 */
 function shellProps(card: {
   eyebrow: string;
   title: string;
   tilt?: number;
-  paper?: "plain" | "sticky" | "grid";
+  paper?: "plain" | "sticky" | "grid" | "newsprint";
   offsetY?: number;
   tape?: AnchorCard["tape"];
   clip?: boolean;
@@ -52,12 +59,90 @@ function shellProps(card: {
 
 /* ---------- ◇ 锚点列表 ---------- */
 
+/**
+ * 行内编辑的一行锚点文字。Enter / 失焦提交，Escape 取消。
+ * 编辑是桌面承诺的一部分：纸面上的字能改，且写回真实记录。
+ */
+function EditableAnchorText({
+  row,
+  done,
+  onEdit
+}: {
+  row: AnchorRow;
+  done: boolean;
+  onEdit: (row: AnchorRow, nextText: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(row.text);
+
+  if (editing) {
+    return (
+      <input
+        className="dim-anchor-edit"
+        value={draft}
+        autoFocus
+        aria-label={`编辑：${row.text}`}
+        onChange={(event) => setDraft(event.target.value)}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            const next = draft.trim();
+            setEditing(false);
+            if (next && next !== row.text) onEdit(row, next);
+          } else if (event.key === "Escape") {
+            setDraft(row.text);
+            setEditing(false);
+          }
+        }}
+        onBlur={() => {
+          const next = draft.trim();
+          setEditing(false);
+          if (next && next !== row.text) onEdit(row, next);
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="dim-anchor-text"
+      title="点一下改名"
+      aria-label={`编辑：${row.text}`}
+      onClick={() => {
+        setDraft(row.text);
+        setEditing(true);
+      }}
+      style={{
+        color: done ? "var(--dim-ink-soft)" : "var(--dim-ink)",
+        textDecoration: done ? "line-through" : undefined,
+        textDecorationColor: "var(--dim-line)"
+      }}
+    >
+      {row.text}
+      {/* 秘书推测与用户记录必须可分辨（PRD §2.2），用日常语言标注 */}
+      {row.epistemic === "inferred" && (
+        <span
+          className="dim-meta"
+          style={{ marginLeft: 6, color: "var(--dim-olive)" }}
+        >
+          · 秘书排的
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function AnchorsCardView({
   card,
-  onLineage
+  onLineage,
+  onComplete,
+  onEdit
 }: {
   card: AnchorCard;
   onLineage?: (lineage: LineageRef) => void;
+  onComplete?: (row: AnchorRow) => void;
+  onEdit?: (row: AnchorRow, nextText: string) => void;
 }) {
   return (
     <CardShell {...shellProps(card)}>
@@ -72,27 +157,82 @@ export function AnchorsCardView({
             // 最后一行常是「今天到期」,用暗红标出来
             const urgent = row.meta === "TODAY";
             const lineage = row.lineage;
+            const done = row.done === true;
+            // 只有带来源的可行动行能改名：汇总行 / 折叠行没有可写回的实体
+            const editable = !done && row.actionable === true && Boolean(lineage) && Boolean(onEdit);
             return (
               <div
                 key={i}
-                style={{ display: "flex", alignItems: "center", gap: 10 }}
+                className={`dim-anchor-row${done ? " is-done" : ""}`}
+                data-dimmed={row.dimmed === true || undefined}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  opacity: row.dimmed ? 0.32 : undefined,
+                  filter: row.dimmed ? "saturate(0.6)" : undefined,
+                  transition: "opacity 0.3s ease, filter 0.3s ease"
+                }}
               >
                 <span
                   className="dim-diamond"
                   style={urgent ? { borderColor: ACCENT.rust } : undefined}
                   aria-hidden="true"
                 />
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: 12.5,
-                    lineHeight: 1.5,
-                    color: "var(--dim-ink)"
-                  }}
-                >
-                  {row.text}
-                </span>
+                {editable ? (
+                  <EditableAnchorText row={row} done={done} onEdit={onEdit!} />
+                ) : (
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 12.5,
+                      lineHeight: 1.5,
+                      color: done ? "var(--dim-ink-soft)" : "var(--dim-ink)",
+                      textDecoration: done ? "line-through" : undefined,
+                      textDecorationColor: "var(--dim-line)"
+                    }}
+                  >
+                    {row.text}
+                    {row.epistemic === "inferred" && (
+                      <span
+                        className="dim-meta"
+                        style={{ marginLeft: 6, color: "var(--dim-olive)" }}
+                      >
+                        · 秘书排的
+                      </span>
+                    )}
+                  </span>
+                )}
+                {done && (
+                  <div className="dim-complete-celebration" aria-label="Complete，已完成">
+                    <span className="dim-complete-seal">COMPLETE</span>
+                    <span className="dim-complete-treats" aria-hidden="true">
+                      ✿ <i /> ✦
+                    </span>
+                  </div>
+                )}
+                {!done && row.actionable && (
+                  <button
+                    type="button"
+                    className="dim-btn dim-btn--quiet"
+                    style={{
+                      flexShrink: 0,
+                      padding: "2px 6px",
+                      color: "var(--dim-olive)",
+                      fontSize: 10
+                    }}
+                    aria-label={`完成：${row.text}`}
+                    aria-disabled={!onComplete}
+                    disabled={!onComplete}
+                    title={onComplete ? undefined : "结果回收已在组件设置中关闭"}
+                    onClick={(event) => {
+                      if (isFirstActivation(event.detail)) onComplete?.(row);
+                    }}
+                  >
+                    完成
+                  </button>
+                )}
                 {lineage && (
                   <button
                     type="button"
@@ -104,7 +244,12 @@ export function AnchorsCardView({
                       fontSize: 9
                     }}
                     aria-label={`查看来源：${lineage.label}`}
-                    onClick={() => onLineage?.(lineage)}
+                    aria-disabled={!onLineage}
+                    disabled={!onLineage}
+                    title={onLineage ? undefined : "查看来源已在组件设置中关闭"}
+                    onClick={(event) => {
+                      if (isFirstActivation(event.detail)) onLineage?.(lineage);
+                    }}
                   >
                     ◇ 来源
                   </button>
@@ -253,11 +398,13 @@ export function TextCardView({ card }: { card: TextCard }) {
 export function ProposalCardView({
   card,
   onAccept,
-  onReject
+  onReject,
+  onVerdict
 }: {
   card: ProposalCard;
   onAccept?: () => void;
   onReject?: () => void;
+  onVerdict?: (verdict: ProposalVerdict) => void;
 }) {
   return (
     <CardShell {...shellProps(card)} paper={card.paper ?? "sticky"}>
@@ -274,14 +421,56 @@ export function ProposalCardView({
       >
         {card.quote}
       </p>
-      <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
-        <button type="button" className="dim-btn dim-btn--accent" onClick={onAccept}>
-          {card.accept}
-        </button>
-        <button type="button" className="dim-btn" onClick={onReject}>
-          {card.reject}
-        </button>
-      </div>
+      {/* 接受前必须知道会改变什么（PRD §2.2「要不要这样做」） */}
+      {card.consequence && (
+        <p className="dim-body" style={{ marginTop: 10, color: "var(--dim-ink-soft)" }}>
+          {card.consequence}
+        </p>
+      )}
+      {card.verdicts && card.verdicts.length > 0 ? (
+        /* 裁决不是一个「接受」按钮（PRD §4.2）：五种回应各有合法结果 */
+        <div
+          style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}
+        >
+          {card.verdicts.map((verdict) => (
+            <button
+              key={verdict.id}
+              type="button"
+              className={
+                verdict.id === "try" || verdict.id === "holds"
+                  ? "dim-btn dim-btn--accent"
+                  : "dim-btn"
+              }
+              onClick={(event) => {
+                if (isFirstActivation(event.detail)) onVerdict?.(verdict);
+              }}
+            >
+              {verdict.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="dim-btn dim-btn--accent"
+            onClick={(event) => {
+              if (isFirstActivation(event.detail)) onAccept?.();
+            }}
+          >
+            {card.accept}
+          </button>
+          <button
+            type="button"
+            className="dim-btn"
+            onClick={(event) => {
+              if (isFirstActivation(event.detail)) onReject?.();
+            }}
+          >
+            {card.reject}
+          </button>
+        </div>
+      )}
     </CardShell>
   );
 }
@@ -294,17 +483,19 @@ export function ProgressCardView({ card }: { card: ProgressCard }) {
       <p className="dim-body" style={{ marginTop: 11 }}>
         {card.body}
       </p>
-      <div
-        className="dim-meter"
-        style={{ marginTop: 16 }}
-        role="progressbar"
-        aria-label={card.leftMeta}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.max(0, Math.min(100, card.percent))}
-      >
-        <i style={{ width: `${Math.max(0, Math.min(100, card.percent))}%` }} />
-      </div>
+      {typeof card.percent === "number" && (
+        <div
+          className="dim-meter"
+          style={{ marginTop: 16 }}
+          role="progressbar"
+          aria-label={card.leftMeta}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.max(0, Math.min(100, card.percent))}
+        >
+          <i style={{ width: `${Math.max(0, Math.min(100, card.percent))}%` }} />
+        </div>
+      )}
       <div
         style={{
           marginTop: 8,

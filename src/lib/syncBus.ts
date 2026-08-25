@@ -22,7 +22,9 @@ export type SyncTopic =
   | "reminder"
   | "calendar_events"
   | "layout"
-  | "memory";
+  | "memory"
+  | "digests"
+  | "proposals";
 
 interface SyncPayload {
   topic: SyncTopic;

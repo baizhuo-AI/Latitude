@@ -86,14 +86,15 @@ vi.mock("./settings", () => ({
 }));
 vi.mock("./bitableSync", () => ({ buildSyncPlan: () => ({}) }));
 vi.mock("./feishuBitable", () => ({
-  describeBitable: async () => ({}),
-  createBitableRecords: async () => [],
-  updateBitableRecords: async () => undefined,
+  describeBitable: vi.fn(async () => ({})),
+  createBitableRecords: vi.fn(async () => []),
+  updateBitableRecords: vi.fn(async () => undefined),
 }));
 
 // ─── import 被测(所有 mock 之后) ───────────────────────────────────────────
 import { runChatTool, CHAT_TOOLS } from "./chatTools";
 import { emitSync } from "./syncBus";
+import { createBitableRecords, describeBitable, updateBitableRecords } from "./feishuBitable";
 import {
   dbInsertMemoryFact,
   dbUpdateMemoryFact,
@@ -115,6 +116,21 @@ describe("记忆工具已注册", () => {
     expect(names).toContain("remember");
     expect(names).toContain("update_memory");
     expect(names).toContain("forget");
+  });
+});
+
+describe("飞书多维表写入授权", () => {
+  it("用户关闭外部写入后，真实 write 入口立即拒绝且不访问飞书", async () => {
+    const res = JSON.parse(
+      await runChatTool("write_feishu_table_sync", {
+        creates: [{ fields: { 项目: "Latitude" } }]
+      })
+    );
+
+    expect(res.error).toContain("外部写入已关闭");
+    expect(describeBitable).not.toHaveBeenCalled();
+    expect(createBitableRecords).not.toHaveBeenCalled();
+    expect(updateBitableRecords).not.toHaveBeenCalled();
   });
 });
 
