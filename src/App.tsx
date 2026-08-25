@@ -21,8 +21,8 @@ import { Toaster } from "./components/Toaster";
 import { dimensionDesktopEnabled } from "./lib/featureFlags";
 
 const DimensionApp = lazy(async () => {
-  const module = await import("./dimension/DimensionApp");
-  return { default: module.DimensionApp };
+  const module = await import("./projections/desktop/LiveDimensionApp");
+  return { default: module.LiveDimensionApp };
 });
 
 /**
@@ -134,7 +134,9 @@ function MainWindow() {
   return (
     <ErrorBoundary>
       <ConfirmDialogProvider>
-        {dimensionDesktopEnabled() ? (
+        {/* Tauri legacy shell keeps its explicit rollout flag. Browser P0 was
+            already isolated at the App root and never enters this branch. */}
+        {dimensionDesktopEnabled({ fallbackWhenUnset: false }) ? (
           <Suspense fallback={<div role="status">维度桌面正在加载…</div>}>
             <DimensionApp />
           </Suspense>

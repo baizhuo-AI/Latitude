@@ -2,8 +2,8 @@
 
 - 日期：2026-08-20
 - 版本：v1.1（v1.1 一致性收口：测试基线表述修正 + 新增 §7 追踪表）
-- 状态：生效。**取代** `2026-08-15-dimension-second-mind-refactor-plan.md`（已删除，git 历史可查）
-- 定位：工程侧唯一计划文档。产品定义与架构见[总纲 PRD](../specs/2026-08-20-dimension-master-prd.md)，图谱见[知识库设计](../specs/2026-08-20-dimension-cognitive-graph-design.md)，实验操作见[harness 实验设计](../specs/2026-08-19-dimension-harness-experiment-design.md)。本文档回答三件事：**现有代码怎么复用、新系统怎么分批建、沙箱安全边界的工程规格**
+- 状态：历史基线。曾**取代** `2026-08-15-dimension-second-mind-refactor-plan.md`；当前 Browser P0 的范围、架构和验收门槛已由 [2026-08-24 browser product closure](2026-08-24-browser-product-closure.md) 取代。
+- 定位：保留 2026-08-20 时点的资产盘点与分批设想，不再作为当前实现状态表。现行产品定义见[总纲 PRD](../specs/2026-08-20-dimension-master-prd.md)，现行工程闭环见[browser product closure](2026-08-24-browser-product-closure.md)，图谱契约见[知识库设计](../specs/2026-08-20-dimension-cognitive-graph-design.md)。本文档中的“未开工 / 原型”均为当日历史快照，不能用来判断当前 Browser P0。
 
 > **叙事声明：这不是重构。** 维度（Latitude）是一个新产品；仓库里的现有代码不是「待改造的旧产品」，而是**资产库**——壳、引擎适配、调度、管道都是可直接复用的组件。工程计划从「建什么、复用什么」出发，不从「改什么」出发。
 
@@ -65,7 +65,7 @@ src/lib/db/migrations/  src/lib/db/repositories/
 | **批次 0：种子实验**（当前） | 布局 schema + 最小渲染器、微信 iLink spike、六表、共创流、导出；详见 harness 实验设计 §7 | 3.5-4 周搭建 + 1 周 dogfood + 3-4 周运行 | 开源卫生审计通过 |
 | **P0：契约冻结** | 词汇表冻结（含领域敏感度分级、warrant / contraction、内容契约）、migration runner、测试基线修至全绿 | 1 周 | **实验结账完成**（H 表逐条判定） |
 | **P1：图谱全量** | 图谱设计 v1.2 全量本体、六表迁移、memory_facts 迁移、Context Compiler、模式查询清单、结构分析投影 | 2 周 | P0 契约评审通过 |
-| **P2：桌面正式版** | 布局文档三层完整实现、四象限全规格（前端 PRD）、展开态、下钻、第 0 天 / 留白 / 授权三态 | 2-3 周 | P1 图谱可用 |
+| **P2：桌面正式版** | 布局文档三层完整实现、四类内容职能的真实投影（前端体验 PRD）、溯源下钻、第 0 天 / 留白 / 授权等状态 | 2-3 周 | P1 图谱可用 |
 | **P3：叙事投影** | 周回顾、养成时间线、结构演化叙事（双环区分） | 2 周 | — |
 | **P4：养成与权能** | 三参数计算与外显、熟悉阶段、Authority Grant、行动账本、执行插件全四档 | 2 周 | 权能自动化过**单独安全评审** |
 | **P5：模块运行时** | declarative 渲染积木、HTML 沙箱点亮（§4）、想法地图界面、配置引擎（形态提案自动落地） | 3 周 | 布局协议在 P2 稳定 |
@@ -129,16 +129,16 @@ exitCriteria · rollbackVersion
 | §3.3 写模型 | 三层知识模型（Evidence / Observation / Claim）、AGM 修订、双时态 | 批次 0（六表）→ P1（全量本体） | `src/domain/graph/`、`src/lib/db/migrations/` | 未开工 |
 | §3.3 读模型 | 投影只读领域层，禁止投影间互读 | P1 → P3 | `src/projections/` | 未开工 |
 | §3.4 插件器官 | 感知=眼耳、通道=嘴、执行=手；共用授权与账本 | P4（授权体系）| `src/plugins/` | 未开工 |
-| §4.1 四象限 | 资讯 / 日程 / 复盘 / 规划 + 血缘链路 | 批次 0（种子布局）→ P2（全规格） | `src/runtime/layout/` + `src/projections/desktop/` | **原型**（默认关闭的主窗功能开关已挂载；当前为 seed projection） |
+| §4.1 四象限 | 资讯 / 日程 / 复盘 / 规划 + 血缘链路 | 批次 0（种子布局）→ P2（全规格） | `src/runtime/layout/` + `src/projections/desktop/` | **原型**：日程 / 节奏 / 复盘区已接真实本地数据（liveProjection 只读投影）；资讯位已接 daily digest（有则出、无则留白）；策展算法与血缘链路未建 |
 | §4.1 反茧房硬约束 | 日上限 ≤3、必须挂靠张力、异质加权 | 批次 0 | `src/dimension/cards/FeedCard.tsx` + 资讯策展模块（待建） | 部分已实现（渲染硬上限与反馈三键已落地；策展算法未开工） |
-| §4.2 三档生产方式 | 自动 / 提案 / 共创 | 批次 0 | 复用 `src/lib/secretary/`（投递运行时） | 部分已实现（投递闸门在跑） |
+| §4.2 三档生产方式 | 自动 / 提案 / 共创 | 批次 0 | 复用 `src/lib/secretary/`（投递运行时）+ `src/lib/proposalsStore.ts` + chatTools `propose_change` | 部分已实现（投递闸门在跑；提案档最小闭环已通：`propose_change` → proposals 表 → 桌面五态裁决 → 写回，"试试"可落地为当日待办；共创未开工） |
 | §4.3 出场资格与留白 | 特异性判定；留白是正式内容 | 批次 0 | 出场资格代码化（待建） | 未开工 |
 | §4.4 认知沉淀低调 | 对话轻确认 + 小角落提示，不立大卡 | P2 | `src/dimension/cards/` | 原型（卡片壳已有） |
 | §4.5 大胆度四因子 | 证据 × 领域敏感度 × 用户偏好 × 当次许可 | P0（分级表）→ P1 | 候选挖掘模块 | 未开工 |
 | §4.6 外化语言 | 理论术语止于代码；语言人格可生长 | 贯穿 | `src/lib/persona/personaSpec.ts`、i18n | 部分已实现 |
 | §5.1 载体触点 | 桌面为核心；微信主窗口、飞书备用 | 批次 0（步 1b spike） | `src/runtime/channels/`、复用 `src-tauri/src/feishu/` | 飞书已实现，微信未开工 |
 | §5.2 布局即数据 | 背景 / 卡 / 排布三层，排布存规则不存坐标 | 批次 0（最小渲染器）→ P5（HTML 积木） | `src/runtime/layout/` + `src/dimension/nativeRegistry.tsx` | **已实现（最小版）**：native 点亮；declarative / HTML 仅协议与安全降级 |
-| §5.3 共创流 | 候选异步状态机，跨触点续接；深聊为加速器 | 批次 0 | 回合状态机（待建） | 未开工 |
+| §5.3 共创流 | 候选异步状态机，跨触点续接；深聊为加速器 | 批次 0 | `src/lib/db/`（proposals 表）+ `LiveDimensionApp` 裁决写回 | 原型（提案—裁决单回合已通；跨触点续接的回合状态机未开工） |
 | §5.4 节奏 | check-in 事件触发 + 每周兜底；日循环 ≤10 分钟 | 批次 0 | 复用 `src/lib/secretary/scheduler.ts` | 部分已实现（调度器在跑，触发条件需改） |
 | §5.5 养成系统 | 三参数（熟悉/默契/权能）；关系不做数值；阶段名外显 | 批次 0（不外显）→ P4（完整） | `src/dimension/types.ts`（schema 已对齐三条） | **schema 已对齐**，计算未开工 |
 | §6.2 隐私与开源 | 纯本地、无遥测、可导出可删除；开源卫生 | 批次 0 步 0 | `.gitignore`（已挡 pipeline）、导出模块（待建） | 部分已实现 |

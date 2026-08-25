@@ -579,6 +579,7 @@ describe("漏跑纪要场景 — 缺天纪要时续接/补跑", () => {
     expect(result.backfilledDates).toContain("2026-06-14");
     // _digestStore 里应该有 2026-06-14 的纪要了
     expect(_digestStore.has("2026-06-14")).toBe(true);
+    expect(emitSyncCalls).toContain("digests");
   });
 
   it("runDigestBackfill:所有近期纪要都有时,不重复补跑", async () => {

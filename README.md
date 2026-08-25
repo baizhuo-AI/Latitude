@@ -1,180 +1,173 @@
 # 维度 Latitude
 
-维度是一款 macOS 本地优先的 AI native 个人成长产品。
+> 一款本地优先、由 AI 协作生长的个人认知产品。
 
-它不只管理待办，而是把现实中的证据、逐渐形成的判断和真正发生的行动连成一条可追溯的闭环：**看见发生了什么 → 一起想清楚 → 试一个小行动 → 用结果修正理解**。
+维度不只是记录待办。它把现实里的证据、逐渐形成的判断、可验证的小行动和真正发生的结果，连成一条能够追溯、修正与回滚的闭环。
 
-> Latitude 既是「纬度」，也意味着自由度与回旋余地：产品提供有限的积木和生长规则，最终形态由每个人的使用长出来。
+**看见发生了什么 → 一起想清楚 → 试一个小行动 → 回收真实结果 → 修正理解。**
 
-![维度种子桌面预览](docs/assets/dimension-demo/seed-desktop-preview.png)
+![维度桌面](docs/assets/dimension-demo/seed-desktop-preview.png)
 
-<p align="center"><sub>Seed demo · 示例数据，不代表已接入真实日程或认知图谱</sub></p>
+<p align="center"><sub>Latitude 既是「纬度」，也代表自由度与回旋余地。</sub></p>
 
-## 当前状态
+## 现在能做什么
 
-项目处于**种子实验阶段**。新的维度桌面已经以功能开关接入主窗口，但默认仍关闭；当前页面使用演示投影，用来验证布局、文案和交互，不会读取 SQLite、调用 LLM 或写入用户数据。
+当前主交付是 **Browser UI + 本机 Agent Host + 本机 Domain Service**。不需要先打包 macOS 应用，就能验收从对话到长期认知修订的完整链路。
 
-| 能力 | 当前状态 |
-|---|---|
-| 三层布局文档：背景 / 卡 / 排布规则 | 最小版本已实现 |
-| `5 + 7 / 4 + 4 + 4` 五区桌面 | 已实现，使用演示数据 |
-| 九种原生卡片、资讯反馈、血缘与提案动作 | 已实现 |
-| 秘书 `3 状态 × 3 动作` 立绘与生长映射 | 已实现 |
-| 主窗口功能开关与旧工作台回退 | 已实现 |
-| Todo / Calendar → 新桌面的真实投影 adapter | 未接入 |
-| 认知—行为图谱、共创流与 Proposal 持久化 | 未开工 |
-| declarative / HTML 渲染 | 仅保留协议与安全降级，不执行 |
+| 能力 | 当前实现 |
+| --- | --- |
+| 统一知识星图 | 用 Node、Edge、Evidence、ChangeSet 表达目标、判断、行动、结果及其关系 |
+| 真实行动闭环 | 行动必须包含触发条件、观察窗口、预期结果和复查时间；结果会进入 Claim 修订 |
+| 可持续 Agent | DeepSeek Harness 运行时，支持持久会话、预算、取消、崩溃恢复与上下文压缩 |
+| 共创桌面 | 五张核心卡、左侧秘书栏和九个系统模块，共用可回滚的 Living UI 协议 |
+| 时间回收 | 事件关联优先，复查时间、周期扫描和启动补偿兜底；没有材料就不生成空洞周报 |
+| 真实资讯 | Web Search 结果按不可信外部证据保存，保留来源、时间、内容哈希和推荐理由 |
+| 数据自主 | 完整导出、完整性检查、恢复、可恢复清空、永久清除，以及 ChangeSet 历史回滚 |
 
-仓库中仍保留旧工作台积累的 Tauri 多窗口壳、SQLite、Engine Adapter、主动触达调度器、飞书管道和 MCP 等资产。它们会按工程计划逐步接入新产品，而不是被一次性改造成新架构。
+当前浏览器入口不会在服务离线时偷偷回退到演示数据，而是明确显示连接状态。
 
-## 本地预览
+## 快速开始
 
-只看新桌面前端，不需要 Rust 环境。最快的组件预览方式是 Ladle：
+当前开发与验收以 macOS 为基准，需要：
+
+- Node.js `22.x`
+- npm
+- Rust 工具链
+- DeepSeek API Key（只在真实模型调用和 Web Search 时使用）
 
 ```bash
 npm install
+cp .env.example .env.local
+chmod 600 .env.local
+```
+
+编辑 `.env.local`，填入 `DEEPSEEK_API_KEY`。模型凭据只属于本机 Agent Host，不要添加任何 `VITE_*` 模型密钥。
+
+```bash
+npm run doctor:local
+npm run dev:local
+```
+
+启动完成后打开 <http://127.0.0.1:1420>。
+
+`doctor:local` 不调用模型、不访问外网、也不写入文件。它会检查 Node/Rust 工具链、三个本机端口、凭据是否存在、`.env.local` 权限、存储路径隔离和可用空间，但不会读取或打印密钥值。
+
+### 本机服务
+
+| 服务 | 默认地址 | 职责 |
+| --- | --- | --- |
+| Browser UI | `127.0.0.1:1420` | React 界面与 Living UI |
+| Agent Host | `127.0.0.1:43120` | 对话、工具、会话、调度与模型访问 |
+| Domain Service | `127.0.0.1:43121` | 知识星图、事务、审计、备份与恢复 |
+
+三个服务都只监听 loopback。若 `1420` 被占用，可在 `.env.local` 修改 `LATITUDE_WEB_PORT`；Browser、Agent CORS 与 Domain CORS 会共同使用这个精确端口。
+
+默认数据保存在仓库内被 Git 忽略的 `.latitude/`：
+
+```text
+.latitude/latitude-domain.db      # 统一知识星图
+.latitude/backups/                # Domain 备份
+.latitude/agent/                  # Agent 会话、任务、审计与调度状态
+.latitude/agent-backups/          # Agent 备份
+```
+
+只想查看组件与视觉状态时，可以运行：
+
+```bash
 npm run ladle
 ```
 
-打开 <http://localhost:61000>，可以分别查看完整桌面、布局运行时，以及秘书的九动作与三档生长矩阵。
-
-也可以从应用入口查看功能开关后的完整页面：
-
-```bash
-npm install
-npm run dev
-```
-
-然后打开：
-
-- 新维度桌面：<http://localhost:1420/?dimension=1>
-- 旧工作台回退：<http://localhost:1420/?dimension=0>
-
-也可以通过环境变量默认开启：
-
-```bash
-cp .env.example .env.local
-# 将 VITE_DIMENSION_DESKTOP 改为 true
-```
-
-当前新桌面是演示模式。按钮会给出交互反馈，但不会把选择写入数据库。
-
-## 运行原生应用
-
-需要 macOS、Node.js、npm 和 Rust 工具链：
-
-```bash
-npm install
-cp .env.example .env.local
-npm run tauri:dev
-```
-
-LLM key 只在使用对应外部模型时需要配置。默认本地数据库位置：
-
-```text
-~/Library/Application Support/com.latitude.desktop/latitude.db
-```
-
-生产构建：
-
-```bash
-npm run tauri:build
-```
-
-## 桌面如何工作
-
-维度桌面不是写死的一组 React 页面。布局与内容分开：布局文档决定背景、卡片与排布规则；桌面投影提供当前时刻的内容；渲染器把两者组合成稳定桌面。
+## 产品如何闭环
 
 ```mermaid
 flowchart LR
-  L["LayoutDocument<br/>背景 / 卡 / 排布"] --> R["LayoutRenderer"]
-  P["DesktopProjection<br/>当前为 seed，后续接图谱与 SQLite"] --> R
-  R --> N["Native Card Registry<br/>九种原生卡片"]
-  N --> D["维度桌面"]
+  E["现实证据"] --> C["Claim / Tension"]
+  C --> A["可验证行动"]
+  A --> O["真实 Outcome"]
+  O --> R["认知修订"]
+  R --> W["周期回顾"]
+  W --> C
 ```
 
-种子骨架保持稳定：
+这里有几条不能被模型绕过的物理规则：
 
-- 上排左 `5`：资讯，每日最多三条，只展示与当前问题直接相关的异质视角。
-- 上排右 `7`：日程，承接今天最高频的查看与行动。
-- 下排 `4 + 4 + 4`：复盘·规划、节奏和弹性格；只有需要时才点亮。
-- 对话条是自然语言编辑入口；未来所有布局变化都必须有理由、可预览、可撤销。
+1. 重要判断必须能回到证据；推断不能伪装成事实。
+2. 行动必须写清 `trigger`、`observationWindow`、`expectedOutcome` 和 `reviewAt`。
+3. 到期后先询问现实里发生了什么；没有真实结果，Agent 不能替用户补写完成事实。
+4. 结果分为 `confirms / contracts / revises / refutes / unknown`，其中收窄和修订必须留下新 statement。
+5. 沉默、拒绝和“没用”都是有效反馈，不会被写成用户结论，也不会触发反复追问。
 
-## 产品物理规则
+## 运行架构
 
-以下是整个系统的目标约束；其中领域层与持久化门禁仍在建设中：
+```mermaid
+flowchart LR
+  UI["React Browser UI"] --> HOST["Node.js Agent Host"]
+  UI --> DOMAIN["Rust / Axum Domain Service"]
+  HOST --> DOMAIN
+  HOST --> DEEPSEEK["DeepSeek API / Web Search"]
+  DOMAIN --> DB["SQLite + migrations + backups"]
+```
 
-1. 重要判断必须能追溯到证据；推断必须明确标注为推断。
-2. 写入长期记忆或认知模型前必须经过用户确认。
-3. 内容、权限和形态变化必须留痕、可撤销、可回滚。
-4. 拒绝与沉默都是有效反馈，不惩罚，也不反复追问。
-5. 用户数据必须可完整导出、可彻底删除。
+- Browser 只依赖 typed Runtime Port，不直接访问 SQLite、模型 SDK 或密钥。
+- Agent Host 负责 Harness loop、工具、持久会话、上下文压缩、调度和审计。
+- Domain Service 是领域事实的权威来源，负责知识星图、ChangeSet、结果修订和数据安全。
+- UI 自定义采用声明式白名单协议，不执行模型生成的 React、HTML、CSS 或 JavaScript。
+
+## 安全与隐私边界
+
+“本地优先”不等于“本地模型”。使用 DeepSeek 时，完成请求所需的对话与认知上下文会发送给 DeepSeek。
+
+- 模型凭据只保存在被 Git 忽略的 `.env.local`，只交给 Agent Host；Browser 和 Domain 子进程会过滤凭据形态的环境变量。
+- Web Search 内容永远是外部证据，不具备提示词、工具或写入权限。
+- 普通用户轮次实行硬相位锁：同一轮可以搜索外部信息，或执行本地写入，不能两者兼做。
+- 模型写入长期记忆固定标记为 `origin=model / authority=system_inferred`，保留依据、before/after 和回滚能力，不能伪装成用户确认。
+- 可恢复清空与恢复都需要两阶段确认；永久清除是独立且不可逆的深入口操作。
+- 完整导出不包含模型凭据，但导出文件是**未加密明文 JSON**，离开产品后需要由用户自行安全保管。
+- 秘书不是治疗师或临床角色，不做诊断、不承诺读心，也不把安全策略描述成可靠的危机识别器。
+
+## 验证
+
+| 命令 | 验证范围 | 外部模型调用 |
+| --- | --- | --- |
+| `npm run doctor:local` | 工具链、端口、权限、路径与凭据存在性 | 无 |
+| `npm run verify:code` | Browser build、凭据扫描、CSS、TypeScript、Vitest、Rust fmt/clippy/test | 无 |
+| `npm run accept:browser` | production Browser + 隔离 Domain + 本地 Agent stub 的真 DOM 冒烟 | 无 |
+| `npm run accept:offline` | 真实 Host/Domain/Browser 与确定性 provider 的完整闭环、重启和恢复 | 无外网 |
+| `npm run accept:local` | 隔离临时 profile 中的真实 DeepSeek 对话、Web Search、恢复与泄漏扫描 | 有 |
+
+`accept:offline` 依赖 macOS `sandbox-exec`，只有在子进程出站探针全部被操作系统拒绝时才会通过。`accept:local` 使用真实凭据和网络，但不会替代人工浏览器视觉验收。
+
+Domain HTTP 的完整无凭据验收序列见 [Domain Service README](src-tauri/domain-service/README.md)。
 
 ## 项目结构
 
 ```text
-src/dimension/              新桌面视觉组件、卡片与秘书立绘
-src/runtime/layout/         布局文档 schema、校验器与渲染器
-src/projections/desktop/    桌面投影契约与当前演示投影
-src/assets/secretary/       九动作秘书资源及使用约定
-src/lib/                    旧资产与逐步迁移中的运行能力
-src-tauri/                  Tauri 原生壳、命令与多窗口能力
-docs/specs/                 产品总纲与专题 PRD
-docs/plans/                 工程实施计划
+services/agent/                 Agent Host、ledger、scheduler、admin
+src-tauri/domain-service/       Rust/Axum Domain Service 与 SQLite migrations
+src/runtime/host/               Browser ↔ 本机服务的 typed Runtime Port
+src/runtime/composition/        声明式组件与 UiChangeSet 运行时
+src/runtime/layout/             LayoutDocument 校验与渲染
+src/projections/desktop/        真实投影、闭环交互与数据安全入口
+src/dimension/                  卡片、三层桌面与左侧秘书栏
+src-tauri/                      暂未作为主验收入口的 Tauri 原生壳
+deploy/latitude/                systemd 与 Nginx 部署模板
+docs/specs/                     产品总纲与专题 PRD
+docs/plans/                     工程实施与验收计划
 ```
-
-## 路线图
-
-1. **当前：种子运行时**——布局协议、native renderer、五区演示桌面与秘书资源。
-2. **下一步：只读真实投影**——把现有 Todo / Calendar 接到日程与节奏区。
-3. **完成种子实验**——补齐内容出场资格、共创回合、周回顾与两层导出。
-4. **P0–P2**——冻结契约与迁移、修复全量测试基线、落地图谱与真实四象限桌面。
-5. **后续**——叙事层、养成计算、授权治理、declarative / HTML 沙箱与可选感知插件。
-
-## 开发与验收
-
-```bash
-# TypeScript + 前端生产构建
-npm run build
-
-# Vitest
-npm test
-
-# 组件与状态图库
-npm run ladle
-npm run ladle:build
-
-# CSS 规则检查
-npm run lint:styles
-```
-
-当前全量测试仍有两项旧基线债务：`ChatBar.test.tsx` 的 i18n mock 加载失败，以及 `tokens.test.ts` 对旧 token 格式的断言。新桌面切片的定向测试与生产构建已通过；完整门禁修复计划见[工程实施计划](docs/plans/2026-08-20-dimension-implementation-plan.md)。
 
 ## 文档地图
 
-- [产品总纲 PRD](docs/specs/2026-08-20-dimension-master-prd.md)：产品定义、物理规则与系统架构的唯一上位口径。
-- [桌面前端 PRD](docs/specs/2026-08-19-dimension-desktop-frontend-prd.md)：五区桌面、卡片、秘书与边缘状态。
-- [用户旅程 PRD](docs/specs/2026-08-19-dimension-user-journey-prd.md)：第 0 天、日循环、周循环与月弧。
-- [认知—行为图谱设计](docs/specs/2026-08-20-dimension-cognitive-graph-design.md)：领域模型、修订与投影边界。
-- [Harness 实验设计](docs/specs/2026-08-19-dimension-harness-experiment-design.md)：种子实验、假设与结账标准。
-- [工程实施计划](docs/plans/2026-08-20-dimension-implementation-plan.md)：资产复用、批次计划、测试与安全边界。
+- [产品总纲 PRD](docs/specs/2026-08-20-dimension-master-prd.md)
+- [前端体验 PRD](docs/specs/2026-08-19-dimension-desktop-frontend-prd.md)
+- [用户旅程 PRD](docs/specs/2026-08-19-dimension-user-journey-prd.md)
+- [认知—行为图谱设计](docs/specs/2026-08-20-dimension-cognitive-graph-design.md)
+- [Harness 实验设计](docs/specs/2026-08-19-dimension-harness-experiment-design.md)
+- [浏览器产品闭环计划](docs/plans/2026-08-24-browser-product-closure.md)
 
-## 隐私边界
+## 当前范围
 
-当前事实：
-
-- 新桌面演示模式不读取数据库、不调用模型、不写入数据。
-- 旧工作台业务数据保存在本机 SQLite；外部 LLM 仅在用户配置 provider 和 key 后使用。
-- 选择云端 LLM 时，提示词及注入的上下文会发送给对应模型供应商；使用飞书时，相关内容会经过飞书服务。
-- `.env.local`、本地数据库、音频与转写产物均由 `.gitignore` 排除。
-
-尚未全部实现的产品目标：
-
-- 无遥测、无自有业务服务端，并提供可审阅的完整导出与彻底删除。
-- 录音、电脑使用轨迹等高敏感知插件默认关闭，显式授权，可随时撤销。
-- Authority Grant、Action Ledger，以及提案—裁决—回滚链路完整落地。
-- 完成开源卫生审计和真实用户 dogfood 前的知情同意流程。
+Tauri 壳仍保留在仓库中，但不是当前主验收入口。飞书、Kiro、Computer History、录音感知、原生打包签名、公证、自动更新和真实用户规模验证，会在浏览器闭环稳定后分别收口。
 
 ## License
 
-项目计划以开源形式发布，但当前尚未确定许可证，也没有 `LICENSE` 文件。在许可证正式加入前，仓库公开可见不等于授予复制、修改或分发权利，保留所有权利。
+项目尚未确定许可证，也没有 `LICENSE` 文件。在许可证正式加入前，保留所有权利。

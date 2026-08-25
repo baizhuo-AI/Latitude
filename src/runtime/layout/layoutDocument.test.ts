@@ -134,6 +134,25 @@ describe("LayoutDocumentV1", () => {
     expect(first.map((card) => card.span)).toEqual([5, 7, 4, 4, 4]);
   });
 
+  it("只对带 ChangeSet 收据的组合桌面放开重排、改宽和显隐", () => {
+    const document = createValidDocument();
+    document.composition = {
+      mode: "user-customized",
+      changeSetId: "ui-change-1"
+    };
+    [document.arrangement.orderedCardIds[0], document.arrangement.orderedCardIds[1]] = [
+      document.arrangement.orderedCardIds[1],
+      document.arrangement.orderedCardIds[0]
+    ];
+    document.cards[0] = { ...document.cards[0], span: 12, hidden: true };
+
+    expect(validateLayoutDocument(document)).toEqual({ valid: true, issues: [] });
+
+    const forged = { ...document, composition: { mode: "user-customized" } };
+    expect(codes(forged)).toContain("invalid_composition");
+    expect(codes(forged)).toContain("invalid_seed_region_order");
+  });
+
   it("只替换 binding 不改变任何布局 slot", () => {
     const before = createValidDocument();
     const after: LayoutDocumentV1<SeedCardKind, SeedPresentation> = {

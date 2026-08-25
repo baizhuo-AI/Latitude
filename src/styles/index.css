@@ -63,16 +63,19 @@
 @layer utilities {
   /* 自定义滚动条(暗色优先) */
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: var(--size-scrollbar);
+    height: var(--size-scrollbar);
   }
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: var(--border-strong);
     border-radius: 3px;
   }
+
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: var(--text-faint);
   }
+
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }

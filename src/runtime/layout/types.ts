@@ -35,7 +35,20 @@ export interface LayoutCardDefinition<
   kind: TKind;
   span: LayoutSpan;
   binding: string;
+  /**
+   * A composed desktop may temporarily hide a registered card without deleting
+   * its binding or spatial identity.  The card remains in orderedCardIds so a
+   * rollback can restore it exactly.
+   */
+  hidden?: boolean;
   presentation?: TPresentation;
+}
+
+export interface LayoutCompositionV1 {
+  /** Only the trusted UiChangeSet adapter may emit this mode. */
+  mode: "user-customized";
+  /** Latest applied UiChangeSet receipt; keeps the rendered projection auditable. */
+  changeSetId: string;
 }
 
 export interface LayoutBackgroundV1 {
@@ -64,6 +77,7 @@ export interface LayoutDocumentV1<
   schemaVersion: 1;
   id: string;
   revision: number;
+  composition?: LayoutCompositionV1;
   background: LayoutBackgroundV1;
   cards: Array<LayoutCardDefinition<TKind, TPresentation>>;
   arrangement: LayoutArrangementV1;

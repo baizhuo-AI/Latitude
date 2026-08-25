@@ -13,7 +13,8 @@
  * 所有 class 一律 dim- 前缀,和旧 Latitude 样式零冲突。
  */
 
-.dimension-root {
+.dimension-root,
+.dim-preset-shell {
   color-scheme: light;
 
   /* 纸张 */
@@ -41,6 +42,33 @@
   --dim-rust: #c35e4a;
   --dim-amber: #d9a441;
   --dim-hand: #9a6b3c; /* 手写批注 */
+  --dim-relation-list-gap: 10px;
+  --dim-relation-list-margin: 12px;
+  --dim-relation-list-padding: 10px 9px;
+  --dim-relation-row-gap: 5px;
+  --dim-relation-label-gap: 8px;
+  --dim-relation-meter-height: 4px;
+  --dim-pet-left-spark-top: 34%;
+  --dim-pet-left-spark-inset: 7%;
+  --dim-pet-right-spark-top: 28%;
+  --dim-pet-right-spark-inset: 7%;
+  --dim-pet-emote-top: 8%;
+  --dim-pet-emote-left: 5%;
+  --dim-pet-emote-min-width: 29px;
+  --dim-pet-emote-padding: 4px 6px;
+  --dim-pet-bubble-padding: 10px 12px;
+  --dim-pet-bubble-tip-offset: -5px;
+  --dim-pet-bubble-tip-center: 50%;
+  --dim-pet-bubble-tip-size: 8px;
+  --dim-pet-bubble-emote-width: 25px;
+  --dim-pet-action-gap: 5px;
+  --dim-pet-action-padding: 5px 9px;
+  --dim-rail-body-padding: 18px 16px 8px;
+  --dim-rail-footer-gap: 7px;
+  --dim-rail-footer-padding: 10px 16px 16px;
+  --dim-rail-settings-gap: 7px;
+  --dim-rail-settings-height: 30px;
+  --dim-rail-settings-collapsed-size: 32px;
 
   font-family: var(--font-sans);
   color: var(--dim-ink);
@@ -65,6 +93,21 @@
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--dim-ink-faint);
+}
+
+.dim-feed-source-link {
+  color: var(--dim-olive-deep);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+.dim-feed-source-link:hover,
+.dim-feed-source-link:focus-visible {
+  text-decoration: underline;
+}
+
+.dim-meta[data-freshness="stale"] {
+  color: var(--dim-rust);
 }
 
 .dim-title {
@@ -114,6 +157,41 @@
 
 .dim-paper--sticky {
   background: var(--dim-sticky);
+}
+
+/* 报纸：早报卡的纸质。衬线大题 + 双细线版头，信息排成像样的新闻 */
+.dim-paper--newsprint {
+  background: #f8f4e6;
+  border-color: #cfc8b2;
+  padding-top: 16px;
+}
+
+.dim-paper--newsprint .dim-eyebrow {
+  text-align: center;
+  letter-spacing: 0.3em;
+  font-size: 8.5px;
+}
+
+.dim-paper--newsprint .dim-title {
+  text-align: center;
+  font-size: 21px;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+  padding-bottom: 9px;
+  border-bottom: 3px double var(--dim-ink);
+}
+
+.dim-paper--newsprint article {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--dim-line-soft);
+}
+
+.dim-paper--newsprint article:last-child {
+  border-bottom: 0;
+}
+
+.dim-paper--newsprint article h4 {
+  font-size: 13.5px !important;
 }
 
 /* 方格纸:图表类卡片画在格子上 */
@@ -190,6 +268,49 @@
   transform: rotate(45deg);
 }
 
+/* ---------- 锚点行内编辑 ---------- */
+
+/* 可编辑的锚点文字看起来和普通文字一样，hover 时才露出铅笔意味 */
+.dim-anchor-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed transparent;
+  padding: 0 0 1px;
+  cursor: text;
+  font-family: inherit;
+}
+
+.dim-anchor-text:hover {
+  border-bottom-color: var(--dim-olive);
+}
+
+.dim-anchor-text:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+.dim-anchor-edit {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: inherit;
+  color: var(--dim-ink);
+  background: var(--dim-inset);
+  border: 0;
+  border-bottom: 1.5px solid var(--dim-olive);
+  padding: 0 0 1px;
+}
+
+.dim-anchor-edit:focus-visible {
+  outline: none;
+}
+
 /* ---------- 12 栅格 ---------- */
 
 /*
@@ -252,11 +373,49 @@
 }
 
 .dim-layer--desk {
+  position: relative;
+  isolation: isolate;
   opacity: 1;
   transform: none;
   overflow-x: hidden;
   background-color: var(--dim-desk);
-  background-image: linear-gradient(180deg, rgb(255 255 255 / 14%), transparent 28%);
+  background-image:
+    radial-gradient(900px 420px at 18% -8%, rgb(255 255 244 / 54%), transparent 68%),
+    radial-gradient(640px 360px at 88% 105%, rgb(89 111 77 / 11%), transparent 72%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgb(72 88 61 / 5%) 31px 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgb(72 88 61 / 5%) 31px 32px),
+    linear-gradient(135deg, #e9eadf 0%, #dfe4d7 56%, #d6ddcf 100%);
+}
+
+/* 桌面是浅色制图台，不是线索板的软木底；边角标记只提供空间感，不盖内容。 */
+.dim-layer--desk::before,
+.dim-layer--desk::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dim-layer--desk::before {
+  inset: 12px;
+  border: 1px solid rgb(70 85 60 / 9%);
+  background:
+    linear-gradient(90deg, rgb(70 85 60 / 26%) 0 32px, transparent 32px) 18px 18px / 78px 1px no-repeat,
+    linear-gradient(180deg, rgb(70 85 60 / 26%) 0 32px, transparent 32px) 18px 18px / 1px 78px no-repeat,
+    linear-gradient(270deg, rgb(70 85 60 / 20%) 0 24px, transparent 24px) calc(100% - 18px) calc(100% - 18px) / 66px 1px no-repeat,
+    linear-gradient(0deg, rgb(70 85 60 / 20%) 0 24px, transparent 24px) calc(100% - 18px) calc(100% - 18px) / 1px 66px no-repeat;
+}
+
+.dim-layer--desk::after {
+  inset: 0;
+  box-shadow:
+    inset 0 22px 34px -32px rgb(255 255 255 / 82%),
+    inset 0 -24px 36px -34px rgb(50 65 44 / 34%);
+}
+
+.dim-layer--desk > * {
+  position: relative;
+  z-index: 1;
 }
 
 .dim-stage--open .dim-layer--desk {
@@ -307,6 +466,422 @@
   background: var(--dim-paper);
   border-right: 1px solid var(--dim-line);
   z-index: 2;
+}
+
+/* 收起态：一条细边栏，她用一个状态点表示在场 */
+.dim-rail--collapsed {
+  width: 44px;
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dim-rail-expand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--dim-ink-soft);
+}
+
+.dim-rail-expand:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+.dim-rail-expand-mark {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--dim-olive);
+  transform: rotate(45deg);
+}
+
+.dim-rail-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim-olive);
+}
+
+.dim-rail-state-thinking {
+  background: var(--dim-amber);
+}
+
+.dim-rail-state-presenting {
+  background: var(--dim-rust);
+  animation: dim-state-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dim-state-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(195 94 74 / 40%); }
+  50% { box-shadow: 0 0 0 5px rgb(195 94 74 / 0%); }
+}
+
+.dim-rail-collapsed-label {
+  writing-mode: vertical-lr;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.dim-rail-collapse {
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+/* 正文独立滚动，整体工具留在左下角；矮窗口也不会让底栏压住关系进度。 */
+.dim-rail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--dim-rail-body-padding);
+}
+
+.dim-rail-footer {
+  position: relative;
+  z-index: 7;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-rail-footer-gap);
+  padding: var(--dim-rail-footer-padding);
+  background: var(--dim-paper);
+  border-top: 1px solid var(--dim-line-soft);
+}
+
+.dim-rail-footer-button {
+  width: 100%;
+}
+
+.dim-rail-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--dim-rail-settings-gap);
+  min-height: var(--dim-rail-settings-height);
+}
+
+.dim-rail-settings:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+.dim-rail-settings-collapsed {
+  width: var(--dim-rail-settings-collapsed-size);
+  min-height: var(--dim-rail-settings-collapsed-size);
+  margin-top: auto;
+  padding: 0;
+  justify-content: center;
+  color: var(--dim-ink-soft);
+  background: color-mix(in srgb, var(--dim-paper) 88%, transparent);
+  border: 1px solid var(--dim-line);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* 立绘可点：点一下她会注意到你；微小星点提示这里是一只可互动的桌宠。 */
+.dim-pet-stage {
+  position: relative;
+}
+
+.dim-portrait-btn {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.dim-portrait-btn:hover {
+  filter: drop-shadow(0 5px 5px rgb(72 66 45 / 0.12));
+  transform: translateY(-3px) rotate(-0.35deg);
+}
+
+.dim-portrait-btn::before,
+.dim-portrait-btn::after {
+  position: absolute;
+  z-index: 5;
+  color: var(--dim-olive);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.35s ease;
+}
+
+.dim-portrait-btn::before {
+  content: "✦";
+  top: var(--dim-pet-left-spark-top);
+  left: var(--dim-pet-left-spark-inset);
+  font-size: 10px;
+  transform: translate(4px, 5px) rotate(-15deg) scale(0.65);
+}
+
+.dim-portrait-btn::after {
+  content: "· ✧";
+  top: var(--dim-pet-right-spark-top);
+  right: var(--dim-pet-right-spark-inset);
+  font-size: 12px;
+  letter-spacing: 2px;
+  transform: translate(-3px, 5px) rotate(12deg) scale(0.7);
+}
+
+.dim-portrait-btn:hover::before,
+.dim-portrait-btn:hover::after,
+.dim-portrait-btn.is-reacting::before,
+.dim-portrait-btn.is-reacting::after {
+  opacity: 0.58;
+  transform: translate(0) rotate(0) scale(1);
+}
+
+.dim-portrait-btn:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+.dim-pet-emote {
+  position: absolute;
+  top: var(--dim-pet-emote-top);
+  left: var(--dim-pet-emote-left);
+  z-index: 8;
+  min-width: var(--dim-pet-emote-min-width);
+  padding: var(--dim-pet-emote-padding);
+  color: var(--dim-ink);
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--dim-paper) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dim-olive) 36%, transparent);
+  border-radius: 999px 999px 999px 3px;
+  filter: drop-shadow(0 5px 6px rgb(60 55 40 / 0.12));
+  animation: dim-pet-emote-pop 0.46s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  pointer-events: none;
+}
+
+@keyframes dim-pet-emote-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-7px, 7px) scale(0.42) rotate(-8deg);
+  }
+
+  70% {
+    opacity: 1;
+    transform: translate(1px, -1px) scale(1.08) rotate(1deg);
+  }
+
+  100% {
+    transform: translate(0) scale(1) rotate(0);
+  }
+}
+
+/* 她的气泡：参与文档流，不再盖住下方的关系进度与回顾入口。 */
+.dim-secretary-bubble {
+  position: relative;
+  width: 100%;
+  margin-top: 9px;
+  padding: var(--dim-pet-bubble-padding);
+  background: var(--dim-paper);
+  border: 1px solid var(--dim-line);
+  filter: drop-shadow(0 8px 7px rgb(60 55 40 / 0.2));
+  animation: dim-bubble-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 6;
+}
+
+.dim-secretary-bubble::before {
+  content: "";
+  position: absolute;
+  top: var(--dim-pet-bubble-tip-offset);
+  left: var(--dim-pet-bubble-tip-center);
+  width: var(--dim-pet-bubble-tip-size);
+  height: var(--dim-pet-bubble-tip-size);
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--dim-paper);
+  border-left: 1px solid var(--dim-line);
+  border-top: 1px solid var(--dim-line);
+}
+
+@keyframes dim-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dim-secretary-bubble-line {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dim-ink);
+}
+
+.dim-secretary-bubble-emote {
+  display: inline-block;
+  min-width: var(--dim-pet-bubble-emote-width);
+  margin-right: 5px;
+  color: var(--dim-olive-deep);
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  font-weight: 650;
+  text-align: center;
+}
+
+.dim-secretary-bubble-actions {
+  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-pet-action-gap);
+}
+
+.dim-secretary-bubble-actions button {
+  padding: var(--dim-pet-action-padding);
+  font-size: 11px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--dim-line);
+  border-radius: 2px;
+  color: var(--dim-ink);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.dim-secretary-bubble-actions button:hover {
+  border-color: var(--dim-olive);
+  background: rgb(124 138 62 / 0.08);
+}
+
+.dim-secretary-bubble-actions .dim-pet-expression-btn {
+  color: var(--dim-ink-soft);
+  border-style: dashed;
+}
+
+.dim-secretary-bubble-actions button:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 1px;
+}
+
+.dim-relation-note {
+  color: var(--dim-ink-soft);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.dim-relation-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-relation-list-gap);
+  margin-top: var(--dim-relation-list-margin);
+  padding: var(--dim-relation-list-padding);
+  background: color-mix(in srgb, var(--dim-page) 72%, transparent);
+  border: 1px solid var(--dim-line-soft);
+}
+
+.dim-relation-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-relation-row-gap);
+}
+
+.dim-relation-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--dim-relation-label-gap);
+  color: var(--dim-ink-soft);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.dim-relation-labels span:first-child {
+  color: var(--dim-ink);
+  font-weight: 600;
+}
+
+.dim-relation-meter {
+  height: var(--dim-relation-meter-height);
+  overflow: hidden;
+  background: var(--dim-line-soft);
+  border-radius: 999px;
+}
+
+.dim-relation-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dim-relation-details {
+  color: var(--dim-ink-soft);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.dim-relation-details summary {
+  width: fit-content;
+  color: var(--dim-olive-deep);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.dim-relation-basis {
+  margin: 5px 0 0;
+  color: var(--dim-ink-soft);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.dim-relation-authority {
+  color: var(--dim-rust);
+}
+
+.dim-relation-source {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  color: var(--dim-olive-deep);
+  background: transparent;
+  font: inherit;
+  font-size: 9.5px;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.dim-relation-details summary:focus-visible,
+.dim-relation-source:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dim-portrait-btn,
+  .dim-secretary-bubble-actions button,
+  .dim-relation-meter i {
+    transition: none;
+  }
+
+  .dim-secretary-bubble {
+    animation: none;
+  }
+
+  .dim-pet-emote {
+    animation: none;
+  }
 }
 
 .dim-portrait {
@@ -575,5 +1150,86 @@
   /* 静止时也别让纸歪着 —— 前庭敏感的人对静态倾斜同样不适 */
   .dim-paper {
     transform: none !important;
+  }
+}
+
+/* ---------- 便签拖拽（表现层偏移，骨架不动） ---------- */
+
+.dim-drag {
+  position: relative;
+  height: 100%;
+  will-change: translate;
+}
+
+/* 拎起来：放大一点、影子拉长、压到相邻纸之上 */
+.dim-drag.is-dragging {
+  scale: 1.025;
+  z-index: 5;
+  cursor: grabbing;
+}
+
+.dim-drag.is-dragging .dim-paper {
+  box-shadow:
+    0 3px 0 rgb(60 55 40 / 10%),
+    0 22px 30px -10px rgb(60 55 40 / 48%);
+}
+
+/* ---------- 线索聚焦胶囊 ---------- */
+
+.dim-focus-capsule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 7px 14px;
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--dim-paper, #fdfaf2) 82%, transparent);
+  border: 1px solid var(--dim-olive, #7c8a3e);
+  border-radius: 999px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--dim-ink-soft, #6b6656);
+  box-shadow: 0 2px 0 rgb(60 55 40 / 8%), 0 10px 18px -12px rgb(60 55 40 / 40%);
+  animation: dim-focus-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dim-focus-capsule strong {
+  color: var(--dim-olive-deep, #46521f);
+  font-weight: 600;
+}
+
+.dim-focus-capsule button {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-size: 10.5px;
+  color: var(--dim-rust, #c35e4a);
+  cursor: pointer;
+  letter-spacing: 0.06em;
+}
+
+.dim-focus-capsule button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@keyframes dim-focus-in {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dim-drag.is-dragging {
+    scale: none;
+  }
+
+  .dim-focus-capsule {
+    animation: none;
   }
 }

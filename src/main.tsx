@@ -1,19 +1,29 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { isTauri } from "@tauri-apps/api/core";
 import "./styles/index.css";
-import "./lib/i18n"; // 初始化 i18next(必须在 App 渲染前 import 一次)
-import { applyInitialLang } from "./lib/settings";
-import { watchSystemTheme } from "./lib/theme";
 
-// 把 Settings 里存的 lang 同步给 i18n
-applyInitialLang();
+const App = React.lazy(async () => {
+  if (!isTauri()) return import("./BrowserApp");
 
-// 监听系统主题变化(mode === "system" 时跟随)
-watchSystemTheme();
+  // Legacy desktop initialization belongs only to the Tauri chunk. Keeping
+  // these imports behind the runtime split prevents browser P0 from evaluating
+  // settings/LLM/Feishu/Tauri module graphs before its own root mounts.
+  await import("./lib/i18n");
+  const [{ applyInitialLang }, { watchSystemTheme }, app] = await Promise.all([
+    import("./lib/settings"),
+    import("./lib/theme"),
+    import("./App"),
+  ]);
+  applyInitialLang();
+  watchSystemTheme();
+  return app;
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <React.Suspense fallback={<div role="status">维度正在启动…</div>}>
+      <App />
+    </React.Suspense>
   </React.StrictMode>
 );

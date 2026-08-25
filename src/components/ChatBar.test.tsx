@@ -16,6 +16,10 @@ import { ChatBar } from "./ChatBar";
 
 // ─── mock i18n ────────────────────────────────────────────────────────────────
 vi.mock("react-i18next", () => ({
+  initReactI18next: {
+    type: "3rdParty",
+    init: vi.fn(),
+  },
   useTranslation: () => ({
     t: (key: string) => key,
     i18n: { language: "zh" },
@@ -144,11 +148,13 @@ describe("ChatBar 轻提示:有新主动消息对话", () => {
     });
     rerender(<ChatBar />);
 
-    expect(container.querySelector("[data-testid='proactive-hint']")).not.toBeNull();
+    // The notification intentionally renders through a document.body portal so
+    // it can float above every desktop surface.
+    expect(screen.queryByTestId("proactive-hint")).not.toBeNull();
   });
 
   it("pa 前缀对话(deliverProactive)也触发轻提示", async () => {
-    const { rerender, container } = render(<ChatBar />);
+    const { rerender } = render(<ChatBar />);
 
     _conversations = [makeProactiveConv("pa5678_wxyz", "提醒 · 会议将至")];
     await act(async () => {
@@ -156,7 +162,7 @@ describe("ChatBar 轻提示:有新主动消息对话", () => {
     });
     rerender(<ChatBar />);
 
-    expect(container.querySelector("[data-testid='proactive-hint']")).not.toBeNull();
+    expect(screen.queryByTestId("proactive-hint")).not.toBeNull();
   });
 
   it("点击横幅 → 调 selectConv,横幅消失", async () => {
@@ -168,7 +174,7 @@ describe("ChatBar 轻提示:有新主动消息对话", () => {
     });
     rerender(<ChatBar />);
 
-    const hint = container.querySelector("[data-testid='proactive-hint']") as HTMLElement;
+    const hint = screen.queryByTestId("proactive-hint") as HTMLElement;
     expect(hint).not.toBeNull();
 
     // 点击
@@ -216,10 +222,10 @@ describe("ChatBar 轻提示:有新主动消息对话", () => {
     rerender(<ChatBar />);
 
     // 第一次:横幅出现
-    expect(container.querySelector("[data-testid='proactive-hint']")).not.toBeNull();
+    expect(screen.queryByTestId("proactive-hint")).not.toBeNull();
 
     // 点击消掉
-    fireEvent.click(container.querySelector("[data-testid='proactive-hint']") as HTMLElement);
+    fireEvent.click(screen.getByTestId("proactive-hint"));
     await waitFor(() => {
       expect(container.querySelector("[data-testid='proactive-hint']")).toBeNull();
     });

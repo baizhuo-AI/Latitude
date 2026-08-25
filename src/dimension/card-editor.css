@@ -1,0 +1,196 @@
+:where(.dimension-root, .dim-preset-shell) {
+  --dim-editor-backdrop-padding: 24px;
+  --dim-editor-scrim: rgb(35 34 27 / 0.34);
+  --dim-editor-width: min(660px, 100%);
+  --dim-editor-max-height: min(760px, calc(100vh - 48px));
+  --dim-editor-shadow: 0 28px 80px -34px rgb(30 28 20 / 0.68);
+  --dim-editor-header-gap: 16px;
+  --dim-editor-header-padding: 20px 22px 14px;
+  --dim-editor-title-margin: 5px 0 0;
+  --dim-editor-close-size: 30px;
+  --dim-editor-note-padding: 10px 22px;
+  --dim-editor-scroll-gap: 14px;
+  --dim-editor-scroll-padding: 18px 22px 22px;
+  --dim-editor-columns-gap: 12px;
+  --dim-editor-field-gap: 6px;
+  --dim-editor-input-padding: 9px 10px;
+  --dim-editor-group-gap: 10px;
+  --dim-editor-group-padding: 12px;
+  --dim-editor-legend-padding: 0 6px;
+  --dim-editor-meta-width: 150px;
+  --dim-editor-actions-gap: 8px;
+  --dim-editor-actions-padding: 13px 22px;
+}
+
+.dim-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: var(--dim-editor-backdrop-padding);
+  background: var(--dim-editor-scrim);
+  backdrop-filter: blur(5px);
+}
+
+.dim-card-editor {
+  width: var(--dim-editor-width);
+  max-height: var(--dim-editor-max-height);
+  display: flex;
+  flex-direction: column;
+  color: var(--dim-ink);
+  background:
+    linear-gradient(rgb(255 255 255 / 0.34), transparent 120px),
+    var(--dim-paper);
+  border: 1px solid var(--dim-line);
+  /* stylelint-disable-next-line declaration-property-value-disallowed-list -- tokenized shadow */
+  box-shadow: var(--dim-editor-shadow);
+}
+
+.dim-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--dim-editor-header-gap);
+  padding: var(--dim-editor-header-padding);
+  border-bottom: 1px solid var(--dim-line-soft);
+}
+
+.dim-editor-header p {
+  margin: 0;
+  color: var(--dim-ink-faint);
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+.dim-editor-header h2 {
+  margin: var(--dim-editor-title-margin);
+  font-size: 20px;
+}
+
+.dim-editor-header button {
+  width: var(--dim-editor-close-size);
+  height: var(--dim-editor-close-size);
+  color: var(--dim-ink-soft);
+  background: transparent;
+  border: 1px solid var(--dim-line);
+  cursor: pointer;
+}
+
+.dim-editor-note {
+  margin: 0;
+  padding: var(--dim-editor-note-padding);
+  color: var(--dim-ink-soft);
+  background: rgb(124 138 62 / 0.06);
+  border-bottom: 1px solid var(--dim-line-soft);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.dim-editor-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-editor-scroll-gap);
+  padding: var(--dim-editor-scroll-padding);
+}
+
+.dim-editor-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--dim-editor-columns-gap);
+}
+
+.dim-editor-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-editor-field-gap);
+  color: var(--dim-ink-soft);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.dim-editor-field input,
+.dim-editor-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--dim-editor-input-padding);
+  color: var(--dim-ink);
+  background: rgb(255 255 255 / 0.42);
+  border: 1px solid var(--dim-line);
+  border-radius: 2px;
+  font: 12.5px/1.55 var(--font-sans, sans-serif);
+  resize: vertical;
+}
+
+.dim-editor-field input:focus,
+.dim-editor-field textarea:focus {
+  outline: 2px solid rgb(124 138 62 / 0.36);
+  border-color: var(--dim-olive);
+}
+
+.dim-editor-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dim-editor-group-gap);
+  margin: 0;
+  padding: var(--dim-editor-group-padding);
+  border: 1px dashed var(--dim-line);
+}
+
+.dim-editor-group legend {
+  padding: var(--dim-editor-legend-padding);
+  color: var(--dim-olive-deep);
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.dim-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--dim-editor-meta-width);
+}
+
+.dim-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--dim-editor-actions-gap);
+  padding: var(--dim-editor-actions-padding);
+  border-top: 1px solid var(--dim-line-soft);
+}
+
+.dim-editor-actions > span {
+  flex: 1;
+}
+
+.dim-editor-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+@media (width <= 620px) {
+  .dim-editor-backdrop {
+    --dim-editor-backdrop-padding: 10px;
+  }
+
+  .dim-card-editor {
+    --dim-editor-max-height: calc(100vh - 20px);
+  }
+
+  .dim-editor-columns,
+  .dim-editor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dim-editor-actions {
+    flex-wrap: wrap;
+  }
+
+  .dim-editor-actions > span {
+    display: none;
+  }
+}

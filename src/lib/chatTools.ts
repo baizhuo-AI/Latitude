@@ -650,6 +650,12 @@ export const CHAT_TOOLS: ChatTool[] = [
     execute: async (a) => {
       // 直读 localStorage（跨窗口实时）
       const f = readFeishuPrefs();
+      // 执行入口必须再次校验授权，不能依赖模型遵守“先 preview”的提示。
+      // 用户关闭外部写入后，下一次调用立即失效。
+      if (!f.bitableEnabled)
+        return JSON.stringify({
+          error: "飞书多维表外部写入已关闭。请由用户在外部连接页重新启用后再写入。"
+        });
       const region = f.activeRegion;
       const link = f.bitableLink;
       if (!region || !link)
@@ -837,6 +843,39 @@ export const CHAT_TOOLS: ChatTool[] = [
       await dbDeleteMemoryFact(id);
       emitSync("memory");
       return JSON.stringify({ deleted: true, id });
+    },
+  },
+  {
+    name: "propose_change",
+    description:
+      "向用户递交一个需要 TA 裁决的提案，提案会出现在桌面「等你决定」区域，用户点头前不生效。" +
+      "只用于需要用户点头的事：建议一个小行动（带 action_title）、或要不要记下一条认识。" +
+      "不要提修改桌面形态的提案（形态变更的执行器还没接，提了也落不了地）。" +
+      "能直接做的小事不要用提案（直接调对应工具）；同一件事不要重复提。",
+    parameters: {
+      type: "object",
+      properties: {
+        quote: { type: "string", description: "提案本体，日常语言一句话（必填）" },
+        consequence: { type: "string", description: "接受后会发生什么，接受前必须说清" },
+        action_title: { type: "string", description: "用户说「要不试试」时要落地成的待办标题；没有行动面就留空" },
+      },
+      required: ["quote"],
+    },
+    execute: async (a) => {
+      const quote = str(a.quote);
+      if (!quote) return JSON.stringify({ error: "quote 必填" });
+      const { useProposalsStore, newProposalId } = await import("./proposalsStore");
+      const proposal = {
+        id: newProposalId(),
+        quote,
+        consequence: str(a.consequence),
+        actionTitle: str(a.action_title),
+        status: "proposed" as const,
+        source: "secretary" as const,
+        createdAt: new Date().toISOString(),
+      };
+      await useProposalsStore.getState().submit(proposal);
+      return JSON.stringify({ created: { id: proposal.id }, note: "提案已递交，等用户裁决；裁决前不要当作已生效。" });
     },
   },
   ...FIELD_TOOLS,

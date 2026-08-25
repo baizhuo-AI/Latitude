@@ -1,0 +1,554 @@
+/**
+ * 夜空（v3）：这层不负责信息量，只负责方向感。
+ *
+ * 一颗北极星（当前方向）+ 外圈进度环 + 一条从地平线升向它的星径
+ * （今天的锚点，走过的更亮）。深靛、细发线、大量留白；
+ * 唯一的暖色给北极星 —— 仰望的地方不该吵闹，但应该足够璀璨。
+ */
+
+.cst-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, #050815 0%, #090e21 52%, #11182f 100%);
+  color: #dfe4f4;
+  padding: 22px 30px 16px;
+}
+
+/* 星云是独立的一层：平时静置；进场编排里它最后才从夜幕浮出来 */
+.cst-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(720px 390px at 50% 6%, rgb(112 132 211 / 34%), transparent 68%),
+    radial-gradient(560px 340px at 9% 56%, rgb(68 99 159 / 18%), transparent 72%),
+    radial-gradient(640px 360px at 94% 72%, rgb(114 77 153 / 14%), transparent 73%);
+}
+
+@keyframes cst-nebula-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- 顶栏 ---------- */
+
+.cst-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.cst-kicker {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #6d77a2;
+}
+
+.cst-header h1 {
+  margin: 6px 0 0;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #eef1fb;
+}
+
+.cst-status {
+  font-size: 11px;
+  color: #6d77a2;
+  letter-spacing: 0.06em;
+}
+
+/* ---------- 星尘 ---------- */
+
+.cst-dust {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 44%, rgb(118 139 201 / 8%), transparent 57%),
+    linear-gradient(112deg, transparent 22%, rgb(118 139 201 / 4%) 48%, transparent 71%);
+}
+
+.cst-root {
+  position: relative;
+}
+
+.cst-dust-point {
+  position: absolute;
+  border-radius: 50%;
+  background: #eef2ff;
+  box-shadow: 0 0 6px rgb(196 212 255 / 46%);
+  animation: cst-twinkle 6.5s ease-in-out infinite;
+  animation-delay: var(--twinkle-delay, 0s);
+}
+
+.cst-dust-depth-0 {
+  background: #c7d3ff;
+  animation-duration: 8.2s;
+}
+
+.cst-dust-depth-1 {
+  background: #fff5dd;
+  animation-duration: 5.8s;
+}
+
+.cst-dust-depth-2 {
+  background: #d7efff;
+  animation-duration: 7.1s;
+}
+
+.cst-dust-point.is-bright {
+  box-shadow:
+    0 0 6px 1px rgb(238 244 255 / 88%),
+    0 0 22px 4px rgb(157 188 255 / 36%);
+}
+
+.cst-dust-point.is-bright::before,
+.cst-dust-point.is-bright::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: 13px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(240 245 255 / 72%), transparent);
+}
+
+.cst-dust-point.is-bright::after {
+  rotate: 90deg;
+}
+
+@keyframes cst-twinkle {
+  0%, 100% { transform: scale(0.88); filter: brightness(0.88); }
+  48% { transform: scale(1.34); filter: brightness(1.62); }
+  65% { transform: scale(1); filter: brightness(1); }
+}
+
+/* ---------- 天空 ---------- */
+
+.cst-sky {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  /* 北极星身后的暖色辉光：主光源要在天幕上压得住 */
+  background: radial-gradient(320px 200px at 50% 15%, rgb(255 233 189 / 9%), transparent 72%);
+}
+
+.cst-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.cst-orbit-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.cst-orbit-svg line {
+  stroke: rgb(159 199 216 / 48%);
+  stroke-width: 0.28;
+  stroke-dasharray: 1.4 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.cst-ring-bg,
+.cst-ring-fg {
+  fill: none;
+  stroke-width: 0.45;
+  transform: rotate(-90deg);
+  transform-origin: 50% 15%;
+}
+
+.cst-ring-bg {
+  stroke: rgb(188 204 255 / 22%);
+}
+
+.cst-ring-fg {
+  stroke: rgb(255 239 205 / 95%);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.8s ease;
+}
+
+/* 地平线：一线远山剪影 */
+.cst-horizon {
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  bottom: 6%;
+  height: 14%;
+  background: linear-gradient(180deg, transparent, rgb(6 8 16 / 85%) 55%);
+  clip-path: polygon(0 62%, 12% 44%, 24% 60%, 38% 34%, 52% 58%, 66% 40%, 80% 62%, 92% 46%, 100% 60%, 100% 100%, 0 100%);
+}
+
+.cst-sky-note {
+  position: absolute;
+  left: 50%;
+  bottom: 1%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.24em;
+  color: rgb(93 103 145 / 68%);
+}
+
+/* ---------- 星体 ---------- */
+
+.cst-star {
+  position: absolute;
+  left: var(--cst-x);
+  top: var(--cst-y);
+  transform: translate(-50%, -50%);
+  background: none;
+  border: 0;
+  padding: 12px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.cst-star-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--cst-size);
+  height: var(--cst-size);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, var(--cst-color) 42%, transparent 74%);
+  box-shadow: 0 0 14px rgb(186 209 255 / 48%);
+  transition: transform 0.3s ease, filter 0.3s ease;
+}
+
+.cst-star:hover .cst-star-core,
+.cst-star.is-active .cst-star-core {
+  transform: translate(-50%, -50%) scale(1.35);
+  filter: brightness(1.25);
+}
+
+.cst-star:focus-visible {
+  outline: 1.5px solid #b9c2e2;
+  outline-offset: 0;
+  border-radius: 50%;
+}
+
+/* 星径上走过的更亮，前方的安静地暗着 */
+.cst-star-anchor:not(.is-done) .cst-star-core {
+  opacity: 0.72;
+}
+
+.cst-star-anchor.is-done .cst-star-core {
+  box-shadow: 0 0 14px 3px rgb(216 232 255 / 52%);
+}
+
+/* 北极星：主光源——白炽核心更宽，光晕四层外推，全场的暖都从这里来 */
+.cst-star-focus .cst-star-core {
+  background: radial-gradient(
+    circle,
+    #ffffff 0%,
+    #fffaf0 30%,
+    var(--cst-color) 52%,
+    rgb(255 233 189 / 0%) 76%
+  );
+  box-shadow:
+    0 0 12px 5px rgb(255 255 255 / 92%),
+    0 0 38px 13px rgb(255 240 208 / 62%),
+    0 0 92px 32px rgb(255 225 159 / 30%),
+    0 0 210px 84px rgb(255 214 140 / 14%);
+}
+
+/* 认知评价与大想法不是卡片：轻轻落在夜空里，靠近时才显出来源。 */
+.cst-star-cognition,
+.cst-star-big-idea {
+  min-width: 122px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  clip-path: none;
+  transition: transform 0.35s ease, filter 0.35s ease;
+}
+
+.cst-star-cognition:hover,
+.cst-star-cognition.is-active,
+.cst-star-big-idea:hover,
+.cst-star-big-idea.is-active {
+  filter: brightness(1.18);
+}
+
+.cst-star-cognition .cst-star-core,
+.cst-star-big-idea .cst-star-core {
+  left: 50%;
+  top: 50%;
+  opacity: 0.5;
+  box-shadow: 0 0 24px 4px rgb(159 199 216 / 30%);
+}
+
+.cst-star-cognition:hover .cst-star-core,
+.cst-star-cognition.is-active .cst-star-core,
+.cst-star-big-idea:hover .cst-star-core,
+.cst-star-big-idea.is-active .cst-star-core {
+  opacity: 1;
+}
+
+/* 四芒光芒：竖横两道柔光束 + 45° 一对短芒，全部是渐隐的椭圆，没有硬边 */
+.cst-north-sparkle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--cst-size) * 7.6);
+  height: calc(var(--cst-size) * 7.6);
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(ellipse 3% 50% at 50% 50%, rgb(255 250 234 / 96%), rgb(255 244 214 / 0%) 72%),
+    radial-gradient(ellipse 50% 3% at 50% 50%, rgb(255 250 234 / 96%), rgb(255 244 214 / 0%) 72%);
+  animation: cst-north-breathe 5.5s ease-in-out infinite;
+}
+
+.cst-north-sparkle::before {
+  content: "";
+  position: absolute;
+  inset: 21%;
+  background:
+    radial-gradient(ellipse 4% 50% at 50% 50%, rgb(255 244 214 / 64%), rgb(255 244 214 / 0%) 70%),
+    radial-gradient(ellipse 50% 4% at 50% 50%, rgb(255 244 214 / 64%), rgb(255 244 214 / 0%) 70%);
+  transform: rotate(45deg);
+}
+
+/* 呼吸环：一圈极淡的光晕缓慢涨落，像星光的吞吐 */
+.cst-north-sparkle::after {
+  content: "";
+  position: absolute;
+  inset: 30%;
+  border: 1px solid rgb(255 233 189 / 40%);
+  border-radius: 50%;
+  animation: cst-north-ring 5.5s ease-in-out infinite;
+}
+
+@keyframes cst-north-breathe {
+  0%, 100% { opacity: 0.75; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+}
+
+@keyframes cst-north-ring {
+  0% { opacity: 0; transform: scale(0.72); }
+  35% { opacity: 0.55; }
+  80% { opacity: 0; transform: scale(1.3); }
+  100% { opacity: 0; transform: scale(1.3); }
+}
+
+/* 星标：默认只给北极星和 hover / 选中的星 */
+.cst-star-label {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + var(--cst-size) + 10px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 200px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.cst-star-label small {
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(126 137 180 / 78%);
+  white-space: nowrap;
+}
+
+.cst-star-label strong {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: rgb(201 209 236 / 92%);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  opacity: 0;
+  translate: 0 3px;
+  transition: opacity 0.25s ease, translate 0.25s ease;
+}
+
+.cst-star:hover .cst-star-label strong,
+.cst-star.is-active .cst-star-label strong,
+.cst-star-focus .cst-star-label strong {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.cst-star-focus .cst-star-label strong {
+  color: #fff7e5;
+  font-size: clamp(24px, 2.35vw, 36px);
+  font-weight: 680;
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 0 2px rgb(255 255 255 / 85%),
+    0 0 22px rgb(255 236 193 / 65%),
+    0 0 54px rgb(255 219 146 / 31%);
+}
+
+.cst-star-focus .cst-star-label small {
+  color: #c9ab72;
+}
+
+.cst-star-cognition .cst-star-label,
+.cst-star-big-idea .cst-star-label {
+  inset: 0;
+  transform: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 3px;
+}
+
+.cst-star-cognition .cst-star-label small,
+.cst-star-big-idea .cst-star-label small {
+  order: 2;
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+  color: #7ea0b5;
+  opacity: 0;
+  translate: 0 -2px;
+  transition: opacity 0.28s ease, translate 0.28s ease;
+}
+
+.cst-star-cognition .cst-star-label strong,
+.cst-star-big-idea .cst-star-label strong {
+  display: block;
+  overflow: visible;
+  translate: 0;
+  color: #bed5e2;
+  font-size: 12px;
+  font-weight: 470;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  opacity: 0.58;
+  text-shadow: 0 0 18px rgb(153 201 224 / 24%);
+  transition: opacity 0.28s ease, color 0.28s ease, text-shadow 0.28s ease;
+}
+
+.cst-star-big-idea .cst-star-label small {
+  color: #c9ab72;
+}
+
+.cst-star-big-idea .cst-star-label strong {
+  color: #dfc994;
+  text-shadow: 0 0 18px rgb(240 201 133 / 24%);
+}
+
+.cst-star-cognition:hover .cst-star-label small,
+.cst-star-cognition.is-active .cst-star-label small,
+.cst-star-big-idea:hover .cst-star-label small,
+.cst-star-big-idea.is-active .cst-star-label small {
+  opacity: 0.78;
+  translate: 0 0;
+}
+
+.cst-star-cognition:hover .cst-star-label strong,
+.cst-star-cognition.is-active .cst-star-label strong,
+.cst-star-big-idea:hover .cst-star-label strong,
+.cst-star-big-idea.is-active .cst-star-label strong {
+  color: #e1f2fa;
+  opacity: 0.96;
+  text-shadow: 0 0 24px rgb(153 215 242 / 46%);
+}
+
+/* ---------- 底部观测行：去框静置，文字是夜空的一部分 ---------- */
+
+.cst-caption {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-top: 13px;
+  font-size: 12px;
+  color: #c9d1ec;
+  min-height: 40px;
+}
+
+/* 类别词不做徽章：纯排印、低对比、宽字距，静静落在天幕上 */
+.cst-caption-kind {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(240 201 133 / 72%);
+}
+
+.cst-caption strong {
+  font-weight: 600;
+  color: #eef1fb;
+}
+
+.cst-caption-detail {
+  color: #8d97bd;
+  font-size: 11px;
+  line-height: 1.6;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cst-caption-progress {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: rgb(240 201 133 / 85%);
+  font-variant-numeric: tabular-nums;
+}
+
+.cst-caption-lineage {
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  font-size: 10.5px;
+  color: rgb(155 201 232 / 78%);
+  cursor: pointer;
+}
+
+.cst-caption-lineage:hover {
+  color: #9bc9e8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cst-caption-date {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: rgb(93 103 145 / 72%);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cst-dust-point,
+  .cst-north-sparkle {
+    animation: none;
+  }
+
+  .cst-star-core,
+  .cst-star-label strong,
+  .cst-ring-fg {
+    transition: none;
+  }
+}

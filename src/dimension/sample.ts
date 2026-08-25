@@ -25,13 +25,37 @@ export const DESK: Desk = {
     stateCn: "有事说",
     headline: "你先往前走，我替你守住节奏。",
     note: "该挡的提醒我先挡住，真正需要你拍板时再找你。",
-    stageLabel: "默契 · 合拍",
-    stageProgress: 74,
-    stageNote: "我猜得到你的取舍：能替你判断一步，仍由你拍板。",
+    stageLabel: "关系 · 脱敏演示",
+    stageProgress: 0,
+    stageNote: "熟悉与默契是可纠正的导入估计；权能没有授权 receipt，保持未授权。",
     metrics: [
-      { label: "熟悉", value: 78, tone: "olive" },
-      { label: "默契", value: 71, tone: "blue" },
-      { label: "权能", value: 46, tone: "rust" }
+      {
+        label: "熟悉",
+        value: 46,
+        tone: "olive",
+        stage: "初步熟悉",
+        basis: "已整理目标层级与两类脱敏样本，尚未经过长期互动校准。",
+        epistemicAuthority: "imported_unverified",
+        correctable: true
+      },
+      {
+        label: "默契",
+        value: 32,
+        tone: "blue",
+        stage: "正在建立",
+        basis: "已能复述部分偏好，但尚无真实行动结果闭环。",
+        epistemicAuthority: "imported_unverified",
+        correctable: true
+      },
+      {
+        label: "权能",
+        value: 0,
+        tone: "rust",
+        stage: "未授权",
+        basis: "本演示数据不包含 capability grant receipt。",
+        epistemicAuthority: "system_recorded",
+        correctable: false
+      }
     ]
   },
 

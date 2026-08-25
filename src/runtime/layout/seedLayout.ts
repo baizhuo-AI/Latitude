@@ -6,11 +6,15 @@ import type { LayoutDocumentV1 } from "./types";
  *
  * 这是数据，不是页面模板：替换 binding、presentation 或 arrangement 后，
  * LayoutRenderer 会直接解释新文档，不需要改 DimensionApp 的 JSX。
+ *
+ * 骨架仍是冻结的 5+7 / 4+4+4（总纲 §5.2），但纸不是摆给阅卷人的：
+ * 早报歪在左上、锚点纸略微错位、记忆点便签斜贴在右下 —— 散铺感写在
+ * presentation 里（tilt / offsetY / tape / dogear），骨架本身不动。
  */
 export const SEED_LAYOUT_DOCUMENT = {
   schemaVersion: 1,
   id: "dimension-seed-desktop",
-  revision: 1,
+  revision: 2,
   background: {
     theme: "paper",
     texture: "linen",
@@ -28,16 +32,12 @@ export const SEED_LAYOUT_DOCUMENT = {
       span: 5,
       binding: "desktop.feed",
       presentation: {
-        eyebrow: "FOR YOU · ONE ANGLE",
-        title: "一个值得带走的角度",
-        tilt: -0.12,
-        tape: {
-          side: "left",
-          offset: 28,
-          width: 70,
-          color: "rgb(198 216 48 / 38%)",
-          tilt: -2
-        }
+        eyebrow: "THE LATITUDE DAILY",
+        title: "今日早报",
+        tilt: -0.9,
+        offsetY: 4,
+        paper: "newsprint",
+        clip: true
       }
     },
     {
@@ -49,8 +49,9 @@ export const SEED_LAYOUT_DOCUMENT = {
       binding: "desktop.schedule",
       presentation: {
         eyebrow: "TODAY · SCHEDULE",
-        title: "今天的三个锚点",
-        tilt: 0.08
+        title: "今天的锚点",
+        tilt: 0.35,
+        offsetY: -2
       }
     },
     {
@@ -63,7 +64,8 @@ export const SEED_LAYOUT_DOCUMENT = {
       presentation: {
         eyebrow: "WEEKLY · REVIEW",
         title: "这周有一个新判断",
-        tilt: -0.08
+        tilt: -1.1,
+        offsetY: 12
       }
     },
     {
@@ -76,22 +78,32 @@ export const SEED_LAYOUT_DOCUMENT = {
       presentation: {
         eyebrow: "RHYTHM · FOCUS",
         title: "下一段完整时间：90 分钟",
-        tilt: 0.1,
-        paper: "plain"
+        tilt: 0.7,
+        offsetY: 2,
+        paper: "grid"
       }
     },
     {
       id: "seed-flex",
       region: "flex",
       renderer: "native",
-      kind: "proposal",
+      kind: "note",
       span: 4,
       binding: "desktop.flex",
       presentation: {
-        eyebrow: "A SMALL TRY",
-        title: "要不要先做一个小版本？",
-        tilt: -0.12,
-        paper: "sticky"
+        eyebrow: "KEEP IN MIND",
+        title: "核心记忆点",
+        tilt: -1.7,
+        offsetY: 7,
+        paper: "sticky",
+        dogear: true,
+        tape: {
+          side: "right",
+          offset: 26,
+          width: 64,
+          color: "rgb(198 216 48 / 40%)",
+          tilt: 3
+        }
       }
     }
   ],
@@ -106,9 +118,9 @@ export const SEED_LAYOUT_DOCUMENT = {
     ],
     params: { maxChangesPerRefresh: 1 },
     rationale: [
-      "先放一条和今天直接相关的材料，不做信息流",
+      "早报在左上：一天的认知从打开开始",
       "日程是今天最常看的内容，因此占最大面积",
-      "复盘、节奏和待确认的事情留在下排，需要时再点亮"
+      "复盘、节奏安静在下排，记忆点便签斜贴在右下角"
     ]
   }
 } satisfies LayoutDocumentV1<NativeCardKind, CardPresentation>;

@@ -23,6 +23,8 @@ export function newActivityId(): string {
 interface ActivityStore {
   activities: ActivityRecord[];
   loaded: boolean;
+  /** hydrate 失败时的错误；成功或尚未加载时为 null。 */
+  error: string | null;
   hydrate: () => Promise<void>;
   /** 记一条活动(自由文本)。occurredAt = 事情实际发生时间(ISO);省略时按当前时间(适合「刚才/正在」)。 */
   addActivity: (content: string, occurredAt?: string) => Promise<void>;
@@ -32,14 +34,15 @@ interface ActivityStore {
 export const useActivityStore = create<ActivityStore>((set) => ({
   activities: [],
   loaded: false,
+  error: null,
 
   hydrate: async () => {
     try {
       const activities = await dbListActivities();
-      set({ activities, loaded: true });
+      set({ activities, loaded: true, error: null });
     } catch (err) {
       console.error("[activityStore] hydrate failed:", err);
-      set({ activities: [], loaded: true });
+      set({ activities: [], loaded: true, error: String(err) });
     }
   },
 

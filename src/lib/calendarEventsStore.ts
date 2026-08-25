@@ -27,6 +27,8 @@ interface CalendarEventsStore {
   events: CalendarEvent[];
   syncStates: SyncStateRecord[];
   loaded: boolean;
+  /** hydrate 失败时的错误；成功或尚未加载时为 null。 */
+  error: string | null;
   hydrate: () => Promise<void>;
   /** 批量 upsert 一批事件(整批同事务),写完刷新内存 + 广播 */
   upsertEvents: (events: CalendarEvent[]) => Promise<void>;
@@ -44,6 +46,7 @@ export const useCalendarEventsStore = create<CalendarEventsStore>((set) => ({
   events: [],
   syncStates: [],
   loaded: false,
+  error: null,
 
   hydrate: async () => {
     try {
@@ -52,10 +55,10 @@ export const useCalendarEventsStore = create<CalendarEventsStore>((set) => ({
         dbListCalendarEvents(),
         dbListSyncStates()
       ]);
-      set({ events, syncStates, loaded: true });
+      set({ events, syncStates, loaded: true, error: null });
     } catch (err) {
       console.error("[calendarEventsStore] hydrate failed:", err);
-      set({ events: [], syncStates: [], loaded: true });
+      set({ events: [], syncStates: [], loaded: true, error: String(err) });
     }
   },
 

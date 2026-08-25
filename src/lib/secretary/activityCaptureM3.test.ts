@@ -353,6 +353,9 @@ describe("chatStore.sendMessage — activity_capture 回写 (M3)", () => {
     expect(_activityLogs.length).toBeGreaterThan(beforeCount);
     const written = _activityLogs[_activityLogs.length - 1];
     expect(written.content).toBeTruthy();
+    expect(emitSyncCalls).toEqual(
+      expect.arrayContaining(["activities", "memory", "conversations"])
+    );
   });
 
   it("用户在普通对话回复 → 不写 activity_log", async () => {

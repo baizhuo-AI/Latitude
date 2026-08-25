@@ -62,6 +62,7 @@ vi.mock("../store", () => ({
 vi.mock("../goalsStore", () => ({
   useGoalsStore: { getState: () => ({ goals: [] }) },
 }));
+vi.mock("../syncBus", () => ({ emitSync: vi.fn() }));
 
 // mock settings
 const DAILY_SCAN_SETTINGS = {
@@ -94,6 +95,7 @@ vi.mock("../chatTools", () => ({
 import { runDailyScan } from "./dailyScan";
 import { buildChatSystemPrompt } from "../llm/index";
 import { dbUpsertDailyDigest, dbGetRecentDigests } from "../db";
+import { emitSync } from "../syncBus";
 
 beforeEach(() => {
   engine = setEngine(new FakeEngine());
@@ -102,6 +104,7 @@ beforeEach(() => {
   _fakeTodos = [];
   vi.mocked(dbUpsertDailyDigest).mockClear();
   vi.mocked(dbGetRecentDigests).mockClear();
+  vi.mocked(emitSync).mockClear();
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -172,6 +175,7 @@ describe("runDailyScan — 生成并存储当日纪要", () => {
       dateKey,
       expect.stringContaining("3 个接口")
     );
+    expect(emitSync).toHaveBeenCalledWith("digests");
   });
 
   it("同一天运行两次 → 第二次覆盖(upsert 语义,dbUpsertDailyDigest 被调两次)", async () => {

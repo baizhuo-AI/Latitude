@@ -1,0 +1,633 @@
+{
+  "schemaVersion": 2,
+  "profileId": "latitude-sanitized-demo-2026-08-25-v2",
+  "retiredProfileIds": ["latitude-sanitized-demo-2026-08-25-v1"],
+  "title": "维度脱敏演示知识底座",
+  "sourceSummary": {
+    "filesInspected": 116,
+    "sourceGroups": [
+      {
+        "kind": "computer_history",
+        "fileCount": 58,
+        "retained": "5429 个离散交互事件的类别计数与约 14 小时覆盖窗口"
+      },
+      {
+        "kind": "audio_and_transcript",
+        "fileCount": 57,
+        "retained": "会议主题的匿名改写摘要、12 条语音输入记录与约 81 秒总时长"
+      },
+      {
+        "kind": "runtime_marker",
+        "fileCount": 1,
+        "retained": "仅计数，不保留内容"
+      }
+    ],
+    "redactionPolicy": [
+      "不复制录音或逐字转写",
+      "不保留客户、机构、人员、设备、账户与应用名称",
+      "不保留网址、邮箱、电话、凭证、绝对路径与原始文件名",
+      "不保留窗口标题、选区、键入内容、聊天原文与精确事件时间",
+      "只保留完成演示所需的匿名改写结论与不可逆聚合计数"
+    ]
+  },
+  "userDirection": {
+    "messageId": "latitude-demo-goal-direction-v2",
+    "content": "北极星目标是实现 AGI；中期目标是完成客户交付和寻找新 Agent 方向；短期目标是把维度这个产品做好、提升产品力和研究 DSH。"
+  },
+  "nodes": [
+    {
+      "seedKey": "goal-north-star-agi",
+      "kind": "goal",
+      "label": "实现 AGI",
+      "statement": "北极星目标是实现 AGI。",
+      "actor": "user",
+      "sensitivity": "low",
+      "payload": {
+        "horizon": "north-star",
+        "surfaceRole": "constellation.north-star",
+        "desktopRole": "context",
+        "boardTags": [],
+        "importance": "high",
+        "order": 0
+      }
+    },
+    {
+      "seedKey": "goal-mid-client-delivery",
+      "kind": "goal",
+      "label": "完成客户交付",
+      "statement": "中期目标之一是完成客户交付。",
+      "actor": "user",
+      "sensitivity": "low",
+      "parentSeedKey": "goal-north-star-agi",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "medium-term",
+        "surfaceRole": "clue.theme",
+        "desktopRole": "clue-theme",
+        "boardTags": ["客户交付"],
+        "order": 1
+      }
+    },
+    {
+      "seedKey": "goal-mid-new-agent",
+      "kind": "goal",
+      "label": "寻找新 Agent 方向",
+      "statement": "中期目标之一是寻找新的 Agent 方向。",
+      "actor": "user",
+      "sensitivity": "low",
+      "parentSeedKey": "goal-north-star-agi",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "medium-term",
+        "surfaceRole": "clue.theme",
+        "desktopRole": "clue-theme",
+        "boardTags": ["新 Agent 方向"],
+        "order": 2
+      }
+    },
+    {
+      "seedKey": "goal-short-latitude",
+      "kind": "goal",
+      "label": "把维度这个产品做好",
+      "statement": "短期目标之一是把维度这个产品做好。",
+      "actor": "user",
+      "sensitivity": "low",
+      "parentSeedKey": "goal-mid-new-agent",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "short-term",
+        "surfaceRole": "desktop.goal",
+        "desktopRole": "focus-goal",
+        "boardTags": ["维度产品"],
+        "order": 3
+      }
+    },
+    {
+      "seedKey": "goal-short-product-skill",
+      "kind": "goal",
+      "label": "提升产品力",
+      "statement": "短期目标之一是提升产品力。",
+      "actor": "user",
+      "sensitivity": "low",
+      "parentSeedKey": "goal-mid-client-delivery",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "short-term",
+        "surfaceRole": "desktop.goal",
+        "desktopRole": "focus-goal",
+        "boardTags": ["产品力"],
+        "order": 4
+      }
+    },
+    {
+      "seedKey": "goal-short-dsh",
+      "kind": "goal",
+      "label": "研究 DSH",
+      "statement": "短期目标之一是研究 DSH。",
+      "actor": "user",
+      "sensitivity": "low",
+      "parentSeedKey": "goal-mid-new-agent",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "short-term",
+        "surfaceRole": "desktop.goal",
+        "desktopRole": "focus-goal",
+        "boardTags": ["DSH 研究"],
+        "order": 5
+      }
+    },
+    {
+      "seedKey": "cognition-systems-thinking",
+      "kind": "claim",
+      "label": "系统思维",
+      "statement": "脱敏样本提示你可能倾向先梳理系统边界与约束，再推进局部动作；这仍是可纠正的导入判断。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "cognition",
+        "surfaceRole": "constellation.cognition",
+        "desktopRole": "none",
+        "starRole": "cognition",
+        "boardTags": [],
+        "correctionHint": "这只是系统推断，你可以随时纠正。"
+      }
+    },
+    {
+      "seedKey": "cognition-evidence-first",
+      "kind": "claim",
+      "label": "证据优先",
+      "statement": "脱敏材料反复强调基线、成功标准与可验收指标，提示你可能更重视证据而不是漂亮框架。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "cognition",
+        "surfaceRole": "constellation.cognition",
+        "desktopRole": "none",
+        "starRole": "cognition",
+        "boardTags": [],
+        "correctionHint": "这只是系统推断，你可以随时纠正。"
+      }
+    },
+    {
+      "seedKey": "cognition-high-agency",
+      "kind": "claim",
+      "label": "高自主性",
+      "statement": "跨工具活动聚合与会后方案拆解提示你可能习惯主动组织下一步；该评价尚未经用户确认。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "cognition",
+        "surfaceRole": "constellation.cognition",
+        "desktopRole": "none",
+        "starRole": "cognition",
+        "boardTags": [],
+        "correctionHint": "这只是系统推断，你可以随时纠正。"
+      }
+    },
+    {
+      "seedKey": "cognition-long-horizon",
+      "kind": "claim",
+      "label": "长期主义",
+      "statement": "北极星、中期目标与短期目标的分层提示你会把当前交付放进长期能力演进中理解。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "cognition",
+        "surfaceRole": "constellation.cognition",
+        "desktopRole": "none",
+        "starRole": "cognition",
+        "boardTags": [],
+        "correctionHint": "这只是系统推断，你可以随时纠正。"
+      }
+    },
+    {
+      "seedKey": "cognition-anti-cliche",
+      "kind": "claim",
+      "label": "反套路",
+      "statement": "脱敏材料要求少讲平台术语、直接回答业务价值，提示你可能排斥空泛表达。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "cognition",
+        "surfaceRole": "constellation.cognition",
+        "desktopRole": "none",
+        "starRole": "cognition",
+        "boardTags": [],
+        "correctionHint": "这只是系统推断，你可以随时纠正。"
+      }
+    },
+    {
+      "seedKey": "cognition-outcome-driven",
+      "kind": "claim",
+      "label": "强结果感",
+      "statement": "脱敏材料把转化、活跃、人工节省与准确率作为验收方向，提示你可能偏好用结果而不是动作数量结账。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "cognition",
+        "surfaceRole": "constellation.cognition",
+        "desktopRole": "none",
+        "starRole": "cognition",
+        "boardTags": [],
+        "correctionHint": "这只是系统推断，你可以随时纠正。"
+      }
+    },
+    {
+      "seedKey": "idea-cognition-action-revision-loop",
+      "kind": "claim",
+      "label": "认知—行动—结果—修订必须闭环",
+      "statement": "认知只有进入行动、留下真实结果并触发修订，才成为能持续进化的系统。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "big-idea",
+        "surfaceRole": "constellation.big-idea",
+        "desktopRole": "none",
+        "starRole": "big-idea",
+        "boardTags": ["维度产品"],
+        "correctionHint": "这是系统整理的大想法，不是用户确认事实。"
+      }
+    },
+    {
+      "seedKey": "idea-free-but-traceable-write",
+      "kind": "claim",
+      "label": "模型可以自由写入，但不能无痕",
+      "statement": "模型可直接修订长期记忆，同时必须保留来源、前后版本、授权方式和回滚路径。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "big-idea",
+        "surfaceRole": "constellation.big-idea",
+        "desktopRole": "none",
+        "starRole": "big-idea",
+        "boardTags": ["维度产品"],
+        "correctionHint": "这是系统整理的大想法，不是用户确认事实。"
+      }
+    },
+    {
+      "seedKey": "idea-real-result-proves-value",
+      "kind": "claim",
+      "label": "真实结果证明 AI 产品价值",
+      "statement": "AI 产品价值应由可复核的真实结果证明，而不是由漂亮演示或功能数量替代。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-client-delivery",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "big-idea",
+        "surfaceRole": "constellation.big-idea",
+        "desktopRole": "none",
+        "starRole": "big-idea",
+        "boardTags": ["客户交付", "产品力"],
+        "correctionHint": "这是系统整理的大想法，不是用户确认事实。"
+      }
+    },
+    {
+      "seedKey": "idea-composable-interface",
+      "kind": "claim",
+      "label": "界面是可共同调整的组件系统",
+      "statement": "模块、卡片和动作都应能由用户与 AI 共同调整，同时保持稳定的数据与权限边界。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-latitude",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "big-idea",
+        "surfaceRole": "constellation.big-idea",
+        "desktopRole": "none",
+        "starRole": "big-idea",
+        "boardTags": ["维度产品"],
+        "correctionHint": "这是系统整理的大想法，不是用户确认事实。"
+      }
+    },
+    {
+      "seedKey": "resource-client-conversation",
+      "kind": "resource",
+      "label": "脱敏演示：客户交流摘要",
+      "statement": "某大型金融机构已有受控的模型与安全边界，近期更适合从客户经营的小场景验证切入；高风险业务方向需要等待内部模型、数据和接口边界明确。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-client-delivery",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "evidence",
+        "surfaceRole": "clue.evidence",
+        "desktopRole": "evidence",
+        "boardTags": ["客户交付"],
+        "sourceGroup": "audio_and_transcript",
+        "redactionStatus": "redacted",
+        "coverage": "summary_only"
+      }
+    },
+    {
+      "seedKey": "resource-activity-aggregate",
+      "kind": "resource",
+      "label": "脱敏演示：匿名活动样本",
+      "statement": "一段约 14 小时的本地样本包含 5429 个离散窗口、选择、键盘与鼠标事件；演示数据只保留事件类别计数。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-latitude",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "evidence",
+        "surfaceRole": "desktop.evidence",
+        "desktopRole": "evidence",
+        "boardTags": ["维度产品"],
+        "sourceGroup": "computer_history",
+        "redactionStatus": "aggregate_only",
+        "eventCount": 5429,
+        "coverageHoursApprox": 14
+      }
+    },
+    {
+      "seedKey": "resource-voice-aggregate",
+      "kind": "resource",
+      "label": "脱敏演示：语音与转写样本",
+      "statement": "本地样本包含会议转写和 12 条语音输入记录；演示仅保留匿名主题摘要与约 81 秒总时长。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-latitude",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "evidence",
+        "surfaceRole": "desktop.evidence",
+        "desktopRole": "evidence",
+        "boardTags": ["维度产品"],
+        "sourceGroup": "audio_and_transcript",
+        "redactionStatus": "summary_only",
+        "voiceInputCount": 12,
+        "voiceDurationSecondsApprox": 81
+      }
+    },
+    {
+      "seedKey": "tension-platform-value",
+      "kind": "tension",
+      "label": "平台能力与客户采购理由",
+      "statement": "客户已有模型和平台时，新增价值必须落到可量化业务结果，而不能只再讲一层平台。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-client-delivery",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "tension",
+        "surfaceRole": "clue.tension",
+        "desktopRole": "clue-support",
+        "boardTags": ["客户交付"],
+        "verificationState": "imported_unverified"
+      }
+    },
+    {
+      "seedKey": "tension-external-solution-boundary",
+      "kind": "tension",
+      "label": "外部方案与内部边界",
+      "statement": "业务需要更强自动化，但外部方案无法绕过内部模型、数据接口和安全管控。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-new-agent",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "tension",
+        "surfaceRole": "clue.tension",
+        "desktopRole": "clue-support",
+        "boardTags": ["新 Agent 方向"],
+        "verificationState": "imported_unverified"
+      }
+    },
+    {
+      "seedKey": "method-narrow-poc",
+      "kind": "method",
+      "label": "小场景 POC 验证法",
+      "statement": "先明确业务负责人、可用数据最小集、当前基线与成功标准，再用前后对比或 A/B 验证价值。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-client-delivery",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "method",
+        "surfaceRole": "clue.method",
+        "desktopRole": "clue-support",
+        "boardTags": ["客户交付"],
+        "verificationState": "imported_unverified"
+      }
+    },
+    {
+      "seedKey": "method-redacted-import",
+      "kind": "method",
+      "label": "演示数据最小化方法",
+      "statement": "原始录音和活动事件留在导入目录之外；演示只保存匿名改写结论、类别计数和清晰的未核验标记。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-latitude",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "method",
+        "surfaceRole": "desktop.method",
+        "desktopRole": "reference",
+        "boardTags": ["维度产品"],
+        "verificationState": "imported_unverified"
+      }
+    },
+    {
+      "seedKey": "action-client-poc-onepager",
+      "writeMode": "action",
+      "kind": "action",
+      "label": "形成一页客户经营 POC 方案",
+      "statement": "把脱敏交流中的约束、切口和验收指标收成一页方案。",
+      "expectedOutcome": "一页内讲清业务问题、数据边界、流程、基线与成功标准。",
+      "trigger": "客户交流材料完成脱敏归纳后",
+      "observationWindow": {"duration": "P3D", "sampleAt": "window_end"},
+      "reviewAt": "2026-08-28T17:00:00.000Z",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-client-delivery",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "action",
+        "surfaceRole": "clue.action",
+        "desktopRole": "supporting-action",
+        "boardTags": ["客户交付"]
+      }
+    },
+    {
+      "seedKey": "action-agent-direction-matrix",
+      "writeMode": "action",
+      "kind": "action",
+      "label": "整理新 Agent 方向判断矩阵",
+      "statement": "按业务价值、数据可得性、安全边界与交付成本比较候选方向。",
+      "expectedOutcome": "得到至少三个候选方向及继续研究、暂停或淘汰的明确理由。",
+      "trigger": "完成客户交流约束抽取后",
+      "observationWindow": {"duration": "P5D", "sampleAt": "window_end"},
+      "reviewAt": "2026-08-30T17:00:00.000Z",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-mid-new-agent",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "action",
+        "surfaceRole": "clue.action",
+        "desktopRole": "supporting-action",
+        "boardTags": ["新 Agent 方向"]
+      }
+    },
+    {
+      "seedKey": "action-latitude-product-loop",
+      "writeMode": "action",
+      "kind": "action",
+      "label": "跑通维度完整产品闭环",
+      "statement": "用脱敏底层数据验证星图、线索板、桌面、行动与回顾的连续体验。",
+      "expectedOutcome": "三个层级各读到正确数据，且不存在跨层重复、虚假结果或来源丢失。",
+      "trigger": "v2 演示数据成功写入 Domain 后",
+      "observationWindow": {"duration": "P2D", "sampleAt": "window_end"},
+      "reviewAt": "2026-08-27T17:00:00.000Z",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-latitude",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "action",
+        "surfaceRole": "desktop.action",
+        "desktopRole": "primary-action",
+        "boardTags": ["维度产品"]
+      }
+    },
+    {
+      "seedKey": "action-product-skill-rubric",
+      "writeMode": "action",
+      "kind": "action",
+      "label": "建立产品闭环验收尺",
+      "statement": "把层级准确性、权限、证据、结果回收与回顾写成可复测标准。",
+      "expectedOutcome": "形成一套可由自己和 AI 重复执行的产品验收清单。",
+      "trigger": "维度闭环可以在浏览器中完整走通后",
+      "observationWindow": {"duration": "P3D", "sampleAt": "window_end"},
+      "reviewAt": "2026-08-29T17:00:00.000Z",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-product-skill",
+      "mediumGoalSeedKey": "goal-mid-client-delivery",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "action",
+        "surfaceRole": "desktop.action",
+        "desktopRole": "primary-action",
+        "boardTags": ["产品力"]
+      }
+    },
+    {
+      "seedKey": "action-dsh-study",
+      "writeMode": "action",
+      "kind": "action",
+      "label": "完成 DSH 机制研究清单",
+      "statement": "围绕执行循环、上下文压缩、工具权限和可恢复状态整理研究问题。",
+      "expectedOutcome": "每个机制都有源码位置、运行证据、可迁移价值与未解决问题。",
+      "trigger": "维度 Agent 主循环进入可验证状态后",
+      "observationWindow": {"duration": "P5D", "sampleAt": "window_end"},
+      "reviewAt": "2026-08-31T17:00:00.000Z",
+      "actor": "importer",
+      "sensitivity": "low",
+      "goalSeedKey": "goal-short-dsh",
+      "mediumGoalSeedKey": "goal-mid-new-agent",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "action",
+        "surfaceRole": "desktop.action",
+        "desktopRole": "primary-action",
+        "boardTags": ["DSH 研究"]
+      }
+    },
+    {
+      "seedKey": "review-demo-weekly",
+      "kind": "insight",
+      "label": "脱敏演示周回顾",
+      "statement": "本周材料形成两条待核验判断：客户交付应先落到业务结果，活动数据进入认知图前必须先聚合脱敏。当前尚无真实行动结果，因此不生成完成率。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "relatedSeedKeys": [
+        "action-client-poc-onepager",
+        "action-agent-direction-matrix",
+        "action-latitude-product-loop",
+        "action-product-skill-rubric",
+        "action-dsh-study"
+      ],
+      "payload": {
+        "horizon": "review",
+        "surfaceRole": "desktop.review",
+        "desktopRole": "review",
+        "boardTags": ["客户交付", "新 Agent 方向", "维度产品", "产品力", "DSH 研究"],
+        "reviewType": "weekly",
+        "outcomeCount": 0,
+        "completionRate": null,
+        "resultState": "missing_real_outcomes",
+        "verificationState": "imported_unverified"
+      }
+    },
+    {
+      "seedKey": "relationship-secretary-demo",
+      "kind": "insight",
+      "label": "秘书关系状态",
+      "statement": "熟悉和默契只是基于当前脱敏演示材料的可纠正估计；本演示数据没有任何能力授权凭据。",
+      "actor": "importer",
+      "sensitivity": "low",
+      "northStarSeedKey": "goal-north-star-agi",
+      "payload": {
+        "horizon": "relationship",
+        "surfaceRole": "secretary.relationship",
+        "desktopRole": "relationship",
+        "boardTags": [],
+        "relationshipSchemaVersion": 1,
+        "metrics": {
+          "familiarity": {
+            "label": "熟悉",
+            "value": 46,
+            "stage": "初步熟悉",
+            "basis": "已整理目标层级与两类脱敏样本，尚未经过长期互动校准。",
+            "epistemicAuthority": "imported_unverified",
+            "correctable": true
+          },
+          "rapport": {
+            "label": "默契",
+            "value": 32,
+            "stage": "正在建立",
+            "basis": "已能复述部分偏好，但尚无真实行动结果闭环。",
+            "epistemicAuthority": "imported_unverified",
+            "correctable": true
+          },
+          "capability": {
+            "label": "权能",
+            "value": 0,
+            "stage": "未授权",
+            "basis": "本演示 fixture 不包含 capability grant receipt。",
+            "epistemicAuthority": "system_recorded",
+            "scope": "demo-fixture",
+            "grantState": "ungranted",
+            "grantReceiptIds": [],
+            "correctable": false
+          }
+        }
+      }
+    }
+  ]
+}

@@ -77,6 +77,39 @@ describe("native cards", () => {
     expect(onLineage).toHaveBeenCalledWith(lineage);
   });
 
+  it("带来源的行动锚点可以行内改名并上报新文字", async () => {
+    const user = userEvent.setup();
+    const onAnchorEdit = vi.fn();
+    const row = {
+      text: "和设计走一遍关键交互",
+      meta: "14:00",
+      actionable: true,
+      lineage: { entityType: "todo", entityId: "todo-7", label: "来自你的待办" }
+    };
+    const card: AnchorCard = {
+      kind: "anchors",
+      id: "schedule-card",
+      span: 7,
+      eyebrow: "Schedule / Today",
+      title: "今天的锚点",
+      rows: [row, { text: "另有 3 件事在今天的待办里", meta: "待办" }]
+    };
+
+    render(<DeskCardView card={card} handlers={{ onAnchorEdit }} />);
+
+    // 汇总折叠行没有可写回的实体，不出现编辑入口
+    expect(
+      screen.queryByRole("button", { name: "编辑：另有 3 件事在今天的待办里" })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "编辑：和设计走一遍关键交互" }));
+    const input = screen.getByRole("textbox", { name: "编辑：和设计走一遍关键交互" });
+    await user.clear(input);
+    await user.type(input, "和设计走完核心路径{Enter}");
+
+    expect(onAnchorEdit).toHaveBeenCalledWith(row, "和设计走完核心路径");
+  });
+
   it("注册表穷尽九种 kind，未知 kind 直接抛错", () => {
     expect(Object.keys(NATIVE_CARD_REGISTRY)).toEqual([
       "cognition",

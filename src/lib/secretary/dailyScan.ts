@@ -25,6 +25,7 @@ import {
 import type { ScheduledJob } from "./scheduler";
 import type { Lang } from "../settings";
 import { readSettingsSnapshot, useSettingsStore } from "../settings";
+import { emitSync } from "../syncBus";
 import { runMemoryDedup } from "./memoryHygiene";
 import {
   evaluateDismissDowngrade,
@@ -151,6 +152,7 @@ export async function runDailyScan(dateKey: string, lang: Lang = "zh"): Promise<
 
   // 4. upsert 进 daily_digest(同天重跑覆盖)
   await dbUpsertDailyDigest(dateKey, summary);
+  emitSync("digests");
 
   // 5. Task 2.4:日终去重归并记忆事实(静默降级,失败不影响纪要写入)
   try {

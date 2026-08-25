@@ -26,6 +26,7 @@ import {
   dbUpsertDailyDigest,
 } from "../db";
 import type { Lang } from "../settings";
+import { emitSync } from "../syncBus";
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -349,6 +350,7 @@ export async function runDigestBackfill(opts: DigestBackfillOpts): Promise<Diges
 
       // upsert 进 daily_digest
       await dbUpsertDailyDigest(missingDate, summary);
+      emitSync("digests");
       backfilledDates.push(missingDate);
       console.info(`[DigestBackfill] 补跑纪要成功: ${missingDate}`);
     } catch (err) {

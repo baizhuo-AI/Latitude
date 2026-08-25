@@ -49,6 +49,16 @@ export interface RelationMetric {
   value: number;
   /** 取 dimension.css 里的强调色变量名 */
   tone: "olive" | "blue" | "rust";
+  /** Domain 明确给出的阶段词；缺省时沿用前端的确定性阶段梯子。 */
+  stage?: string;
+  /** 这条数值为何成立。Browser 真实投影不得用互动次数临时推导。 */
+  basis?: string;
+  /** 依据的认识权威，供界面诚实区分导入估计与系统记录。 */
+  epistemicAuthority?: string;
+  /** 可追溯到 typed relationship node，权能还可追加有效授权 receipt。 */
+  lineage?: LineageRef[];
+  /** 熟悉、默契允许用户查看并纠正其依据；权能由授权记录控制。 */
+  correctable?: boolean;
 }
 
 export interface Secretary {
@@ -109,12 +119,13 @@ export interface CardPresentation {
   eyebrow: string;
   title: string;
   /**
-   * 纸片倾斜角度(度)。规范:绝对值不超过 1.2 ——
-   * 再大就从「自然摊在桌上」变成「刻意做旧」。
+   * 纸片倾斜角度(度)。规范:正文纸绝对值不超过 1.2 ——
+   * 再大就从「自然摊在桌上」变成「刻意做旧」；便签 / 报纸类可到 2 上下，
+   * 配合胶带与错位做出「散铺在桌面」的感觉。
    */
   tilt?: number;
-  /** 纸质。sticky = 便签黄,grid = 方格纸 */
-  paper?: "plain" | "sticky" | "grid";
+  /** 纸质。sticky = 便签黄,grid = 方格纸,newsprint = 报纸（早报卡专用） */
+  paper?: "plain" | "sticky" | "grid" | "newsprint";
   /** 顶部错位(px),让同一排的纸不齐平 */
   offsetY?: number;
   tape?: Tape;
@@ -137,6 +148,18 @@ export interface LineageRef {
   entityId: string;
   label: string;
 }
+
+/**
+ * 认识来源三态（前端体验 PRD §2.2 的前端承诺）。
+ *
+ * 用户必须能分辨一条内容是谁的认识状态：
+ * - recorded：带来源的原始记录（用户说过的话、同步来的日程），不保证已被证实；
+ * - inferred：秘书注意到 / 猜测，可能不对，允许纠正或不回应；
+ * - confirmed：用户已确认，能看到确认发生在何时、基于什么。
+ *
+ * 界面用日常语言表达这三态，不出现内部术语；任何视觉风格都不能抹平差异。
+ */
+export type EpistemicState = "recorded" | "inferred" | "confirmed";
 
 /**
  * 认知卡 —— 独占 `7` 主位,整张桌面唯一需要停下来读的卡片。
@@ -167,6 +190,15 @@ export interface FeedItem {
   /** 为什么此刻给用户看。 */
   why: string;
   source: string;
+  /** Real search evidence remains directly inspectable. */
+  url?: string;
+  publishedAt?: string;
+  retrievedAt?: string;
+  provider?: string;
+  queryId?: string;
+  contentHash?: string;
+  evidenceRefId?: string;
+  freshness?: "fresh" | "aging" | "stale";
   lineage?: LineageRef;
 }
 
@@ -194,6 +226,28 @@ export interface AnchorRow {
   text: string;
   meta: string;
   lineage?: LineageRef;
+  /**
+   * 主题标签（如「客户 A」「个人项目」）。线索板按它把锚点聚成
+   * 事件维度；没有标签的锚点不进线索簇，不硬编分组。
+   */
+  tags?: string[];
+  /**
+   * 认识来源。日程 / 待办这类用户自己的记录是 recorded；
+   * 秘书排出的建议顺序是 inferred。省略时按 recorded 处理。
+   */
+  epistemic?: EpistemicState;
+  /**
+   * 行动对象标记：true 表示这一行可以直接在桌面上完成。
+   * 只有已确认方向的用户待办才可以是行动对象；日历事件等外部事实不可。
+   */
+  actionable?: boolean;
+  /** 已完成。完成的锚点仍留在桌面上，作为今天真实发生过的结果。 */
+  done?: boolean;
+  /**
+   * 退焦标记：进入某条线索的聚焦桌面时，由容器投影派生——
+   * 不属于该维度的行降为低饱和。纯表现层，投影与领域数据不变。
+   */
+  dimmed?: boolean;
 }
 
 /** ◇ 锚点列表:左侧菱形 + 文字,右侧对齐时间或状态标 */
@@ -242,20 +296,43 @@ export interface TextCardPayload {
   link?: string;
 }
 
+/**
+ * 裁决语义（前端体验 PRD §4.2）。裁决不能被一个「接受」按钮抹平。
+ *
+ * 五个稳定机器值：
+ * - interesting「有点意思」：继续共同澄清，仍是未确认线索；
+ * - holds「这对我成立」：有可追溯依据时才进入用户已确认的理解；
+ * - try「要不试试」：转成一个小行动或实验，原假设保持未确认；
+ * - reject「不太对」：记录纠正或拒绝，不静默生成新的偏好判断；
+ * - park「先放着」：暂存并降低打扰，到期不响应不产生任何确认写入。
+ */
+export interface ProposalVerdict {
+  id: "interesting" | "holds" | "try" | "reject" | "park";
+  /** 日常语言标签，如「先放着」 */
+  label: string;
+}
+
 /** 提案卡:等待用户回应,带两个动作 */
 export interface ProposalCardPayload {
   kind: "proposal";
   quote: string;
   accept: string;
   reject: string;
+  /**
+   * 完整裁决集。存在时替代 accept / reject 两键渲染；
+   * 省略时保持旧两键（向后兼容旧原型与 Story）。
+   */
+  verdicts?: ProposalVerdict[];
+  /** 这条提案影响的范围说明 —— 接受前必须让用户知道会改变什么。 */
+  consequence?: string;
 }
 
 /** 进度卡:标题 + 说明 + 进度条 + 左右两个角标 */
 export interface ProgressCardPayload {
   kind: "progress";
   body: string;
-  /** 0—100 */
-  percent: number;
+  /** 0—100；数据源不可用、无法诚实计算时省略，卡片不渲染进度条。 */
+  percent?: number;
   leftMeta: string;
 }
 
@@ -287,14 +364,40 @@ export type ProgressCard = MaterializedCard<ProgressCardPayload>;
 /** 旧桌面原型仍可传扁平卡片；新渲染器传 payload + layout。 */
 export type DeskCard = NativeCardPayload & NativeCardLayout;
 
+/**
+ * 桌面呈现层的一次编辑请求。
+ *
+ * binding 指向投影内容，cardId 指向布局表现；两者刻意分开，避免把一张
+ * 派生卡的文案编辑误当成对上游业务实体的全字段写入。
+ */
+export interface CardEditRequest {
+  cardId: string;
+  binding: string;
+  card: DeskCard;
+}
+
 /** 卡片交互由桌面容器接管，原生卡只上报语义事件。 */
 export interface CardHandlers {
   onOpen?: (card: DeskCard) => void;
   onAccept?: (card: DeskCard) => void;
   onReject?: (card: DeskCard) => void;
+  /** 完整裁决集存在时的统一出口；onAccept / onReject 是两键形态的兼容出口。 */
+  onVerdict?: (card: DeskCard, verdict: ProposalVerdict) => void;
   onFeedFeedback?: (itemId: string, feedback: FeedFeedback) => void;
   onLineage?: (lineage: LineageRef) => void;
+  /** 行动对象的真实完成动作。只由 actionable 的锚点行触发。 */
+  onAnchorComplete?: (row: AnchorRow) => void;
+  /**
+   * 锚点文字的行内编辑出口。只有带来源（lineage）且可行动的锚点可编辑；
+   * 接线方按 lineage 写回真实实体（如待办标题）。
+   */
+  onAnchorEdit?: (row: AnchorRow, nextText: string) => void;
+  /** 双击卡片正文或在卡片聚焦时按 Enter/F2，打开可撤销的呈现编辑器。 */
+  onCardEdit?: (request: CardEditRequest) => void;
 }
+
+/** 点秘书立绘时的意图闭集：聊聊 / 看看有什么要我定的 / 回顾关系。 */
+export type SecretaryIntent = "chat" | "decide" | "review";
 
 /** 一张完整的桌面。 */
 export interface Desk {
