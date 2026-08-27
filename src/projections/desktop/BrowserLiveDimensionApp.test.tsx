@@ -776,6 +776,24 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
   });
 
+  it("浏览器生产桌面可以移除卡片并从添加入口恢复", async () => {
+    const user = userEvent.setup();
+    const runtime = closureRuntime().runtime;
+    render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
+    await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: "从桌面移除：当前认知张力" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "当前认知张力" }))
+        .not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "＋ 添加卡片" }));
+    await user.click(screen.getByRole("button", { name: "+ 当前认知张力" }));
+    expect(await screen.findByRole("heading", { name: "当前认知张力" }))
+      .toBeInTheDocument();
+  });
+
   it("默认数据安全 adapter 要求两个服务使用同一确认短语并执行两阶段可恢复清空", async () => {
     const user = userEvent.setup();
     const runtime = closureRuntime().runtime;

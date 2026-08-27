@@ -1270,8 +1270,8 @@
   border-radius: 50%;
   box-shadow: 0 4px 12px rgb(55 54 45 / 12%);
   cursor: pointer;
-  opacity: 0;
-  transform: scale(0.82);
+  opacity: 0.62;
+  transform: scale(0.92);
   transition: opacity 120ms ease, transform 120ms ease, color 120ms ease;
 }
 
