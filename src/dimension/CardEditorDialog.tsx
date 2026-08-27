@@ -142,7 +142,7 @@ export function CardEditorDialog({
               }
             />
             <TextArea
-              label="为什么给你看"
+              label="推荐理由"
               value={item.why}
               onChange={(why) =>
                 patchPayload({

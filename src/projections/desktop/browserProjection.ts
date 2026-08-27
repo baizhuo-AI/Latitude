@@ -163,7 +163,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
           ? "starting"
           : "unavailable",
     header: {
-      breadcrumb: "TODAY · EVIDENCE LOOP",
+      breadcrumb: "今天",
       title: shortGoals.length > 0
         ? `${shortGoals.length} 个短期目标正在展开`
         : nextAction
@@ -215,7 +215,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
             ? weeklyReviewBody(reviews[0])
             : outcomes.length > 0
               ? `已经留下 ${outcomes.length} 个真实结果；下一次周回顾会把变化而非待办数量串起来。`
-              : "真实周回顾会在行动产生结果后出现；现在没有材料就不生成漂亮总结。",
+              : "有了行动结果后，这里会生成周回顾。",
         ...(actions.length > 0
           ? { percent: Math.round((outcomes.length / actions.length) * 100) }
           : {}),
@@ -324,7 +324,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
   for (const card of layout.cards) {
     if (!card.presentation) continue;
     if (card.binding === "desktop.reviewPlan") {
-      card.presentation.title = "真实周回顾";
+      card.presentation.title = "周回顾";
     } else if (card.binding === "desktop.rhythm") {
       card.presentation.title = "结果回收时间窗";
     } else if (card.binding === "desktop.flex") {

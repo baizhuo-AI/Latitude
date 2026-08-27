@@ -600,7 +600,7 @@ export function BrowserLiveDimensionSurface({
         setNotice(webSearchCoverageNotice(response));
         if (domainReady) await refreshContext().catch(() => undefined);
       } catch (error) {
-        setNotice(readableError(error, "真实 Web Search 没有完成"));
+        setNotice(readableError(error, "搜索没有完成"));
       } finally {
         setSearchBusy(false);
       }
@@ -628,7 +628,7 @@ export function BrowserLiveDimensionSurface({
       await refreshContext();
       setNotice("周回顾已生成。");
     } catch (error) {
-      setNotice(readableError(error, "真实周回顾没有生成"));
+      setNotice(readableError(error, "周回顾没有生成"));
     } finally {
       setDomainBusy(false);
     }
@@ -1200,10 +1200,10 @@ function BrowserControlStrip({
       >
         <input
           className="dim-input"
-          aria-label="搜索真实讯息"
+          aria-label="搜索资讯"
           value={searchDraft}
           onChange={(event) => onSearchDraftChange(event.target.value)}
-          placeholder="查真实讯息；留空会按当前张力 / 目标搜索"
+          placeholder="搜索资讯…"
           disabled={!actionAvailability.search}
         />
         <button
@@ -1212,7 +1212,7 @@ function BrowserControlStrip({
           disabled={!actionAvailability.search || searchBusy || agentState !== "ready"}
           aria-disabled={!actionAvailability.search || searchBusy || agentState !== "ready"}
         >
-          {searchBusy ? "搜索中…" : "Web Search"}
+          {searchBusy ? "搜索中…" : "搜索"}
         </button>
       </form>
       <button
@@ -1222,7 +1222,7 @@ function BrowserControlStrip({
         disabled={!actionAvailability.refresh}
         aria-disabled={!actionAvailability.refresh}
       >
-        刷新事实
+        刷新
       </button>
       <button
         type="button"
@@ -1231,7 +1231,7 @@ function BrowserControlStrip({
         disabled={!actionAvailability.review || domainBusy || domainState !== "ready"}
         aria-disabled={!actionAvailability.review || domainBusy || domainState !== "ready"}
       >
-        真实周回顾
+        周回顾
       </button>
       {activeRunId && (
         <button
@@ -1539,7 +1539,7 @@ function firstDueAction(nodes: readonly KnowledgeNode[], now: Date): KnowledgeNo
 }
 
 function schedulerDeliveryNotice(kind: string): string {
-  if (kind === "weekly_review") return "秘书带回了一条真实周回顾。";
+  if (kind === "weekly_review") return "秘书带回了一条周回顾。";
   if (kind === "outcome_collection") {
     return "秘书来回收一个到期行动的真实结果。";
   }

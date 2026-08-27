@@ -67,9 +67,6 @@ export function FeedCard({
                   {item.title}
                 </h4>
                 <p className="dim-body" style={{ marginTop: 5 }}>
-                  <span className="dim-eyebrow" style={{ display: "inline" }}>
-                    为什么给你看　
-                  </span>
                   {item.why}
                 </p>
                 <div

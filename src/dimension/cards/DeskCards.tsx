@@ -126,7 +126,7 @@ function EditableAnchorText({
           className="dim-meta"
           style={{ marginLeft: 6, color: "var(--dim-olive)" }}
         >
-          · 秘书排的
+          · 建议
         </span>
       )}
     </button>

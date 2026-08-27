@@ -258,7 +258,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         .not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "真实周回顾" }));
+    await user.click(screen.getByRole("button", { name: "周回顾" }));
     await waitFor(() => expect(createWeeklyReview).toHaveBeenCalledOnce());
     await waitFor(() => {
       expect(screen.getByText("证据形成行动，行动留下了一个真实结果。")).toBeInTheDocument();
@@ -1123,8 +1123,8 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
 
-    await user.type(screen.getByRole("textbox", { name: "搜索真实讯息" }), "写作与深度工作");
-    await user.click(screen.getByRole("button", { name: "Web Search" }));
+    await user.type(screen.getByRole("textbox", { name: "搜索资讯" }), "写作与深度工作");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
 
     expect(await screen.findByText(/时间过滤后没有可展示的 dated 结果/)).toHaveTextContent(
       "排除无日期 3 条、过期 7 条",

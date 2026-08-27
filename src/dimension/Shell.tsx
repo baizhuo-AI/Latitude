@@ -95,9 +95,6 @@ export function AppHeader({
         <span style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-0.01em" }}>
           维度
         </span>
-        <span className="dim-eyebrow" style={{ marginLeft: 4 }}>
-          Personal Reality OS
-        </span>
       </div>
 
       {/* 状态必须来自运行时投影。没有 adapter 时诚实地显示未知。 */}

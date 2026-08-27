@@ -700,7 +700,7 @@ export function buildLiveProjection(input: LiveProjectionInput): LiveDesktop {
         span: 5,
         binding: "desktop.feed",
         presentation: {
-          eyebrow: "THE LATITUDE DAILY",
+          eyebrow: "今日资讯",
           title: "今日早报",
           tilt: -0.8,
           offsetY: 4,
@@ -716,7 +716,7 @@ export function buildLiveProjection(input: LiveProjectionInput): LiveDesktop {
         span: 7,
         binding: "desktop.schedule",
         presentation: {
-          eyebrow: "TODAY · SCHEDULE",
+          eyebrow: "今天",
           title: "今天的锚点",
           tilt: 0.35,
           offsetY: -2
@@ -730,7 +730,7 @@ export function buildLiveProjection(input: LiveProjectionInput): LiveDesktop {
         span: 4,
         binding: "desktop.reviewPlan",
         presentation: {
-          eyebrow: "WEEKLY · REVIEW",
+          eyebrow: "本周",
           title: "这周到这里",
           tilt: -1.1,
           offsetY: 12
@@ -744,7 +744,7 @@ export function buildLiveProjection(input: LiveProjectionInput): LiveDesktop {
         span: 4,
         binding: "desktop.rhythm",
         presentation: {
-          eyebrow: "RHYTHM · FOCUS",
+          eyebrow: "专注时间",
           title: rhythm.title,
           tilt: 0.7,
           offsetY: 2,

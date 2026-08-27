@@ -270,7 +270,7 @@ export function SecretaryCompanion({
               type="button"
               disabled={!reviewEnabled}
               aria-disabled={!reviewEnabled}
-              title={reviewEnabled ? undefined : "真实周回顾已在组件设置中关闭"}
+              title={reviewEnabled ? undefined : "周回顾已在桌面设置中关闭"}
               onClick={() => {
                 setOpen(false);
                 onReview?.();

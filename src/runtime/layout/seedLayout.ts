@@ -32,7 +32,7 @@ export const SEED_LAYOUT_DOCUMENT = {
       span: 5,
       binding: "desktop.feed",
       presentation: {
-        eyebrow: "THE LATITUDE DAILY",
+        eyebrow: "今日资讯",
         title: "今日早报",
         tilt: -0.9,
         offsetY: 4,
@@ -48,7 +48,7 @@ export const SEED_LAYOUT_DOCUMENT = {
       span: 7,
       binding: "desktop.schedule",
       presentation: {
-        eyebrow: "TODAY · SCHEDULE",
+        eyebrow: "今天",
         title: "今天的锚点",
         tilt: 0.35,
         offsetY: -2
@@ -62,7 +62,7 @@ export const SEED_LAYOUT_DOCUMENT = {
       span: 4,
       binding: "desktop.reviewPlan",
       presentation: {
-        eyebrow: "WEEKLY · REVIEW",
+        eyebrow: "本周",
         title: "这周有一个新判断",
         tilt: -1.1,
         offsetY: 12
@@ -76,7 +76,7 @@ export const SEED_LAYOUT_DOCUMENT = {
       span: 4,
       binding: "desktop.rhythm",
       presentation: {
-        eyebrow: "RHYTHM · FOCUS",
+        eyebrow: "专注时间",
         title: "下一段完整时间：90 分钟",
         tilt: 0.7,
         offsetY: 2,
@@ -91,7 +91,7 @@ export const SEED_LAYOUT_DOCUMENT = {
       span: 4,
       binding: "desktop.flex",
       presentation: {
-        eyebrow: "KEEP IN MIND",
+        eyebrow: "记住",
         title: "核心记忆点",
         tilt: -1.7,
         offsetY: 7,
