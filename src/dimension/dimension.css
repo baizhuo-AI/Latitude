@@ -458,6 +458,13 @@
   z-index: 2;
 }
 
+.dim-desk-header {
+  margin-inline: -10px;
+  padding: 8px 10px;
+  background: rgb(236 239 230 / 94%);
+  backdrop-filter: blur(8px);
+}
+
 @media (width <= 700px) {
   .dim-desk-header {
     flex-direction: column;
@@ -487,7 +494,9 @@
   align-items: center;
   gap: 12px;
   margin: -6px 0 16px;
-  padding: 9px 0;
+  padding: 9px 10px;
+  background: rgb(236 239 230 / 94%);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--dim-line-soft);
 }
 
