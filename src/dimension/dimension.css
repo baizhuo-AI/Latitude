@@ -325,6 +325,8 @@
  * 1200px 左右误判:视口够宽,主区其实只剩 1024px,4+4+4 已经挤了。
  */
 .dim-grid-wrap {
+  position: relative;
+  z-index: 1;
   container-type: inline-size;
   width: 100%;
 }
@@ -448,6 +450,12 @@
   display: flex;
   flex-shrink: 0;
   gap: 8px;
+}
+
+.dim-desk-header,
+.dim-card-picker {
+  position: relative;
+  z-index: 2;
 }
 
 @media (width <= 700px) {
