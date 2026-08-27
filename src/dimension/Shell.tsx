@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SecretaryPortrait } from "./SecretaryPortrait";
+import { compactSecretaryNotice } from "./secretaryNotice";
 import type {
   RelationMetric,
   Secretary,
@@ -148,7 +149,7 @@ export function SecretaryRail({
       : "chat";
   const primaryEnabled = primaryIntent === "decide" ? outcomeEnabled : chatEnabled;
   const primaryLabel = primaryIntent === "decide" ? "查看" : "打开对话";
-  const shortLine = notice ?? (
+  const shortLine = notice ? compactSecretaryNotice(notice) : (
     secretary.state === "thinking"
       ? "稍等…"
       : secretary.state === "presenting"

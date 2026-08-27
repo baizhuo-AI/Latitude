@@ -77,6 +77,19 @@ describe("SecretaryRail simplified interaction", () => {
     expect(onInteract).toHaveBeenCalledWith("decide");
   });
 
+  it("内部调度文本不会撑开秘书栏", () => {
+    render(
+      <SecretaryRail
+        secretary={SECRETARY}
+        notice={"该 action 已到日历触底 reviewAt，但这是无人值守提醒，没有新的用户证据。\n**Action**: 跑通维度完整产品闭环 (node_40e31aca, sensitivity low, demo profile)\n只接受 typed 依据和授权 receipt。"}
+      />
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("有件事需要你看看。");
+    expect(screen.queryByText(/reviewAt|node_|sensitivity|typed|receipt|\*\*Action\*\*/i))
+      .not.toBeInTheDocument();
+  });
+
   it("保留收起、设置和隐藏后的唤回入口", () => {
     const onToggleCollapse = vi.fn();
     const onSettings = vi.fn();

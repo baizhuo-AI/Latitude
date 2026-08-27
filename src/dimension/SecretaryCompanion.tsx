@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { SecretaryPortrait } from "./SecretaryPortrait";
+import { compactSecretaryNotice } from "./secretaryNotice";
 import type { Secretary, SecretaryIntent } from "./types";
 import "./secretaryCompanion.css";
 
@@ -180,6 +181,7 @@ export function SecretaryCompanion({
   const chatEnabled = actionAvailability?.chat ?? Boolean(onInteract);
   const reviewEnabled = actionAvailability?.review ?? Boolean(onReview);
   const outcomeEnabled = actionAvailability?.outcome ?? Boolean(onInteract);
+  const shortNotice = notice ? compactSecretaryNotice(notice) : secretary.note;
 
   if (hidden) {
     return (
@@ -240,7 +242,7 @@ export function SecretaryCompanion({
         <section className="dim-companion-bubble" aria-label="秘书面板">
           <p className="dim-eyebrow">{secretary.eyebrow}</p>
           <h2>{secretary.headline}</h2>
-          <p role={notice ? "status" : undefined}>{notice || secretary.note}</p>
+          <p role={notice ? "status" : undefined}>{shortNotice}</p>
           <div className="dim-companion-actions">
             <button
               type="button"

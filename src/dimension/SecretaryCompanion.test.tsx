@@ -103,4 +103,17 @@ describe("SecretaryCompanion", () => {
     expect(onInteract).not.toHaveBeenCalled();
     expect(onReview).not.toHaveBeenCalled();
   });
+
+  it("never exposes a raw scheduler payload in the open bubble", () => {
+    render(
+      <SecretaryCompanion
+        secretary={SEED_DESKTOP_PROJECTION.secretary}
+        notice={"该 action 已到 reviewAt。\n**Action**: node_40e31aca, sensitivity low, demo profile, typed receipt"}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("有件事需要你看看。");
+    expect(screen.queryByText(/reviewAt|node_|sensitivity|typed|receipt|\*\*Action\*\*/i))
+      .not.toBeInTheDocument();
+  });
 });

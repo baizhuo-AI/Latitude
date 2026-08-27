@@ -23,6 +23,7 @@ import {
   type KnowledgeContext,
   type KnowledgeNode,
   type RuntimeServiceState,
+  type SchedulerOutboxItem,
   type WebSearchItem,
   type WebSearchResponse,
   useDesktopRuntime,
@@ -297,7 +298,7 @@ export function BrowserLiveDimensionSurface({
           // prompt. It is not an outcome. Keep the Domain id from acknowledged
           // receipts so a restart can still open the unresolved action.
           setOutcomeCollectionActionId(latestOutcomeCollection.domainId);
-          setSecretaryNotice(latestOutcomeCollection.text);
+          setSecretaryNotice(schedulerSecretaryNotice(latestOutcomeCollection, context.nodes));
         }
         const item = response.items.find(
           (candidate) =>
@@ -306,7 +307,7 @@ export function BrowserLiveDimensionSurface({
         );
         if (!item || !active) return;
         deliveredSchedulerReceipts.current.add(item.receiptKey);
-        setSecretaryNotice(item.text);
+        setSecretaryNotice(schedulerSecretaryNotice(item, context.nodes));
         setNotice(schedulerDeliveryNotice(item.kind));
         await runtime.agent.acknowledgeSchedulerOutbox(item.receiptKey, {
           idempotencyKey: `browser-delivery:${item.receiptKey}`,
@@ -1539,21 +1540,44 @@ function firstDueAction(nodes: readonly KnowledgeNode[], now: Date): KnowledgeNo
 }
 
 function schedulerDeliveryNotice(kind: string): string {
-  if (kind === "weekly_review") return "秘书带回了一条周回顾。";
+  if (kind === "weekly_review") return "本周回顾准备好了。";
   if (kind === "outcome_collection") {
-    return "秘书来回收一个到期行动的真实结果。";
+    return "有个行动到了回看时间。";
   }
   if (kind === "revision_resolution") {
-    return "秘书带回了一条等你裁决的认知修订。";
+    return "有条变化需要你确认。";
   }
   if (
     kind === "daily_curation" ||
     kind === "web_curated_digest" ||
     kind === "curated_web_digest"
   ) {
-    return "秘书带回了一条有真实来源的资讯策展。";
+    return "今天的新资讯准备好了。";
   }
-  return "秘书带回了一条新消息。";
+  return "有一条新消息。";
+}
+
+function schedulerSecretaryNotice(
+  item: SchedulerOutboxItem,
+  nodes: readonly KnowledgeNode[],
+): string {
+  if (item.kind === "outcome_collection") {
+    const action = nodes.find((node) => node.id === item.domainId && node.kind === "action");
+    if (!action) return "有个行动到了回看时间，实际结果怎么样？";
+    const label = nodeLabel(action);
+    const shortLabel = label.length > 24 ? `${label.slice(0, 23)}…` : label;
+    return `“${shortLabel}”到回看时间了，实际结果怎么样？`;
+  }
+  if (item.kind === "weekly_review") return "本周回顾准备好了。";
+  if (item.kind === "revision_resolution") return "有条变化需要你确认。";
+  if (
+    item.kind === "daily_curation" ||
+    item.kind === "web_curated_digest" ||
+    item.kind === "curated_web_digest"
+  ) {
+    return "今天的新资讯准备好了。";
+  }
+  return "有件事需要你看看。";
 }
 
 function candidateActions(

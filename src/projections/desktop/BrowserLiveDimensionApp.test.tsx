@@ -19,6 +19,12 @@ import {
   createBrowserProfile,
 } from "./browserProfile";
 
+const RAW_SCHEDULER_BADCASE = [
+  "该 action 已到日历触底 reviewAt（2026-08-27T17:00:00Z），但这是无人值守提醒，没有新的用户证据，所以我不会写入 outcome。",
+  "**Action**: 跑通维度完整产品闭环 (node_40e31aca, sensitivity low, demo profile)",
+  "当前入口只遵循来源、权限能只认有效授权 receipt，并要求 typed 依据。",
+].join("\n");
+
 function memoryRecoveryStore(): BrowserRecoveryStore {
   let backup: BrowserRecoveryBackup | null = null;
   return {
@@ -1023,9 +1029,11 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
-    expect(await screen.findByText("为你带回一条有真实链接的写作研究。"))
+    expect(await within(screen.getByLabelText("秘书栏"))
+      .findByText("今天的新资讯准备好了。"))
       .toBeInTheDocument();
-    expect(screen.getByText("秘书带回了一条有真实来源的资讯策展。")).toBeInTheDocument();
+    expect(screen.queryByText("为你带回一条有真实链接的写作研究。"))
+      .not.toBeInTheDocument();
     await waitFor(() => {
       expect(runtime.agent.acknowledgeSchedulerOutbox).toHaveBeenCalledWith(
         "web-digest:2026-08-24",
@@ -1057,7 +1065,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         kind: "outcome_collection",
         domainId: "action-event-due",
         dueAt: "2026-08-24T12:00:00Z",
-        text: "刚刚的证据事件让这个行动提前进入结果回收。",
+        text: RAW_SCHEDULER_BADCASE,
         deliveryStatus: "pending",
         createdAt: "2026-08-24T12:00:01Z",
       }],
@@ -1068,15 +1076,17 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
       kind: "outcome_collection",
       domainId: "action-event-due",
       dueAt: "2026-08-24T12:00:00Z",
-      text: "刚刚的证据事件让这个行动提前进入结果回收。",
+      text: RAW_SCHEDULER_BADCASE,
       deliveryStatus: "acknowledged",
       createdAt: "2026-08-24T12:00:01Z",
       acknowledgedAt: "2026-08-24T12:00:02Z",
     });
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
-    expect(await screen.findByText("刚刚的证据事件让这个行动提前进入结果回收。"))
+    expect(await screen.findByText("“事件已经触发的观察行动”到回看时间了，实际结果怎么样？"))
       .toBeInTheDocument();
+    expect(screen.queryByText(/reviewAt|node_|sensitivity|demo profile|typed|receipt/i))
+      .not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查看" }));
     expect(screen.getByRole("dialog", { name: "回收行动结果" }))
       .toHaveTextContent("事件已经触发的观察行动");
@@ -1103,7 +1113,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         kind: "outcome_collection",
         domainId: "action-event-unresolved",
         dueAt: "2026-08-24T12:00:00Z",
-        text: "这条提醒此前已经显示过。",
+        text: RAW_SCHEDULER_BADCASE,
         deliveryStatus: "acknowledged",
         createdAt: "2026-08-24T12:00:01Z",
         acknowledgedAt: "2026-08-24T12:00:02Z",
@@ -1112,6 +1122,10 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.agent.listSchedulerOutbox).toHaveBeenCalled());
+    expect(screen.getByText("“重启后仍待回收”到回看时间了，实际结果怎么样？"))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/reviewAt|node_|sensitivity|demo profile|typed|receipt/i))
+      .not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查看" }));
     expect(screen.getByRole("dialog", { name: "回收行动结果" }))
       .toHaveTextContent("重启后仍待回收");
