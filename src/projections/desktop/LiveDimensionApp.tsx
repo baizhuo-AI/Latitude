@@ -415,7 +415,7 @@ function TauriLiveDimensionApp() {
       useActivityStore
         .getState()
         .addActivity(`对一条内容的反馈（${itemId}）：${label}`)
-        .then(() => say(`已记下：${label}。当前先作为现实记录保留。`))
+        .then(() => say(`收到！${label}`))
         .catch(() => say("没有写进去，请再试一次。"));
     }
   };

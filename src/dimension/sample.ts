@@ -27,7 +27,7 @@ export const DESK: Desk = {
     note: "该挡的提醒我先挡住，真正需要你拍板时再找你。",
     stageLabel: "关系 · 脱敏演示",
     stageProgress: 0,
-    stageNote: "熟悉与默契是可纠正的导入估计；权能没有授权 receipt，保持未授权。",
+    stageNote: "",
     metrics: [
       {
         label: "熟悉",
@@ -52,7 +52,7 @@ export const DESK: Desk = {
         value: 0,
         tone: "rust",
         stage: "未授权",
-        basis: "本演示数据不包含 capability grant receipt。",
+        basis: "本演示没有授权记录。",
         epistemicAuthority: "system_recorded",
         correctable: false
       }

@@ -87,7 +87,7 @@ export function BrowserDataSafetyDialog({
     setBusy("history");
     void actions.listChangeSets()
       .then(setChangeSets)
-      .catch((error) => setNotice(readableError(error, "ChangeSet 历史读取失败")))
+      .catch((error) => setNotice(readableError(error, "变更记录读取失败")))
       .finally(() => setBusy(null));
   }, [actions]);
 
@@ -97,7 +97,7 @@ export function BrowserDataSafetyDialog({
     try {
       const document = await actions.exportAll();
       downloadJson(document, `latitude-full-export-${new Date().toISOString().slice(0, 10)}.json`);
-      setNotice("完整导出已生成并下载；原数据没有被改动。文件是未加密的明文 JSON，请由你自行安全保管。");
+      setNotice("导出已下载。原数据没有改动，文件未加密，请妥善保管。");
     } catch (error) {
       setNotice(readableError(error, "完整导出失败"));
     } finally {
@@ -187,12 +187,12 @@ export function BrowserDataSafetyDialog({
         typeof resultRecord?.message === "string"
           ? resultRecord.message
           : partial
-            ? "本次操作只完成了一部分；请检查各层 receipt 与保留项，不能把当前状态当成全部成功。"
+            ? "本次只完成了一部分；请检查处理结果和保留项。"
             : preparation.mode === "restore"
-            ? "完整 profile 已恢复；Agent Host 与页面需要重启。"
+            ? "数据已完整恢复，请重启助手服务并刷新页面。"
             : preparation.mode === "purge_all"
-              ? "永久删除已完成；Agent Host 与页面需要重启。"
-              : "可恢复清空已完成；Agent Host 与页面需要重启。";
+              ? "永久删除已完成，请重启助手服务并刷新页面。"
+              : "可恢复清空已完成，请重启助手服务并刷新页面。";
       setNotice(message);
       setPreparation(null);
       setConfirmation("");
@@ -215,11 +215,11 @@ export function BrowserDataSafetyDialog({
     setBusy(`rollback-${id}`);
     try {
       await actions.rollbackChangeSet(id);
-      setNotice(`ChangeSet ${id} 已通过逆操作回滚，并生成新的审计记录。`);
+      setNotice("桌面变更已撤销。");
       setChangeSets(await actions.listChangeSets());
       await onChanged();
     } catch (error) {
-      setNotice(readableError(error, "ChangeSet 回滚失败"));
+      setNotice(readableError(error, "这次变更无法撤销"));
     } finally {
       setBusy(null);
     }
@@ -236,10 +236,10 @@ export function BrowserDataSafetyDialog({
       <section className="dim-paper" style={paperStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div>
-            <p className="dim-eyebrow">DATA &amp; SAFETY · 深入口</p>
+            <p className="dim-eyebrow">数据管理</p>
             <h2 style={{ margin: "5px 0 0", fontSize: 21 }}>数据与安全</h2>
             <p className="dim-body" style={{ marginTop: 7 }}>
-              这里不出现在日常主路径；完整导出可直接执行，恢复和删除必须经过两阶段确认。
+              你可以导出、恢复或清空数据。恢复和删除需要再次确认。
             </p>
           </div>
           <button
@@ -255,13 +255,13 @@ export function BrowserDataSafetyDialog({
 
         {!actions && (
           <p role="status" className="dim-body">
-            当前 Domain adapter 还没有注入数据安全动作；面板不会绕过端口直接 fetch。
+            数据服务尚未提供这些操作。
           </p>
         )}
 
         <section className="dim-paper" style={sectionStyle}>
           <p className="dim-eyebrow">完整导出</p>
-          <p className="dim-body">导出图谱、证据、ChangeSet、Agent 对话与任务账本、组件布局和当前会话身份。下载文件是未加密的明文 JSON，离开本产品后由你自行安全保管。</p>
+          <p className="dim-body">导出你的记录、对话、任务和桌面设置。下载文件未加密，请妥善保管。</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               type="button"
@@ -297,10 +297,10 @@ export function BrowserDataSafetyDialog({
                 setSnapshotName(file.name);
                 void file.text()
                   .then((text) => setSnapshot(JSON.parse(text)))
-                  .then(() => setNotice(`已在浏览器内校验 JSON：${file.name}；尚未改动任何数据。`))
+                  .then(() => setNotice(`文件已检查：${file.name}。还没有改动任何数据。`))
                   .catch((error) => {
                     setSnapshot(undefined);
-                    setNotice(readableError(error, "恢复文件不是有效 JSON"));
+                    setNotice(readableError(error, "这个恢复文件无法读取"));
                   });
               }}
             />
@@ -316,7 +316,7 @@ export function BrowserDataSafetyDialog({
           </button>
           <div style={{ borderTop: "1px solid var(--dim-line)", paddingTop: 9 }}>
             <p className="dim-body" style={{ marginTop: 0 }}>
-              可恢复清空会先把无凭证的完整 Browser profile 写入本浏览器 IndexedDB 并读回校验；重启后仍可从这里恢复。永久删除会同时清掉这份备份。
+              可恢复清空会先在本机保存一份备份，重启后仍可恢复。永久删除会同时删除这份备份。
             </p>
             <button
               type="button"
@@ -335,7 +335,7 @@ export function BrowserDataSafetyDialog({
 
         <section className="dim-paper" style={{ ...sectionStyle, borderColor: "var(--dim-rust)" }}>
           <p className="dim-eyebrow">危险区 · 可恢复清空</p>
-          <p className="dim-body">清空当前本地数据，但保留服务侧安全备份和本浏览器的完整恢复副本。第一步会先写入并读回恢复副本，再生成短期令牌；任何备份失败都会阻止清空。</p>
+          <p className="dim-body">清空当前本地数据，但保留可恢复的备份。备份失败时不会清空。</p>
           <button
             type="button"
             className="dim-btn"
@@ -347,7 +347,7 @@ export function BrowserDataSafetyDialog({
           <details style={{ width: "100%", marginTop: 4 }}>
             <summary className="dim-eyebrow">更深一层 · 永久删除（不可恢复）</summary>
             <p className="dim-body">
-              永久清空 Domain、Agent、组件与会话身份，并删除本产品控制的服务侧备份。
+              永久清空应用数据、助手数据、组件与会话身份，并删除本产品控制的服务侧备份。
               外部保存的导出文件不受影响，也无法由本产品代为删除。
             </p>
             <button
@@ -374,7 +374,7 @@ export function BrowserDataSafetyDialog({
               请输入完整短语：<strong>{preparation.value.confirmation}</strong>
             </p>
             {preparation.value.expiresAt && (
-              <p className="dim-meta">令牌失效 · {preparation.value.expiresAt}</p>
+              <p className="dim-meta">请在 {preparation.value.expiresAt} 前完成确认</p>
             )}
             <input
               className="dim-input"
@@ -415,9 +415,9 @@ export function BrowserDataSafetyDialog({
         )}
 
         <details>
-          <summary className="dim-eyebrow">ChangeSet 历史与回滚</summary>
+          <summary className="dim-eyebrow">桌面变更记录</summary>
           {changeSets.length === 0 ? (
-            <p className="dim-meta">{busy === "history" ? "读取中…" : "没有可显示的 ChangeSet。"}</p>
+            <p className="dim-meta">{busy === "history" ? "读取中…" : "还没有桌面变更。"}</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
               {changeSets.map((changeSet) => (

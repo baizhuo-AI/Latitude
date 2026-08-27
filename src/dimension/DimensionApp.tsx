@@ -36,6 +36,8 @@ export interface DimensionAppProps {
   onOpenSettings?: () => void;
   onOpenReview?: () => void;
   onAdjustDesktop?: () => void;
+  /** 添加 / 移除只改变桌面上的卡片，不删除卡片背后的真实数据。 */
+  onCardVisibilityChange?: (cardId: string, visible: boolean) => void;
   /** 点秘书立绘的出口（聊聊 / 要我定的 / 回顾）。 */
   onSecretaryInteract?: (intent: SecretaryIntent) => void;
   /**
@@ -70,12 +72,15 @@ export function DimensionApp({
   onOpenSettings,
   onOpenReview,
   onAdjustDesktop,
+  onCardVisibilityChange,
   onSecretaryInteract,
   railMode = "inline",
   focusTag = null,
   onExitFocus
 }: DimensionAppProps = {}) {
   const [openedCard, setOpenedCard] = useState<DeskCard | null>(null);
+  const [cardPickerOpen, setCardPickerOpen] = useState(false);
+  const [localCardVisibility, setLocalCardVisibility] = useState<Record<string, boolean>>({});
   const { toast, say } = useDimToast();
   const deskLayer = useRef<HTMLDivElement>(null);
   const bookLayer = useRef<HTMLDivElement>(null);
@@ -84,6 +89,32 @@ export function DimensionApp({
     ? projection.journalSpreads?.[openedCard.id]
     : undefined;
   const isOpen = openedCard?.kind === "cognition" && Boolean(spread);
+  const visibleLayout = useMemo(
+    () =>
+      onCardVisibilityChange
+        ? layout
+        : {
+            ...layout,
+            cards: layout.cards.map((card) => ({
+              ...card,
+              hidden: localCardVisibility[card.id] === undefined
+                ? card.hidden === true
+                : !localCardVisibility[card.id]
+            }))
+          },
+    [layout, localCardVisibility, onCardVisibilityChange]
+  );
+  const removedCards = visibleLayout.cards.filter((card) => card.hidden === true);
+
+  function setCardVisible(cardId: string, visible: boolean) {
+    if (onCardVisibilityChange) {
+      onCardVisibilityChange(cardId, visible);
+    } else {
+      setLocalCardVisibility((current) => ({ ...current, [cardId]: visible }));
+    }
+    setCardPickerOpen(false);
+    say(visible ? "已添加" : "已移除");
+  }
 
   useEffect(() => {
     if (!isOpen) return;
@@ -196,24 +227,14 @@ export function DimensionApp({
           />
         )}
 
-        <main
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-            padding: "20px 22px 18px",
-            gap: 14
-          }}
-        >
+        <main className="dim-main">
           <div
             className={`dim-stage${isOpen ? " dim-stage--open" : ""}`}
             style={{ flex: 1, minHeight: 0 }}
           >
             <div
               ref={deskLayer}
-              className="dim-layer dim-layer--desk"
-              style={{ padding: "22px 24px", overflowY: "auto" }}
+              className="dim-layer dim-layer--desk dim-desk-scroll"
               aria-hidden={isOpen}
               data-deck-scroll
             >
@@ -221,13 +242,33 @@ export function DimensionApp({
                 breadcrumb={projection.header.breadcrumb}
                 title={projection.header.title}
                 subtitle={projection.header.subtitle}
-                onWhy={() => say(layout.arrangement.rationale.join("；"))}
+                onAdd={() => setCardPickerOpen((open) => !open)}
                 onAdjust={
                   onAdjustDesktop ??
                   (() =>
                     say("演示模式：调整桌面会先给你一份可撤销的预览"))
                 }
               />
+              {cardPickerOpen && (
+                <section className="dim-card-picker" aria-label="添加卡片">
+                  <strong>添加卡片</strong>
+                  {removedCards.length > 0 ? (
+                    <div className="dim-card-picker-list">
+                      {removedCards.map((card) => (
+                        <button
+                          key={card.id}
+                          type="button"
+                          onClick={() => setCardVisible(card.id, true)}
+                        >
+                          + {card.presentation?.title ?? card.id}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="dim-meta">所有卡片都在桌面上</span>
+                  )}
+                </section>
+              )}
               {focusTag && (
                 <div className="dim-focus-capsule" role="status">
                   <span>
@@ -239,10 +280,11 @@ export function DimensionApp({
                 </div>
               )}
               <LayoutRenderer
-                document={layout}
+                document={visibleLayout}
                 bindings={visibleBindings}
                 handlers={resolvedHandlers}
                 composition={composition}
+                onCardRemove={(cardId) => setCardVisible(cardId, false)}
               />
             </div>
 
@@ -258,7 +300,7 @@ export function DimensionApp({
                   onClose={() => setOpenedCard(null)}
                   onCorrect={(choice) => {
                     setOpenedCard(null);
-                    say(`演示模式：已记下“${choice}”，本次不会保存`);
+                    say(`收到！演示模式不会保存“${choice}”`);
                   }}
                 />
               )}

@@ -304,7 +304,7 @@ describe("buildBrowserProjection", () => {
       },
     });
 
-    expect(result.projection.secretary.stageLabel).toBe("关系 · 有据可查");
+    expect(result.projection.secretary.stageLabel).toBe("已连接");
     expect(result.projection.secretary.metrics).toMatchObject([
       {
         label: "熟悉",
@@ -416,7 +416,7 @@ describe("buildBrowserProjection", () => {
       stage: "白名单自动",
       lineage: [
         { entityId: "relationship-real" },
-        { entityId: "grant-1", label: "当前采用的明确授权 receipt" },
+        { entityId: "grant-1", label: "当前采用的授权记录" },
       ],
     });
     expect(project("revoked")).toMatchObject({ value: 0, stage: "未授权" });
@@ -436,7 +436,7 @@ describe("buildBrowserProjection", () => {
     expect(noValue).toMatchObject({
       value: 0,
       stage: "未授权",
-      basis: "当前没有带合法权能值、仍有效的明确授权 receipt。",
+      basis: "当前没有可用的授权记录。",
     });
   });
 
@@ -721,7 +721,7 @@ describe("buildBrowserProjection", () => {
     });
     const feed = result.projection.bindings["desktop.feed"];
     if (feed?.kind !== "feed") throw new Error("feed projection missing");
-    expect(feed.items[0]?.why).toMatch(/^LEGACY：/);
+    expect(feed.items[0]?.why).toBe("这条历史资讯没有保存推荐理由。");
     expect(feed.items[0]?.why).not.toContain("当前张力不能覆盖历史");
     expect(feed.items[0]?.why).not.toContain("旧查询也不能当作当时的排序理由");
   });

@@ -68,6 +68,6 @@ describe("SourceDetail", () => {
     );
 
     expect(screen.getByRole("heading", { name: "原记录当前不可用" })).toBeInTheDocument();
-    expect(screen.getByText(/不能假装依据完整/)).toBeInTheDocument();
+    expect(screen.getByText("暂时找不到原记录")).toBeInTheDocument();
   });
 });

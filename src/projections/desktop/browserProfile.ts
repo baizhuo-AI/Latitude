@@ -234,7 +234,7 @@ export class BrowserProfileCoordinator {
     }
     if (domain.requiredConfirmation !== agent.confirmationPhrase) {
       throw new Error(
-        "Domain 与 Agent Host 的确认短语不一致；两个服务均未提交，请等待令牌过期后重试。",
+        "两个服务的确认短语不一致，本次没有提交。请等待凭证过期后重试。",
       );
     }
     const expiresAt = earliestExpiry(domain.expiresAt, agent.expiresAt);
@@ -313,7 +313,7 @@ export class BrowserProfileCoordinator {
         }
       } catch (error) {
         throw this.partialError(
-          "可恢复备份在提交前未通过读回；Domain、Agent 与浏览器均未开始清空",
+          "恢复备份未通过校验；本次没有清空任何数据",
           pending,
           error,
         );
@@ -331,7 +331,7 @@ export class BrowserProfileCoordinator {
         // retry can never replay already-cleared active data.
         pending.progress.domain = receipt;
       } catch (error) {
-        throw this.partialError("Domain 尚未确认完成", pending, error);
+        throw this.partialError("数据服务尚未确认完成", pending, error);
       }
     }
 
@@ -342,14 +342,14 @@ export class BrowserProfileCoordinator {
           confirmation: input.confirmation,
         });
         if (receipt.operation !== pending.operation) {
-          throw new Error("Agent Host returned a mismatched commit receipt");
+          throw new Error("助手服务返回了不匹配的处理结果");
         }
         // A partial purge still consumes the one-shot Agent token. Retain the
         // exact receipt so retries continue Browser cleanup without replaying it.
         pending.progress.agent = receipt;
       } catch (error) {
         throw this.partialError(
-          "Domain 已返回提交回执，但 Agent Host 尚未返回回执；Domain 回执本身仍可能是 partial，本窗口会保留进度且同一短语重试不会再次提交 Domain",
+          "数据服务已返回结果，但助手服务还没有返回。当前进度会保留，重试不会重复提交已完成的步骤",
           pending,
           error,
         );
@@ -362,7 +362,7 @@ export class BrowserProfileCoordinator {
         pending.progress.browser = true;
       } catch (error) {
         throw this.partialError(
-          "两个本地服务已返回提交回执（回执本身仍可能是 partial），但浏览器组件与会话身份尚未同步；请保持本窗口并重试",
+          "两个本地服务已完成，但页面还没有同步。请保持本窗口并重试",
           pending,
           error,
         );
@@ -390,12 +390,12 @@ export class BrowserProfileCoordinator {
       restartRequired: pending.progress.agent.restartRequired,
       reloadRequired: true,
       message: !complete
-        ? "本次操作只完成了一部分：Domain、Agent 或浏览器至少一层报告仍有未清理、可恢复或拒绝触碰的条目。已消费的单次令牌不会重放；请查看各层 receipt 与保留项，处理后重新准备。Agent Host 仍需重启，页面仍需重新加载。"
+        ? "本次只完成了一部分：仍有未清理、可恢复或无法处理的内容。请查看处理结果和保留项，处理后重新准备。服务仍需重启，页面仍需重新加载。"
         : pending.operation === "purge_all"
-          ? "永久删除已完成。Agent Host 必须重启，页面必须重新加载。外部导出副本不受本操作影响。"
+          ? "永久删除已完成。请重启助手服务并重新加载页面。外部导出副本不受影响。"
           : pending.operation === "restore"
-            ? "完整 profile 已恢复。请重启 Agent Host 并重新加载页面，以恢复原会话连续性。"
-            : "可恢复清空已完成。请重启 Agent Host 并重新加载页面；服务侧安全备份仍保留。",
+            ? "数据已完整恢复。请重启助手服务并重新加载页面。"
+            : "可恢复清空已完成。请重启助手服务并重新加载页面；安全备份仍保留。",
       services: {
         domain: {
           committed: true,
@@ -491,8 +491,8 @@ export class BrowserProfileCoordinator {
       browserCommitted: pending.progress.browser,
     };
     return new BrowserProfileMutationError(
-      `${summary}。当前状态：Domain ${progress.domainCommitted ? "已返回回执" : "未返回回执"}，` +
-        `Agent ${progress.agentCommitted ? "已返回回执" : "未返回回执"}，浏览器 ${progress.browserCommitted ? "已同步" : "未同步"}。` +
+      `${summary}。当前状态：数据服务 ${progress.domainCommitted ? "已返回" : "未返回"}，` +
+        `助手服务 ${progress.agentCommitted ? "已返回" : "未返回"}，浏览器 ${progress.browserCommitted ? "已同步" : "未同步"}。` +
         `原因：${errorMessage(cause)}。若服务令牌已过期，请重新执行第一步；不要把当前状态当成全部成功。`,
       progress,
       { cause },
@@ -531,7 +531,7 @@ export async function createBrowserProfile(input: {
 export async function validateBrowserProfile(value: unknown): Promise<BrowserProfileV1> {
   if (!isRecord(value) || value.format !== BROWSER_PROFILE_FORMAT || value.schemaVersion !== 1) {
     throw new TypeError(
-      `恢复需要 ${BROWSER_PROFILE_FORMAT} 完整导出；旧的 Domain-only profile 不能假装包含 Agent 会话。`,
+      `恢复需要 ${BROWSER_PROFILE_FORMAT} 完整导出文件；旧版导出不包含助手会话。`,
     );
   }
   if (typeof value.exportedAt !== "string" || !Number.isFinite(Date.parse(value.exportedAt))) {
@@ -566,7 +566,7 @@ export async function validateBrowserProfile(value: unknown): Promise<BrowserPro
 
 function assertDomainSnapshot(value: unknown): asserts value is DomainExportDocument {
   if (!isRecord(value) || value.format !== "latitude.constellation.export@0.1") {
-    throw new TypeError("Domain snapshot format is unsupported");
+    throw new TypeError("数据快照格式不支持");
   }
   if (
     typeof value.schemaVersion !== "string" ||
@@ -576,7 +576,7 @@ function assertDomainSnapshot(value: unknown): asserts value is DomainExportDocu
     !/^sha256:[a-f0-9]{64}$/.test(value.checksum) ||
     !("data" in value)
   ) {
-    throw new TypeError("Domain snapshot is incomplete");
+    throw new TypeError("数据快照不完整");
   }
 }
 
@@ -591,7 +591,7 @@ function assertAgentSnapshot(value: unknown): asserts value is AgentHostSnapshot
     !isRecord(value.files) ||
     Object.values(value.files).some((content) => typeof content !== "string")
   ) {
-    throw new TypeError("Agent Host snapshot is incomplete");
+    throw new TypeError("助手数据不完整");
   }
 }
 
@@ -600,7 +600,7 @@ function assertSessionId(value: unknown): string {
     typeof value !== "string" ||
     !/^[A-Za-z0-9][A-Za-z0-9._:-]{5,199}$/.test(value)
   ) {
-    throw new TypeError("Browser Agent session identity is invalid");
+    throw new TypeError("对话标识无效");
   }
   return value;
 }
@@ -827,7 +827,7 @@ function openRecoveryDatabase(): Promise<IDBDatabase> {
   const factory = globalThis.indexedDB;
   if (!factory) {
     return Promise.reject(
-      new Error("当前浏览器不支持 IndexedDB，无法先保存完整可恢复备份；清空已被阻止。"),
+      new Error("当前浏览器无法保存可恢复备份，本次清空已取消。"),
     );
   }
   return new Promise((resolve, reject) => {
@@ -838,15 +838,15 @@ function openRecoveryDatabase(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB 打开失败"));
-    request.onblocked = () => reject(new Error("IndexedDB 升级被另一个页面阻止"));
+    request.onerror = () => reject(request.error ?? new Error("本机备份无法打开"));
+    request.onblocked = () => reject(new Error("另一个页面正在使用备份，请关闭后重试"));
   });
 }
 
 function indexedDbRequest<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB 读取失败"));
+    request.onerror = () => reject(request.error ?? new Error("本机备份读取失败"));
   });
 }
 
@@ -854,7 +854,7 @@ function indexedDbTransactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
     transaction.onabort = () => reject(
-      transaction.error ?? new Error("IndexedDB 事务被中止"),
+      transaction.error ?? new Error("本机备份操作已中止"),
     );
     transaction.onerror = () => {
       // The abort event owns the final rejection; retaining this handler keeps

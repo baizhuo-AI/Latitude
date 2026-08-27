@@ -44,7 +44,7 @@ function resolveSource(input: {
     const todo = input.todos.find((item) => item.id === lineage.entityId);
     if (todo) {
       return {
-        eyebrow: "SOURCE · TODO",
+        eyebrow: "来源 · 待办",
         title: todo.title,
         description: todo.reason,
         rows: [
@@ -62,7 +62,7 @@ function resolveSource(input: {
     const event = input.events.find((item) => item.id === lineage.entityId);
     if (event) {
       return {
-        eyebrow: "SOURCE · CALENDAR",
+        eyebrow: "来源 · 日程",
         title: event.title,
         description: event.description,
         rows: [
@@ -81,7 +81,7 @@ function resolveSource(input: {
     const goal = input.goals.find((item) => item.id === lineage.entityId);
     if (goal) {
       return {
-        eyebrow: "SOURCE · GOAL",
+        eyebrow: "来源 · 目标",
         title: goal.title,
         description: goal.description,
         rows: [
@@ -98,7 +98,7 @@ function resolveSource(input: {
     const activity = input.activities.find((item) => item.id === lineage.entityId);
     if (activity) {
       return {
-        eyebrow: "SOURCE · ACTIVITY",
+        eyebrow: "来源 · 记录",
         title: activity.content,
         rows: [
           { label: "发生时间", value: localDateTime(activity.occurredAt) },
@@ -113,7 +113,7 @@ function resolveSource(input: {
     const proposal = input.proposals.find((item) => item.id === lineage.entityId);
     if (proposal) {
       return {
-        eyebrow: "SOURCE · PROPOSAL",
+        eyebrow: "来源 · 建议",
         title: proposal.quote,
         description: proposal.consequence,
         rows: [
@@ -131,7 +131,7 @@ function resolveSource(input: {
     const fact = input.memoryFacts.find((item) => item.id === lineage.entityId);
     if (fact) {
       return {
-        eyebrow: "SOURCE · MEMORY",
+        eyebrow: "来源 · 记忆",
         title: fact.content,
         rows: [
           { label: "来源", value: fact.source === "told" ? "你明确告诉我的" : "AI 推测 · 未确认" },
@@ -147,7 +147,7 @@ function resolveSource(input: {
     const digest = input.digests.find((item) => item.date === lineage.entityId);
     if (digest) {
       return {
-        eyebrow: "SOURCE · DAILY DIGEST",
+        eyebrow: "来源 · 每日整理",
         title: `每日整理 · ${digest.date}`,
         description: digest.summary,
         rows: [
@@ -160,13 +160,13 @@ function resolveSource(input: {
   }
 
   return {
-    eyebrow: "SOURCE · UNAVAILABLE",
+    eyebrow: "来源不可用",
     title: "原记录当前不可用",
     description: `${lineage.label}。它可能已删除、取消、过期，或当前数据源未连接。`,
     rows: [
       { label: "来源类型", value: lineage.entityType },
       { label: "来源标识", value: lineage.entityId },
-      { label: "血缘状态", value: "来源缺失；当前对象仍保留，但不能假装依据完整" }
+      { label: "来源状态", value: "暂时找不到原记录" }
     ],
     missing: true
   };

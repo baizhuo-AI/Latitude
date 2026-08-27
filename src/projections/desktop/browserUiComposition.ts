@@ -192,7 +192,7 @@ export function useBrowserUiComposition(
           draft.actor === "agent" ? Number(draft.baseRevision) : current.revision,
         actor: draft.actor === "agent" ? "model" : "user",
         authorization: draft.actor === "agent" ? "preauthorized" : "direct_user",
-        reason: draft.reason.trim() || "调整桌面组件",
+        reason: draft.reason.trim() || "调整桌面",
         ...(draft.sourceRunId ? { sourceRunId: draft.sourceRunId } : {}),
         operations,
         createdAt,

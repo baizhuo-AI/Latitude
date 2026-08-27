@@ -199,14 +199,14 @@ export function AnchorsCardView({
                         className="dim-meta"
                         style={{ marginLeft: 6, color: "var(--dim-olive)" }}
                       >
-                        · 秘书排的
+                        · 建议
                       </span>
                     )}
                   </span>
                 )}
                 {done && (
-                  <div className="dim-complete-celebration" aria-label="Complete，已完成">
-                    <span className="dim-complete-seal">COMPLETE</span>
+                  <div className="dim-complete-celebration" aria-label="已完成">
+                    <span className="dim-complete-seal">完成</span>
                     <span className="dim-complete-treats" aria-hidden="true">
                       ✿ <i /> ✦
                     </span>

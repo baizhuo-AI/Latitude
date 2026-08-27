@@ -162,6 +162,8 @@ export interface DimensionPresetAppProps {
   onOpenSettings?: () => void;
   onOpenReview?: () => void;
   onAdjustDesktop?: () => void;
+  /** User-owned card visibility commits through the host composition boundary. */
+  onCardVisibilityChange?: (cardId: string, visible: boolean) => void;
   /** 点秘书立绘的出口（聊聊 / 看看有什么要定 / 回顾）。 */
   onSecretaryInteract?: (intent: SecretaryIntent) => void;
   /** Browser product can detach her from the navigation rail without changing art. */
@@ -208,6 +210,7 @@ export function DimensionPresetApp({
   onOpenSettings,
   onOpenReview,
   onAdjustDesktop,
+  onCardVisibilityChange,
   onSecretaryInteract,
   secretaryPresentation = "rail",
   secretaryNotice,
@@ -726,6 +729,7 @@ export function DimensionPresetApp({
                 : undefined}
               onOpenReview={onOpenReview}
               onAdjustDesktop={onAdjustDesktop}
+              onCardVisibilityChange={onCardVisibilityChange}
               railMode="none"
               focusTag={focusThread}
               onExitFocus={() => setFocusThreadId(null)}

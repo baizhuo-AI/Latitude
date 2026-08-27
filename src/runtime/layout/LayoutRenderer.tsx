@@ -37,6 +37,8 @@ export interface LayoutRendererProps {
    * Tauri/legacy callers omit it and retain their existing handler behavior.
    */
   composition?: LayoutCompositionSurface;
+  /** 从当前桌面移走一张卡；只改变桌面组成，不删除绑定的数据。 */
+  onCardRemove?: (cardId: string) => void;
 }
 
 function isNativeCardKind(value: string): value is NativeCardKind {
@@ -219,6 +221,7 @@ export function LayoutRenderer({
   bindings,
   handlers = {},
   composition,
+  onCardRemove,
 }: LayoutRendererProps) {
   const { issues } = validateLayoutDocument(document);
   // 便签可以拖散在桌面上：偏移只写在表现层（localStorage），骨架与数据不动。
@@ -279,11 +282,12 @@ export function LayoutRenderer({
                 className={`dim-drag${
                   drag.draggingId === definition.id ? " is-dragging" : ""
                 }`}
-                style={
-                  offset.x || offset.y
+                style={{
+                  ...(offset.x || offset.y
                     ? { translate: `${offset.x}px ${offset.y}px` }
-                    : undefined
-                }
+                    : {}),
+                  zIndex: drag.zIndexFor(definition.id)
+                }}
                 {...dragBinding}
                 data-card-editable={canEdit ? "true" : undefined}
                 role={canEdit ? "group" : undefined}
@@ -320,6 +324,18 @@ export function LayoutRenderer({
                   cardHandlers.onCardEdit(editRequest);
                 }}
               >
+                {onCardRemove && (
+                  <button
+                    type="button"
+                    className="dim-card-remove"
+                    data-no-drag
+                    aria-label={`从桌面移除：${presentationTitle(definition)}`}
+                    title="从桌面移除"
+                    onClick={() => onCardRemove(definition.id)}
+                  >
+                    ×
+                  </button>
+                )}
                 {renderCard(definition, bindings, cardHandlers)}
               </div>
             </div>
@@ -328,4 +344,10 @@ export function LayoutRenderer({
       </div>
     </div>
   );
+}
+
+function presentationTitle(
+  definition: LayoutCardDefinition<string, CardPresentation>
+): string {
+  return definition.presentation?.title?.trim() || definition.id;
 }

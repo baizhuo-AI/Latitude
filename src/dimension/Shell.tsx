@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SecretaryPortrait } from "./SecretaryPortrait";
 import type {
   RelationMetric,
   Secretary,
-  SecretaryIntent,
-  SecretaryState
+  SecretaryIntent
 } from "./types";
 
 /* ---------- 桌面级轻反馈 ---------- */
@@ -109,80 +108,12 @@ export function AppHeader({
 
 /* ---------- B 秘书栏 ---------- */
 
-const RELATION_TONE: Record<RelationMetric["tone"], string> = {
-  olive: "var(--dim-olive)",
-  blue: "var(--dim-teal)",
-  rust: "var(--dim-rust)"
-};
-
-const EMPTY_RELATION_METRICS: readonly RelationMetric[] = [
-  { label: "熟悉", value: 0, tone: "olive", stage: "尚未形成" },
-  { label: "默契", value: 0, tone: "blue", stage: "尚未形成" },
-  { label: "权能", value: 0, tone: "rust", stage: "未授权" }
-];
-
-/**
- * 阶段词是三条独立语义，不合成一个「关系分」。
- * 权能的四档与用户显式授权的执行梯子保持一致。
- */
-function relationStage(metric: RelationMetric): string {
-  if (metric.stage?.trim()) return metric.stage.trim();
-  const value = Math.max(0, Math.min(100, metric.value));
-  if (metric.label === "熟悉") {
-    return value < 34 ? "初见" : value < 67 ? "看见模式" : "懂处境";
-  }
-  if (metric.label === "默契") {
-    return value < 34 ? "磨合" : value < 67 ? "渐合" : "合拍";
-  }
-  return value < 25
-    ? "只建议"
-    : value < 50
-      ? "代我准备"
-      : value < 75
-        ? "确认后调度"
-        : "白名单自动";
-}
-
-interface PetReaction {
-  emote: string;
-  line: string;
-}
-
-/**
- * 小桌宠的反应仍然服从秘书当前状态：在岗时陪伴与整理，在想时琢磨与记录，
- * 有事说时递交与提醒。用户可以主动换表情，但不会因此伪造任务进度。
- */
-const PET_REACTIONS: Record<SecretaryState, readonly PetReaction[]> = {
-  ready: [
-    { emote: "◕‿◕", line: "我在。今天想先收哪一小块？" },
-    { emote: "(｡•̀ᴗ-)✧", line: "你说，我把重要的先接住。" },
-    { emote: "☕", line: "不用一下做完，我们先往前挪一小步。" }
-  ],
-  thinking: [
-    { emote: "…?", line: "我还在想，先陪你等一会儿。" },
-    { emote: "( •́ ᴗ •̀ )", line: "这团线索还没排好，我不会拿半成品糊弄你。" },
-    { emote: "✦", line: "有结果我会直接告诉你。" }
-  ],
-  presenting: [
-    { emote: "✦", line: "桌上有一张纸，等你看看。" },
-    { emote: "(｡•̀ᴗ-)✧", line: "要不要先从最关键的一处看？" },
-    { emote: "◡‿◡", line: "我在这儿，决定权还在你手里。" }
-  ]
-};
-
-/**
- * 点立绘的反应：她注意到你了。
- *
- * 反应语义保持诚实 —— 气泡里的话和动作都来自她当前的真实状态（在岗 / 在想 /
- * 有事说）。「换个表情」只轮换同一状态里的本地反应，不冒充外部动作；聊聊与
- * 要我定的仍然是两个真实出口。
- */
 export interface SecretaryRailProps {
   secretary: Secretary;
   /** Durable scheduler / reality-loop delivery shown without changing her art. */
   notice?: string | null;
   onReview?: () => void;
-  /** 查看 typed 依据来源；纠正需要独立 Domain 写回，不能复用周回顾。 */
+  /** 保留兼容出口；依据不再常驻显示在秘书栏。 */
   onRelationInspect?: (metric: RelationMetric) => void;
   onInteract?: (intent: SecretaryIntent) => void;
   /** 设置是整体界面的工具入口，固定在秘书栏左下角。 */
@@ -204,8 +135,6 @@ export interface SecretaryRailProps {
 export function SecretaryRail({
   secretary,
   notice,
-  onReview,
-  onRelationInspect,
   onInteract,
   onSettings,
   collapsed = false,
@@ -214,85 +143,21 @@ export function SecretaryRail({
   onVisibilityChange,
   actionAvailability
 }: SecretaryRailProps) {
-  const [noticed, setNoticed] = useState(false);
-  const [reactionStep, setReactionStep] = useState(0);
-  const noticeTimer = useRef<number | undefined>(undefined);
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  const portraitButtonRef = useRef<HTMLButtonElement>(null);
-  const bubbleId = useId();
-
-  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
-
-  useEffect(() => {
-    window.clearTimeout(noticeTimer.current);
-    if (bubbleRef.current?.contains(document.activeElement)) {
-      // 新任务状态会直接刷新气泡内容；键盘用户正在操作时保留气泡和焦点。
-      setReactionStep(0);
-      scheduleNoticeDismiss();
-      return;
-    }
-    setNoticed(false);
-    setReactionStep(0);
-  }, [secretary.state]);
-
-  const reactions = PET_REACTIONS[secretary.state];
-  const reaction = reactions[reactionStep % reactions.length];
   const chatEnabled = actionAvailability?.chat ?? Boolean(onInteract);
-  const reviewEnabled = actionAvailability?.review ?? Boolean(onReview);
   const outcomeEnabled = actionAvailability?.outcome ?? Boolean(onInteract);
-  const relationMetrics = secretary.metrics.length > 0
-    ? secretary.metrics
-    : EMPTY_RELATION_METRICS;
-
-  function dismissNotice(restoreFocus = false) {
-    window.clearTimeout(noticeTimer.current);
-    if (restoreFocus) portraitButtonRef.current?.focus();
-    setNoticed(false);
-  }
-
-  function scheduleNoticeDismiss() {
-    window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => {
-      // 键盘用户正在气泡里选择时不拆掉 focused node；离开后再开始一轮空闲计时。
-      if (bubbleRef.current?.contains(document.activeElement)) {
-        scheduleNoticeDismiss();
-        return;
-      }
-      setNoticed(false);
-    }, 7000);
-  }
-
-  function poke() {
-    window.clearTimeout(noticeTimer.current);
-    if (noticed) {
-      setNoticed(false);
-      setReactionStep((step) => (step + 1) % reactions.length);
-      return;
-    }
-    setNoticed(true);
-    scheduleNoticeDismiss();
-  }
-
-  function changeExpression() {
-    setReactionStep((step) => (step + 1) % reactions.length);
-    scheduleNoticeDismiss();
-  }
-
-  function interact(intent: SecretaryIntent) {
-    if (intent === "chat" && !chatEnabled) return;
-    if (intent === "decide" && !outcomeEnabled) return;
-    dismissNotice(true);
-    onInteract?.(intent);
-  }
-
-  function review() {
-    if (!reviewEnabled) return;
-    dismissNotice();
-    onReview?.();
-  }
-
-  // 业务动作只由真实任务状态决定；桌宠轮换的是表情与陪伴话，不伪造进度。
-  const shownSecretary = secretary;
+  const primaryIntent: SecretaryIntent =
+    (Boolean(notice) && outcomeEnabled) || (!chatEnabled && outcomeEnabled)
+      ? "decide"
+      : "chat";
+  const primaryEnabled = primaryIntent === "decide" ? outcomeEnabled : chatEnabled;
+  const primaryLabel = primaryIntent === "decide" ? "查看" : "打开对话";
+  const shortLine = notice ?? (
+    secretary.state === "thinking"
+      ? "稍等…"
+      : secretary.state === "presenting"
+        ? "有件事需要你看看。"
+        : "今天想先做什么？"
+  );
 
   if (visible === false) {
     return (
@@ -317,7 +182,6 @@ export function SecretaryRail({
     return (
       <aside className="dim-rail dim-rail--collapsed" aria-label="秘书栏（已收起）">
         <button
-          ref={portraitButtonRef}
           type="button"
           className="dim-rail-expand"
           onClick={onToggleCollapse}
@@ -353,15 +217,14 @@ export function SecretaryRail({
         overflow: "hidden"
       }}
     >
-      <div className="dim-rail-body">
+      <div className="dim-rail-body dim-rail-body--simple">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <p className="dim-eyebrow">{secretary.eyebrow}</p>
+          <p className="dim-eyebrow">秘书</p>
           {onToggleCollapse && (
             <button
               type="button"
               className="dim-btn dim-btn--quiet dim-rail-collapse"
               onClick={() => {
-                dismissNotice();
                 onToggleCollapse?.();
               }}
               aria-label="收起秘书栏"
@@ -375,65 +238,18 @@ export function SecretaryRail({
         <div className="dim-pet-stage" style={{ marginTop: 10 }}>
           <button
             type="button"
-            className={`dim-portrait-btn${noticed ? " is-reacting" : ""}`}
-            onClick={poke}
-            aria-label="跟她说句话"
-            aria-expanded={noticed}
-            aria-controls={bubbleId}
-            title="点一点，看她现在在做什么"
+            className="dim-portrait-btn"
+            onClick={() => primaryEnabled && onInteract?.(primaryIntent)}
+            disabled={!primaryEnabled}
+            aria-label={primaryLabel}
+            title={primaryLabel}
           >
-            <SecretaryPortrait secretary={shownSecretary} />
-            {noticed && (
-              <span
-                className="dim-pet-emote"
-                key={`${secretary.state}-${reactionStep}`}
-                aria-hidden="true"
-              >
-                {reaction.emote}
-              </span>
-            )}
+            <SecretaryPortrait secretary={secretary} />
           </button>
-
-          {noticed && (
-            <div className="dim-secretary-bubble" id={bubbleId} ref={bubbleRef}>
-              <p className="dim-secretary-bubble-line" role="status">
-                <span className="dim-secretary-bubble-emote" aria-hidden="true">
-                  {reaction.emote}
-                </span>
-                {reaction.line}
-              </p>
-              <div className="dim-secretary-bubble-actions">
-                {onInteract && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => interact("chat")}
-                      disabled={!chatEnabled}
-                      aria-disabled={!chatEnabled}
-                      title={chatEnabled ? undefined : "秘书对话已在组件设置中关闭"}
-                    >
-                      聊聊
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => interact("decide")}
-                      disabled={!outcomeEnabled}
-                      aria-disabled={!outcomeEnabled}
-                      title={outcomeEnabled ? undefined : "结果回收已在组件设置中关闭"}
-                    >
-                      有什么要我定的？
-                    </button>
-                  </>
-                )}
-                <button type="button" className="dim-pet-expression-btn" onClick={changeExpression}>
-                  换个表情
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         <p
+          role={notice ? "status" : undefined}
           style={{
             margin: "14px 0 0",
             fontSize: 13,
@@ -442,89 +258,11 @@ export function SecretaryRail({
             letterSpacing: "-0.01em"
           }}
         >
-          {secretary.headline}
+          {shortLine}
         </p>
-        <p
-          role={notice ? "status" : undefined}
-          style={{
-            margin: "8px 0 0",
-            fontSize: 11,
-            lineHeight: 1.7,
-            color: "var(--dim-ink-soft)"
-          }}
-        >
-          {notice ?? secretary.note}
-        </p>
-
-        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>{secretary.stageLabel}</span>
-          {secretary.stageNote && (
-            <span className="dim-relation-note">{secretary.stageNote}</span>
-          )}
-        </div>
-
-        <div className="dim-relation-list" aria-label="关系进度">
-          {relationMetrics.map((metric) => {
-            const value = Math.max(0, Math.min(100, metric.value));
-            const stage = relationStage(metric);
-            return (
-              <div className="dim-relation-row" key={metric.label}>
-                <div className="dim-relation-labels">
-                  <span>{metric.label}</span>
-                  <span>{stage}</span>
-                </div>
-                <div
-                  className="dim-relation-meter"
-                  role="progressbar"
-                  aria-label={`${metric.label} · ${stage}`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={value}
-                >
-                  <i
-                    aria-hidden="true"
-                    style={{ width: `${value}%`, background: RELATION_TONE[metric.tone] }}
-                  />
-                </div>
-                {metric.basis && (
-                  <details className="dim-relation-details">
-                    <summary aria-label={`查看${metric.label}依据`}>查看依据</summary>
-                    <p className="dim-relation-basis">
-                      {metric.basis}
-                      {metric.epistemicAuthority === "imported_unverified" && (
-                        <span className="dim-relation-authority"> · 脱敏导入，待核验</span>
-                      )}
-                    </p>
-                    {Boolean(onRelationInspect && metric.lineage?.length) && (
-                      <button
-                        type="button"
-                        className="dim-relation-source"
-                        onClick={() => onRelationInspect?.(metric)}
-                        aria-label={`查看${metric.label}来源详情`}
-                      >
-                        查看来源详情
-                      </button>
-                    )}
-                  </details>
-                )}
-              </div>
-            );
-          })}
-        </div>
       </div>
 
       <div className="dim-rail-footer">
-        {/* 这个按钮就是「30 天」和「我们」的入口 —— 关系本来就是随时间长出来的 */}
-        <button
-          type="button"
-          className="dim-btn dim-rail-footer-button"
-          onClick={review}
-          disabled={!reviewEnabled}
-          aria-disabled={!reviewEnabled}
-          title={reviewEnabled ? undefined : "真实周回顾已在组件设置中关闭"}
-        >
-          看看我们是怎么熟起来的
-        </button>
         {onSettings && (
           <button
             type="button"
@@ -546,17 +284,18 @@ export function DeskHeader({
   breadcrumb,
   title,
   subtitle,
-  onWhy,
+  onAdd,
   onAdjust
 }: {
   breadcrumb: string;
   title: string;
   subtitle: string;
-  onWhy?: () => void;
+  onAdd?: () => void;
   onAdjust?: () => void;
 }) {
   return (
     <div
+      className="dim-desk-header"
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -592,13 +331,23 @@ export function DeskHeader({
         </p>
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-        <button type="button" className="dim-btn dim-btn--quiet" onClick={onWhy}>
-          为什么这样排?
-        </button>
-        <button type="button" className="dim-btn" onClick={onAdjust}>
-          调整桌面
-        </button>
+      <div className="dim-desk-actions">
+        {onAdd && (
+          <button type="button" className="dim-btn" onClick={onAdd}>
+            ＋ 添加卡片
+          </button>
+        )}
+        {onAdjust && (
+          <button
+            type="button"
+            className="dim-btn dim-btn--quiet dim-desk-more"
+            onClick={onAdjust}
+            aria-label="调整桌面"
+            title="桌面设置"
+          >
+            •••
+          </button>
+        )}
       </div>
     </div>
   );
@@ -640,7 +389,7 @@ export function CommandBar({
       <input
         name="dim-say"
         className="dim-input"
-        placeholder="说点什么，或者让秘书改动这张桌面……"
+        placeholder="说点什么…"
         aria-label="跟秘书说话"
         disabled={disabled}
         title={disabled ? "发送动作已在组件设置中关闭" : undefined}

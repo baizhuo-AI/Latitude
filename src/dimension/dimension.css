@@ -42,6 +42,7 @@
   --dim-rust: #c35e4a;
   --dim-amber: #d9a441;
   --dim-hand: #9a6b3c; /* 手写批注 */
+  --dim-grid-unit: clamp(24px, 2.4vw, 32px);
   --dim-relation-list-gap: 10px;
   --dim-relation-list-margin: 12px;
   --dim-relation-list-padding: 10px 9px;
@@ -325,13 +326,25 @@
  */
 .dim-grid-wrap {
   container-type: inline-size;
+  width: 100%;
 }
 
 .dim-grid {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px;
+  gap: clamp(10px, 1.2vw, 18px);
   align-items: start;
+}
+
+/* 槽位只决定初始排布，不形成透明墙；真正的纸片仍可在整张桌面上取放。 */
+.dim-grid > [data-layout-card-id] {
+  min-width: 0;
+  pointer-events: none;
+}
+
+.dim-grid .dim-drag {
+  pointer-events: auto;
 }
 
 .dim-grid > [data-span="4"] { grid-column: span 4; }
@@ -341,8 +354,8 @@
 .dim-grid > [data-span="8"] { grid-column: span 8; }
 .dim-grid > [data-span="12"] { grid-column: span 12; }
 
-/* 1120px 应用窗扣除秘书栏后仍保留种子骨架；更窄的工具窗才开始降级。 */
-@container (max-width: 760px) {
+/* 宽度不够时先变成双列，再在窄屏落成单列。 */
+@container (max-width: 900px) {
   .dim-grid > [data-span="4"] { grid-column: span 6; }
   .dim-grid > [data-span="5"] { grid-column: span 12; }
   .dim-grid > [data-span="7"] { grid-column: span 12; }
@@ -382,8 +395,8 @@
   background-image:
     radial-gradient(900px 420px at 18% -8%, rgb(255 255 244 / 54%), transparent 68%),
     radial-gradient(640px 360px at 88% 105%, rgb(89 111 77 / 11%), transparent 72%),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgb(72 88 61 / 5%) 31px 32px),
-    repeating-linear-gradient(90deg, transparent 0 31px, rgb(72 88 61 / 5%) 31px 32px),
+    repeating-linear-gradient(0deg, transparent 0 calc(var(--dim-grid-unit) - 1px), rgb(72 88 61 / 5%) calc(var(--dim-grid-unit) - 1px) var(--dim-grid-unit)),
+    repeating-linear-gradient(90deg, transparent 0 calc(var(--dim-grid-unit) - 1px), rgb(72 88 61 / 5%) calc(var(--dim-grid-unit) - 1px) var(--dim-grid-unit)),
     linear-gradient(135deg, #e9eadf 0%, #dfe4d7 56%, #d6ddcf 100%);
 }
 
@@ -398,7 +411,6 @@
 
 .dim-layer--desk::before {
   inset: 12px;
-  border: 1px solid rgb(70 85 60 / 9%);
   background:
     linear-gradient(90deg, rgb(70 85 60 / 26%) 0 32px, transparent 32px) 18px 18px / 78px 1px no-repeat,
     linear-gradient(180deg, rgb(70 85 60 / 26%) 0 32px, transparent 32px) 18px 18px / 1px 78px no-repeat,
@@ -416,6 +428,86 @@
 .dim-layer--desk > * {
   position: relative;
   z-index: 1;
+}
+
+.dim-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+.dim-desk-scroll {
+  overflow: auto;
+  padding: clamp(16px, 2.2vw, 30px);
+}
+
+.dim-desk-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+@media (width <= 700px) {
+  .dim-desk-header {
+    flex-direction: column;
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .dim-desk-actions {
+    align-self: stretch;
+    justify-content: space-between;
+  }
+
+  .dim-card-picker {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.dim-desk-more {
+  min-width: 32px;
+  padding-inline: 8px;
+  letter-spacing: 0.08em;
+}
+
+.dim-card-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -6px 0 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--dim-line-soft);
+}
+
+.dim-card-picker strong {
+  flex-shrink: 0;
+  font-size: 11.5px;
+}
+
+.dim-card-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dim-card-picker button {
+  padding: 5px 9px;
+  color: var(--dim-olive-deep);
+  font: inherit;
+  font-size: 11px;
+  background: rgb(253 250 242 / 65%);
+  border: 0;
+  cursor: pointer;
+}
+
+.dim-card-picker button:hover,
+.dim-card-picker button:focus-visible {
+  background: var(--dim-paper);
+  outline: 1px solid var(--dim-olive);
 }
 
 .dim-stage--open .dim-layer--desk {
@@ -1159,6 +1251,48 @@
   position: relative;
   height: 100%;
   will-change: translate;
+}
+
+.dim-card-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 12;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--dim-ink-soft);
+  font: 16px/1 var(--font-sans);
+  background: var(--dim-paper);
+  border: 1px solid var(--dim-line);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgb(55 54 45 / 12%);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.82);
+  transition: opacity 120ms ease, transform 120ms ease, color 120ms ease;
+}
+
+.dim-drag:hover .dim-card-remove,
+.dim-card-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.dim-card-remove:hover,
+.dim-card-remove:focus-visible {
+  color: var(--dim-rust);
+  outline: 2px solid var(--dim-paper);
+  outline-offset: 1px;
+}
+
+@media (hover: none) {
+  .dim-card-remove {
+    opacity: 0.78;
+    transform: scale(1);
+  }
 }
 
 /* 拎起来：放大一点、影子拉长、压到相邻纸之上 */

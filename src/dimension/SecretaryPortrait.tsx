@@ -15,10 +15,10 @@ import type {
   SecretaryState
 } from "./types";
 
-const STATE_EN: Record<SecretaryState, string> = {
-  ready: "READY",
-  thinking: "THINKING",
-  presenting: "PRESENTING"
+const STATE_LABEL: Record<SecretaryState, string> = {
+  ready: "在",
+  thinking: "处理中",
+  presenting: "找你"
 };
 
 const PORTRAIT_BY_GESTURE: Record<SecretaryGesture, string> = {
@@ -132,7 +132,7 @@ export function SecretaryPortrait({ secretary }: { secretary: Secretary }) {
       )}
 
       <span className="dim-badge">
-        {STATE_EN[secretary.state]} / {secretary.stateCn}
+        {STATE_LABEL[secretary.state]}
       </span>
     </div>
   );

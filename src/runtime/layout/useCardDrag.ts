@@ -8,7 +8,9 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent }
  * - 从按钮 / 输入框 / 链接等交互元素上按下不启动拖拽（点字改名、裁决照常）；
  * - 拖动超过 4px 才算拿起，放下后那次点击被吞掉，不会误触卡片动作；
  * - Shift + 双击空白处把纸片放回槽位；普通双击留给卡片编辑；
- * - 偏移缓存在 localStorage——散铺是用户的长期桌面状态，刷新不丢。
+ * - 偏移缓存在 localStorage——散铺是用户的长期桌面状态，刷新不丢；
+ * - 不设置卡片之间的碰撞边界。纸片可以跨过默认槽位、相互覆盖，像真实桌面；
+ * - 拿起一张纸时把它提到最上层，避免被别的纸片挡住。
  */
 
 export interface DragOffset {
@@ -26,10 +28,6 @@ export interface DragBinding {
 }
 
 const DRAG_THRESHOLD_PX = 4;
-const MAX_X = 320;
-const MAX_Y = 220;
-
-const clamp = (value: number, max: number) => Math.max(-max, Math.min(max, value));
 
 /** 交互元素上按下不拖拽；元素可用 data-no-drag 显式退出 */
 function fromInteractive(target: EventTarget | null): boolean {
@@ -77,6 +75,8 @@ export function useCardDrag(storageKey: string) {
     readOffsets(storageKey)
   );
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [zOrder, setZOrder] = useState<Record<string, number>>({});
+  const topZ = useRef(10);
   const session = useRef<DragSession | null>(null);
   const suppressClick = useRef(false);
 
@@ -84,6 +84,8 @@ export function useCardDrag(storageKey: string) {
     (id: string) => (event: ReactPointerEvent<HTMLElement>) => {
       if (event.button !== 0 || event.pointerType === "touch") return;
       if (fromInteractive(event.target)) return;
+      topZ.current += 1;
+      setZOrder((current) => ({ ...current, [id]: topZ.current }));
       const base = offsets[id] ?? { x: 0, y: 0 };
       session.current = {
         id,
@@ -117,8 +119,8 @@ export function useCardDrag(storageKey: string) {
       setOffsets((prev) => ({
         ...prev,
         [id]: {
-          x: clamp(active.baseX + dx, MAX_X),
-          y: clamp(active.baseY + dy, MAX_Y)
+          x: active.baseX + dx,
+          y: active.baseY + dy
         }
       }));
     },
@@ -220,5 +222,10 @@ export function useCardDrag(storageKey: string) {
     [offsets]
   );
 
-  return { bind, offsetFor, draggingId };
+  const zIndexFor = useCallback(
+    (id: string): number => zOrder[id] ?? 1,
+    [zOrder]
+  );
+
+  return { bind, offsetFor, zIndexFor, draggingId };
 }

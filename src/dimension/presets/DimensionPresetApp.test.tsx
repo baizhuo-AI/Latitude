@@ -223,6 +223,46 @@ describe("dimension deck（桌面在下 · 抬头看线索 · 再抬头看星）
     window.localStorage.clear();
   });
 
+  it("桌面卡片可以跨过旧边界并在拿起时自动置顶", () => {
+    window.localStorage.clear();
+    const { container } = render(
+      <DimensionPresetApp initialPreset="paper" syncUrl={false} />
+    );
+    const first = container.querySelector(
+      "[data-layout-card-id='seed-flex'] .dim-drag"
+    ) as HTMLElement;
+    const second = container.querySelector(
+      "[data-layout-card-id='seed-feed'] .dim-drag"
+    ) as HTMLElement;
+
+    fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(first, { pointerId: 1, clientX: 590, clientY: 470 });
+    fireEvent.pointerUp(first, { pointerId: 1, clientX: 590, clientY: 470 });
+
+    expect(first).toHaveStyle({ translate: "580px 460px" });
+    expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex));
+    expect(JSON.parse(
+      window.localStorage.getItem("dim-desk-offsets-dimension-seed-desktop") ?? "{}"
+    )["seed-flex"]).toEqual({ x: 580, y: 460 });
+    window.localStorage.clear();
+  });
+
+  it("卡片可以移除，并从添加卡片入口恢复", () => {
+    const { container } = render(
+      <DimensionPresetApp initialPreset="paper" syncUrl={false} />
+    );
+    expect(container.querySelectorAll("[data-layout-card-id]")).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole("button", { name: "从桌面移除：核心记忆点" }));
+    expect(container.querySelectorAll("[data-layout-card-id]")).toHaveLength(4);
+    expect(screen.getByRole("status")).toHaveTextContent("已移除");
+
+    fireEvent.click(screen.getByRole("button", { name: "＋ 添加卡片" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 核心记忆点" }));
+    expect(container.querySelectorAll("[data-layout-card-id]")).toHaveLength(5);
+    expect(screen.getByRole("status")).toHaveTextContent("已添加");
+  });
+
   it("线索纸可以在板上拖动重排，墨线跟着走，钉法记进本地", () => {
     window.localStorage.clear();
     const { container } = render(
@@ -376,7 +416,7 @@ describe("dimension deck（桌面在下 · 抬头看线索 · 再抬头看星）
     expect(screen.getByText("认知评价")).toBeInTheDocument();
   });
 
-  it("点秘书立绘会回应，并给出真实出口", () => {
+  it("点秘书立绘直接打开对话", () => {
     const intents: string[] = [];
     render(
       <DimensionPresetApp
@@ -386,9 +426,7 @@ describe("dimension deck（桌面在下 · 抬头看线索 · 再抬头看星）
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "跟她说句话" }));
-    expect(screen.getByRole("button", { name: "聊聊" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "聊聊" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
     expect(intents).toEqual(["chat"]);
   });
 
@@ -402,7 +440,7 @@ describe("dimension deck（桌面在下 · 抬头看线索 · 再抬头看星）
     expect(
       screen.queryByRole("complementary", { name: "秘书栏（已收起）" })
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "跟她说句话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开对话" })).toBeInTheDocument();
   });
 
   it("设置常驻整体左下角，秘书栏收起后仍可用", () => {

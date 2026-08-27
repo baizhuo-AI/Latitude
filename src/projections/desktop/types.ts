@@ -114,13 +114,13 @@ export interface DesktopProjection {
 export function runtimeStatusLabel(status: RuntimeStatus): string {
   switch (status) {
     case "starting":
-      return "本地内核 · 启动中";
+      return "本地服务 · 启动中";
     case "ready":
-      return "本地内核 · 已连接";
+      return "本地服务 · 已连接";
     case "unavailable":
-      return "本地内核 · 未连接";
+      return "本地服务 · 未连接";
     case "unknown":
-      return "本地内核 · 状态未知";
+      return "本地服务 · 状态未知";
     case "demo":
       return "演示模式";
   }

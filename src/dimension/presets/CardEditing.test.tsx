@@ -44,7 +44,7 @@ describe("dimension card editing", () => {
     );
   });
 
-  it("演示桌面的 Todo 可改名，完成后保留 COMPLETE 印章", () => {
+  it("演示桌面的 Todo 可改名，完成后保留完成印章", () => {
     render(<DimensionPresetApp initialPreset="paper" syncUrl={false} />);
 
     fireEvent.click(screen.getByRole("button", { name: "编辑：给客户 1 准备日报" }));
@@ -54,7 +54,7 @@ describe("dimension card editing", () => {
     expect(screen.getAllByText("把 AGI 研究日报发出去").length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole("button", { name: "完成：把 AGI 研究日报发出去" }));
-    expect(screen.getByText("COMPLETE")).toBeInTheDocument();
+    expect(document.querySelector(".dim-complete-seal")).toHaveTextContent("完成");
     expect(screen.queryByRole("button", { name: "完成：把 AGI 研究日报发出去" })).not.toBeInTheDocument();
   });
 

@@ -354,7 +354,7 @@ function ThreadPaper({
       <Pin tone="gold" />
       <header className="clue-paper-meta">
         <span>
-          {semanticMode === "goal" ? "GOAL" : semanticMode === "clue" ? "CLUE" : "TAG"}{" "}
+          {semanticMode === "goal" ? "目标" : semanticMode === "clue" ? "线索" : "标签"}{" "}
           <strong>{String(index + 1).padStart(2, "0")}</strong>
         </span>
         <span>{thread.done > 0 ? `${thread.pending} 在走 · ${thread.done} 收口` : `${thread.pending} 件在走`}</span>
@@ -647,7 +647,7 @@ function ThreadDrawer({
     >
       <header>
         <p className="clue-kicker">
-          {semanticMode === "goal" ? "MEDIUM GOAL" : semanticMode === "clue" ? "CLUE" : "TAG GROUP"} · DETAIL
+          {semanticMode === "goal" ? "中期目标" : semanticMode === "clue" ? "线索" : "标签组"} · 详情
         </p>
         <h2>{thread.title}</h2>
         <p className="clue-drawer-sub">
@@ -690,7 +690,7 @@ function ThreadDrawer({
       </ol>
       <p className="clue-drawer-note">
         {semanticMode === "goal"
-          ? `这一簇只收 Domain 明确归属于「${thread.title}」的目标、行动、结果与资料；不从关键词猜关系。`
+          ? `这里只收明确属于「${thread.title}」的目标、行动、结果与资料。`
           : <>这一簇只收标记了「{thread.title}」的真实记录；</>}
         {semanticMode === "clue"
           ? "图谱接入后，这里会长出更深的关系。"
@@ -901,10 +901,10 @@ export function ClueBoardPreset({
         <div>
           <p className="clue-kicker">
             {typedGoalThemes
-              ? "LATITUDE / MEDIUM HORIZON"
+              ? "中期目标"
               : projection.runtimeStatus === "demo"
-                ? "LATITUDE / EVIDENCE ROOM"
-                : "LATITUDE / TAG GROUPS"}
+                ? "今日线索"
+                : "今日标签"}
           </p>
           <h1>{typedGoalThemes ? "中期目标线索板" : projection.runtimeStatus === "demo" ? "今日线索板" : "今日标签分组"}</h1>
         </div>
@@ -913,7 +913,7 @@ export function ClueBoardPreset({
           aria-label={typedGoalThemes ? "中期目标投影边界" : "板面连接线图例"}
         >
           {typedGoalThemes ? (
-            <span>所有纸片可拖动 · 主题来自 Domain · 连线不改知识关系</span>
+            <span>纸片可自由拖动 · 连线只整理当前桌面</span>
           ) : (
             <span>所有纸片可拖动 · 板面连线不会写成认知事实</span>
           )}
@@ -954,7 +954,7 @@ export function ClueBoardPreset({
           >
             <Pin tone="plain" />
             <span className="clue-thesis-number">
-              {typedGoalThemes ? "HORIZON" : projection.runtimeStatus === "demo" ? "CASE" : "FOCUS"} <strong>00</strong> · {projection.runtimeStatus === "demo" ? "ACTIVE" : "RECORDED"}
+              {typedGoalThemes ? "当前方向" : projection.runtimeStatus === "demo" ? "当前主题" : "当前焦点"}
             </span>
             <strong>{projection.clueBoard?.title ?? projection.header.title}</strong>
             <span className="clue-thesis-copy">{projection.clueBoard?.subtitle ?? projection.header.subtitle}</span>
@@ -995,10 +995,10 @@ export function ClueBoardPreset({
                 ×
               </button>
               <span className="clue-line-editor-kicker">
-                {typedGoalThemes ? "HORIZON 00 → GOAL" : "CASE 00 → CLUE"}
+                {typedGoalThemes ? "当前方向 → 目标" : "当前主题 → 线索"}
               </span>
               <strong>{editingConnection.title}</strong>
-              <p>这根线只组织当前板面，不会把视觉关系写成 Domain 事实。</p>
+              <p>这根线只整理当前桌面，不会改变原始关系。</p>
               <div className="clue-line-editor-options">
                 {(Object.keys(RELATION_META) as ClueRelation[]).map((relation) => (
                   <button
@@ -1019,7 +1019,7 @@ export function ClueBoardPreset({
           {threads.length === 0 && (
             <p className="clue-blank">
               {typedGoalThemes
-                ? "Domain 里还没有明确的中期目标；系统不会拿短期目标或标签冒充线索板主题。"
+                ? "还没有明确的中期目标。"
                 : "记录还没有标出事件维度——给待办带上标签（比如「工作」「个人项目」），它们会在这里形成标签分组；认知线索要等图谱接入。"}
             </p>
           )}

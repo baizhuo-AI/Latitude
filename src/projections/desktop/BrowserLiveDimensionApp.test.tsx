@@ -217,7 +217,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     await waitFor(() => {
       expect(screen.getAllByText("验证上午写作").length).toBeGreaterThan(0);
     });
-    await user.click(screen.getByRole("button", { name: "查看来源：来自统一认知行为星图" }));
+    await user.click(screen.getByRole("button", { name: "查看来源：来自你的行动" }));
     const sourceDialog = screen.getByRole("dialog", { name: "图谱来源详情" });
     expect(sourceDialog).toHaveClass("dimension-root");
     await user.click(within(sourceDialog).getByRole("button", { name: "合上" }));
@@ -348,7 +348,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     expect(screen.getByRole("region", { name: "候选共创" })).toHaveTextContent("候选 ·");
     expect(screen.getByRole("region", { name: "候选共创" })).not.toHaveTextContent("已搁置");
     await user.click(screen.getByRole("button", {
-      name: "触碰它：把上午写作变成可持续节律",
+      name: "看看：把上午写作变成可持续节律",
     }));
     await waitFor(() => {
       expect(runtime.commandCandidate).toHaveBeenCalledWith({
@@ -357,7 +357,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         audit: expect.objectContaining({ actor: "user" }),
       });
     });
-    expect(await screen.findByText(/已触碰 · 先观察哪一种启动方式值得继续共创/))
+    expect(await screen.findByText(/已查看 · 先观察哪一种启动方式值得继续共创/))
       .toBeInTheDocument();
 
     await user.click(screen.getByRole("button", {
@@ -430,7 +430,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         audit: expect.objectContaining({ actor: "system" }),
       }, { idempotencyKey: "candidate-due:candidate:shaping:followup" });
     });
-    expect(screen.getByRole("region", { name: "候选共创" })).toHaveTextContent("塑形中");
+    expect(screen.getByRole("region", { name: "候选共创" })).toHaveTextContent("整理中");
     expect(screen.getByRole("region", { name: "候选共创" })).not.toHaveTextContent("已形成结论");
   });
 
@@ -575,8 +575,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         expect.objectContaining({ retries: 1 }),
       );
     });
-    await userEvent.click(screen.getByRole("button", { name: "跟她说句话" }));
-    await userEvent.click(screen.getByRole("button", { name: "聊聊" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开对话" }));
     expect(screen.getByText("这是刷新前已经完成并持久化的回复。")).toBeInTheDocument();
   });
 
@@ -692,10 +691,8 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
 
     await user.click(restore);
-    await user.click(await screen.findByRole("button", { name: "跟她说句话" }));
-    expect(screen.getByRole("button", { name: "聊聊" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "有什么要我定的？" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "看看我们是怎么熟起来的" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "查看" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "聊聊" })).not.toBeInTheDocument();
   });
 
   it("AI resource 对系统模块的显隐和解绑落进同一 surface，并让不可用动作明确禁用", async () => {
@@ -763,13 +760,13 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     const originalTitle = (title as HTMLInputElement).value;
     await user.clear(title);
     await user.type(title, "临时验收标题");
-    await user.click(screen.getByRole("button", { name: "保存 UiChangeSet" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
 
     await user.click(screen.getByRole("button", { name: "调整桌面" }));
     expect(screen.getByRole("textbox", { name: "schedule 标题" })).toHaveValue(
       "临时验收标题",
     );
-    await user.click(screen.getByText("变更历史与 AI 入口"));
+    await user.click(screen.getByText("变更记录"));
     await user.click(screen.getByRole("button", { name: "反转这条操作" }));
 
     await waitFor(() => {
@@ -945,7 +942,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
       value: async () => JSON.stringify(profile),
     });
     await user.upload(screen.getByLabelText("选择恢复文件"), file);
-    await screen.findByText(/已在浏览器内校验 JSON/);
+    await screen.findByText(/文件已检查/);
     await user.click(screen.getByRole("button", { name: "第一步：准备完整恢复" }));
     await waitFor(() => {
       expect(runtime.prepareDangerousData).toHaveBeenCalledWith({
@@ -1062,8 +1059,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     expect(await screen.findByText("刚刚的证据事件让这个行动提前进入结果回收。"))
       .toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "跟她说句话" }));
-    await user.click(screen.getByRole("button", { name: "有什么要我定的？" }));
+    await user.click(screen.getByRole("button", { name: "查看" }));
     expect(screen.getByRole("dialog", { name: "回收行动结果" }))
       .toHaveTextContent("事件已经触发的观察行动");
   });
@@ -1098,8 +1094,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.agent.listSchedulerOutbox).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: "跟她说句话" }));
-    await user.click(screen.getByRole("button", { name: "有什么要我定的？" }));
+    await user.click(screen.getByRole("button", { name: "查看" }));
     expect(screen.getByRole("dialog", { name: "回收行动结果" }))
       .toHaveTextContent("重启后仍待回收");
     expect(runtime.agent.acknowledgeSchedulerOutbox).not.toHaveBeenCalled();
@@ -1155,10 +1150,9 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
-    await waitFor(() => expect(screen.getAllByText("本地内核 · 未连接").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("本地服务 · 未连接").length).toBeGreaterThan(0));
     expect(screen.queryByText("演示模式")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "跟她说句话" }));
-    expect(screen.getByText("服务恢复前我不会拿演示数据冒充你的记录。")).toBeInTheDocument();
+    expect(screen.getByText("稍等…")).toBeInTheDocument();
   });
 
   it("Provider 拒绝凭证时显示 DeepSeek 鉴权失败，不把它含糊写成 API 异常", async () => {
@@ -1185,6 +1179,6 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
     expect(await screen.findByLabelText("本地服务状态"))
-      .toHaveTextContent("图谱 已连接 · Agent DeepSeek 鉴权失败");
+      .toHaveTextContent("数据 已连接 · 助手 DeepSeek 鉴权失败");
   });
 });

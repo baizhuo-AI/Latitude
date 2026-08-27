@@ -93,21 +93,24 @@ export function BrowserCompositionDialog({
       style={backdropStyle}
       role="dialog"
       aria-modal="true"
-      aria-label="调整桌面组件"
+      aria-label="桌面设置"
     >
       <section className="dim-paper" style={paperStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div>
-            <p className="dim-eyebrow">LIVING UI · COMPONENT CHANGESET</p>
-            <h2 style={{ margin: "5px 0 0", fontSize: 21 }}>调整桌面组件</h2>
+            <p className="dim-eyebrow">桌面</p>
+            <h2 style={{ margin: "5px 0 0", fontSize: 21 }}>桌面设置</h2>
             <p className="dim-body" style={{ marginTop: 7 }}>
-              五张纸、左侧秘书栏与九个系统模块仍沿用现有美术；纸卡可调整布局，固定模块只可显隐和绑定受信动作。这个控制面板始终保留为恢复入口。当前 revision {document.revision}。
+              调整卡片的名称、宽度和顺序。
             </p>
           </div>
-          <button type="button" className="dim-btn" onClick={onClose}>合上</button>
+          <button type="button" className="dim-btn" onClick={onClose}>关闭</button>
         </div>
 
-        {(() => {
+        <details>
+          <summary className="dim-eyebrow">高级设置</summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          {(() => {
           const companion = document.components.find(
             (component) => component.id === BROWSER_COMPANION_COMPONENT_ID,
           );
@@ -173,8 +176,8 @@ export function BrowserCompositionDialog({
           );
         })()}
 
-        <details open>
-          <summary className="dim-eyebrow">SYSTEM MODULES · 固定功能面</summary>
+        <details>
+          <summary className="dim-eyebrow">其他功能</summary>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
             {BROWSER_SYSTEM_COMPONENT_SPECS.map((spec) => {
               const component = document.components.find((candidate) => candidate.id === spec.id);
@@ -234,6 +237,8 @@ export function BrowserCompositionDialog({
                 </div>
               );
             })}
+          </div>
+        </details>
           </div>
         </details>
 
@@ -308,7 +313,7 @@ export function BrowserCompositionDialog({
                 </div>
                 {component && definition && definition.events.length > 0 && (
                   <details style={{ gridColumn: "1 / -1" }}>
-                    <summary className="dim-meta">动作绑定（只允许已注册命令）</summary>
+                    <summary className="dim-meta">高级动作</summary>
                     <div
                       style={{
                         display: "grid",
@@ -372,14 +377,14 @@ export function BrowserCompositionDialog({
               }
             }}
           >
-            保存 UiChangeSet
+            保存
           </button>
         </div>
 
         <details>
-          <summary className="dim-eyebrow">变更历史与 AI 入口</summary>
+          <summary className="dim-eyebrow">变更记录</summary>
           <p className="dim-body">
-            Agent 返回同一份声明式 UiChangeSet 时，会经过相同的卡片白名单和布局校验；不会执行任意 HTML 或脚本。
+            这里可以撤销最近的桌面调整。
           </p>
           {history.length === 0 ? (
             <p className="dim-meta">还没有桌面变更。</p>
@@ -447,7 +452,7 @@ function eventLabel(event: string): string {
     outcome: "回收到期结果",
     search: "Web Search",
     refresh: "刷新事实",
-    cancel: "停止 Agent",
+    cancel: "停止",
     touch: "触碰候选",
     shape: "塑形候选",
     conclude: "形成结论",
@@ -460,7 +465,7 @@ function eventLabel(event: string): string {
     restore: "完整恢复",
     delete: "可恢复清空",
     purge: "永久删除",
-    rollback: "回滚 ChangeSet",
+    rollback: "撤销变更",
     send: "发送消息",
     paper: "纸面桌面",
     clue: "线索板桌面",
@@ -479,7 +484,7 @@ function commandLabel(commandId: string): string {
     "latitude.companion.outcome": "回收到期行动结果",
     "latitude.control.search-web": "执行真实 Web Search",
     "latitude.control.refresh": "刷新事实投影",
-    "latitude.agent.cancel": "停止当前 Agent",
+    "latitude.agent.cancel": "停止当前任务",
     "latitude.candidate.touch": "触碰候选",
     "latitude.candidate.shape": "继续塑形",
     "latitude.candidate.conclude": "形成候选结论",
@@ -494,9 +499,9 @@ function commandLabel(commandId: string): string {
     "latitude.data-safety.restore": "两阶段完整恢复",
     "latitude.data-safety.delete": "两阶段可恢复清空",
     "latitude.data-safety.purge": "两阶段永久删除",
-    "latitude.data-safety.rollback": "回滚 ChangeSet",
+    "latitude.data-safety.rollback": "撤销变更",
     "latitude.data-safety.close": "合上数据与安全",
-    "latitude.agent.send": "发送 Agent 消息",
+    "latitude.agent.send": "发送消息",
     "latitude.navigation.paper": "切到纸面桌面",
     "latitude.navigation.clue": "切到线索板桌面",
     "latitude.navigation.constellation": "切到星图桌面",

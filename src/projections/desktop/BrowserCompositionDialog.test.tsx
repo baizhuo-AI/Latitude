@@ -31,8 +31,8 @@ describe("BrowserCompositionDialog V2 control plane", () => {
     );
 
     // The modal stays above the workspace, including the global secretary rail.
-    expect(screen.getByRole("dialog", { name: "调整桌面组件" })).toHaveClass("dimension-root");
-    expect(screen.getByRole("dialog", { name: "调整桌面组件" })).toHaveStyle({
+    expect(screen.getByRole("dialog", { name: "桌面设置" })).toHaveClass("dimension-root");
+    expect(screen.getByRole("dialog", { name: "桌面设置" })).toHaveStyle({
       zIndex: "100",
     });
 
@@ -55,7 +55,7 @@ describe("BrowserCompositionDialog V2 control plane", () => {
       "",
     );
     await user.click(screen.getByRole("button", { name: "下移 feed" }));
-    await user.click(screen.getByRole("button", { name: "保存 UiChangeSet" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
 
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -152,7 +152,7 @@ describe("BrowserCompositionDialog V2 control plane", () => {
       />,
     );
 
-    await user.click(screen.getByText("变更历史与 AI 入口"));
+    await user.click(screen.getByText("变更记录"));
     expect(screen.getAllByText(/曾被反转/)).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "已被反转" })).toHaveLength(2);
     expect(screen.queryByText(/重做/)).not.toBeInTheDocument();

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DimensionApp } from "./DimensionApp";
 
 describe("DimensionApp seed runtime", () => {
-  it("诚实展示演示模式，渲染五区且不外显养成裸值", () => {
+  it("诚实展示演示模式，渲染五区且不外显内部关系说明", () => {
     const { container } = render(<DimensionApp />);
 
     expect(screen.getByText("演示模式")).toBeVisible();
@@ -11,9 +11,8 @@ describe("DimensionApp seed runtime", () => {
     expect(screen.queryByText("78")).not.toBeInTheDocument();
     expect(screen.queryByText("71")).not.toBeInTheDocument();
     expect(screen.queryByText("46")).not.toBeInTheDocument();
-    expect(screen.getByText("关系 · 脱敏演示")).toBeVisible();
-    expect(screen.getByRole("progressbar", { name: "权能 · 未授权" }))
-      .toHaveAttribute("aria-valuenow", "0");
+    expect(screen.queryByText("关系 · 脱敏演示")).not.toBeInTheDocument();
+    expect(screen.queryByText(/typed|receipt/i)).not.toBeInTheDocument();
   });
 
   it("所有未接线动作都给出演示模式提示", () => {

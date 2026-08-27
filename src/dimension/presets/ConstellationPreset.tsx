@@ -92,12 +92,12 @@ function buildNodes(projection: DesktopProjection): ConstellationNode[] {
   const northStar = projection.constellation?.northStar;
   const northStarStatus = northStar?.status ?? (northStar ? "single" : "empty");
   const northStarMeta = {
-    single: "LONG HORIZON · YOUR GOAL",
-    multiple: "LONG HORIZON · MULTIPLE GOALS",
-    demo: "NORTH STAR · DEMO",
-    loading: "LONG HORIZON · READING",
-    unavailable: "LONG HORIZON · UNAVAILABLE",
-    empty: "LONG HORIZON · NOT SET"
+    single: "长期方向",
+    multiple: "多个长期方向",
+    demo: "长期方向 · 演示",
+    loading: "正在读取",
+    unavailable: "暂不可用",
+    empty: "未设置"
   }[northStarStatus];
   const nodes: ConstellationNode[] = [
     {
@@ -131,7 +131,9 @@ function buildNodes(projection: DesktopProjection): ConstellationNode[] {
         kind: cognition.role === "big-idea" ? "big-idea" : "cognition",
         label: cognition.label,
         meta: cognition.starState
-          ? `STARSTATE V${cognition.starState.version} · ${cognition.starState.role}`
+          ? `${cognition.role === "big-idea" ? "大想法" : "认知评价"} · ${
+              cognition.starState.role === "proto_star" ? "待你确认" : "已记录"
+            }`
           : cognition.role === "big-idea"
             ? cognition.epistemic === "confirmed"
               ? "大想法 · 你已确认"
@@ -144,26 +146,12 @@ function buildNodes(projection: DesktopProjection): ConstellationNode[] {
         detail: [
           cognition.detail,
           cognition.starState
-            ? [
-                `真实星态：重要性 ${cognition.starState.importance}`,
-                cognition.starState.importanceAuthority
-                  ? `重要性权限 ${cognition.starState.importanceAuthority}`
-                  : "",
-                `活跃度 ${cognition.starState.salience}`,
-                cognition.starState.organizingPower
-                  ? `组织力 ${cognition.starState.organizingPower}`
-                  : "",
-                `新鲜度 ${cognition.starState.freshness}`,
-                cognition.starState.mass ? `证据质量 ${cognition.starState.mass}` : "",
-                cognition.starState.radius ? `作用半径 ${cognition.starState.radius}` : "",
-                cognition.starState.auraVersion !== undefined
-                  ? `Aura v${cognition.starState.auraVersion}`
-                  : "",
-                cognition.starState.recomputeRequired ? "等待重算" : "",
-              ].filter(Boolean).join("，") + "。"
+            ? cognition.starState.recomputeRequired
+              ? "正在根据近期记录更新。"
+              : "已根据近期记录更新。"
             : "",
           cognition.orbit
-            ? `正式轨道：${cognition.orbit.relationType} → ${cognition.orbit.centerLabel}${cognition.orbit.proximity ? `，距离 ${cognition.orbit.proximity}` : ""}${cognition.orbit.strength ? `，强度 ${cognition.orbit.strength}` : ""}。`
+            ? `与「${cognition.orbit.centerLabel}」有已确认的关联。`
             : "",
         ].filter(Boolean).join(" "),
         x: slot.x,
@@ -269,7 +257,7 @@ export function ConstellationPreset({
 
       <header className="cst-header">
         <div>
-          <p className="cst-kicker">LATITUDE · NIGHT SKY</p>
+          <p className="cst-kicker">长期方向</p>
           <h1>此刻星图</h1>
         </div>
         <span className="cst-status">{runtimeStatusLabel(projection.runtimeStatus)}</span>
@@ -370,7 +358,7 @@ export function ConstellationPreset({
 
         <p className="cst-sky-note">
           {orbitSegments.length > 0
-            ? `${orbitSegments.length} 条来自 Domain 的正式轨道`
+            ? `${orbitSegments.length} 条已确认的轨道`
             : "这里只放北极星、认知评价与大想法"}
         </p>
       </section>

@@ -179,18 +179,18 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
       eyebrow: "YOUR SECRETARY",
       state: runtimeReady ? (due.length ? "presenting" : "ready") : "thinking",
       gesture: runtimeReady ? (due.length ? "reminding" : "organizing") : "comparing",
-      stateCn: runtimeReady ? (due.length ? "等你回收结果" : "在岗") : "连接本地内核",
+      stateCn: runtimeReady ? (due.length ? "等你回收结果" : "在岗") : "连接中",
       headline: runtimeReady
         ? due.length
           ? `有 ${due.length} 个行动到了结果窗口。`
-          : "我在，事实和行动都从同一张图里读取。"
-        : "我还没有读到本地内核。",
+          : "今天想先做什么？"
+        : "本地服务还没连上。",
       note: runtimeReady
-        ? "我可以直接修订长期认知；每一次修改都会留下来源、前后版本和撤销入口。"
-        : "服务恢复前我不会拿演示数据冒充你的记录。",
-      stageLabel: relationship.hasTypedSource ? "关系 · 有据可查" : "关系 · 等待证据",
+        ? ""
+        : "连接恢复后再试。",
+      stageLabel: relationship.hasTypedSource ? "已连接" : "等待连接",
       stageProgress: 0,
-      stageNote: "熟悉与默契只读带纠正契约的 typed 依据；当前入口只查看来源，权能只认有效授权 receipt。",
+      stageNote: "",
       metrics: relationship.metrics,
     },
     bindings: {
@@ -199,7 +199,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
         items: feedItems,
         emptyHint: runtimeReady
           ? "还没有与当前张力足够相关、且有真实来源的资讯。"
-          : "资讯策展等待本地 Agent Host。",
+          : "本地助手连上后，这里会显示相关资讯。",
       },
       "desktop.schedule": {
         kind: "anchors",
@@ -264,7 +264,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
               lineage: {
                 entityType: "goal",
                 entityId: primaryGoal.id,
-                label: "来自统一认知行为星图",
+                label: "来自你的长期方向",
               },
             }
           : {
@@ -274,7 +274,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
             }
         : {
             title: "还没有明确的长期方向",
-            detail: "系统不会拿短期行动冒充北极星。",
+            detail: "还没有设置长期方向。",
             status: runtimeReady ? "empty" : "unavailable",
           },
       cognitions: constellationNodes.slice(0, 10).map((node) => {
@@ -293,7 +293,7 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
           lineage: {
             entityType: node.kind,
             entityId: node.id,
-            label: "来自统一认知行为星图",
+            label: "来自你的记录",
           },
           ...(starState ? { starState } : {}),
           ...(orbitEdge && orbitCenterId
@@ -401,7 +401,7 @@ function buildDesktopRows(
     lineage: {
       entityType: "goal",
       entityId: goal.id,
-      label: "来自统一 Domain 的短期目标",
+      label: "来自你的短期目标",
     },
   } satisfies AnchorRow));
   const actionRows = [...actions]
@@ -418,8 +418,8 @@ function buildDesktopRows(
         entityId: action.id,
         label: optionalString(payloadOf(action).surfaceRole) === "desktop.action" &&
           optionalString(payloadOf(action).goalId)
-          ? "来自统一 Domain 的短期目标行动"
-          : "来自统一认知行为星图",
+          ? "来自短期目标的行动"
+          : "来自你的行动",
       },
     } satisfies AnchorRow));
   return [...goalRows, ...actionRows];
@@ -473,7 +473,7 @@ function buildClueBoardModel(
           lineage: {
             entityType: "action",
             entityId: action.id,
-            label: "来自统一 Domain 的中期目标行动",
+            label: "来自中期目标的行动",
           },
         } satisfies AnchorRow;
       }),
@@ -487,7 +487,7 @@ function buildClueBoardModel(
         lineage: {
           entityType: "outcome",
           entityId: outcome.id,
-          label: "来自统一 Domain 的结果回收",
+          label: "来自结果记录",
         },
       } satisfies AnchorRow)),
       ...supportingNodes.sort(nodeProjectionOrder).map((node) => ({
@@ -500,7 +500,7 @@ function buildClueBoardModel(
         lineage: {
           entityType: node.kind,
           entityId: node.id,
-          label: "由 Domain 明确关联到这个中期目标",
+          label: "明确关联到这个中期目标",
         },
       } satisfies AnchorRow)),
     ];
@@ -514,14 +514,14 @@ function buildClueBoardModel(
       lineage: {
         entityType: "goal",
         entityId: mediumGoal.id,
-        label: "来自统一 Domain 的中期目标",
+        label: "来自你的中期目标",
       },
     };
   });
   return {
     title: themes.length > 0 ? `${themes.length} 个中期目标` : "还没有明确的中期目标",
     subtitle: themes.length > 0
-      ? `${actions.length} 个行动与相关证据按明确 goalId / mediumGoalId 指针展开；短期目标留在纸面桌面。`
+      ? `${actions.length} 个相关行动已展开；短期目标仍留在纸面桌面。`
       : "记录中期目标后，它会成为线索板主题；系统不会从关键词猜一块板。",
     themes,
   };
@@ -548,7 +548,7 @@ const EMPTY_RELATION_METRICS: readonly RelationMetric[] = [
     value: 0,
     tone: "olive",
     stage: "尚未形成",
-    basis: "统一 Domain 尚未提供带依据的熟悉度记录。",
+    basis: "还没有熟悉度记录。",
     correctable: false,
   },
   {
@@ -556,7 +556,7 @@ const EMPTY_RELATION_METRICS: readonly RelationMetric[] = [
     value: 0,
     tone: "blue",
     stage: "尚未形成",
-    basis: "统一 Domain 尚未提供带依据的协作记录。",
+    basis: "还没有协作记录。",
     correctable: false,
   },
   {
@@ -564,7 +564,7 @@ const EMPTY_RELATION_METRICS: readonly RelationMetric[] = [
     value: 0,
     tone: "rust",
     stage: "未授权",
-    basis: "当前没有仍有效的明确授权 receipt。",
+    basis: "当前没有可用的授权记录。",
     correctable: false,
   },
 ];
@@ -600,7 +600,7 @@ function buildRelationshipMetrics(
   const sourceLineage = {
     entityType: source.kind,
     entityId: source.id,
-    label: "来自统一 Domain 的秘书关系记录",
+    label: "来自秘书关系记录",
   };
   const familiarity = relationMetricFromTyped(
     "熟悉",
@@ -642,10 +642,10 @@ function buildRelationshipMetrics(
       entityType: receipt.kind,
       entityId: receipt.id,
       label: receipt.id === selectedReceipt?.id
-        ? "当前采用的明确授权 receipt"
+        ? "当前采用的授权记录"
         : activeReceipts.includes(receipt)
-          ? "仍有效但未作为当前标量的授权 receipt"
-        : "已失效或不完整的授权 receipt",
+          ? "其他仍有效的授权记录"
+        : "已失效或不完整的授权记录",
     })),
   ];
   const capability: RelationMetric = {
@@ -656,8 +656,8 @@ function buildRelationshipMetrics(
       ? optionalString(payloadOf(selectedReceipt).stage) ?? "已授权"
       : "未授权",
     basis: capabilityGranted
-      ? optionalString(payloadOf(selectedReceipt).basis) ?? "由当前仍有效的明确授权 receipt 记录。"
-      : "当前没有带合法权能值、仍有效的明确授权 receipt。",
+      ? optionalString(payloadOf(selectedReceipt).basis) ?? "来自当前有效的授权记录。"
+      : "当前没有可用的授权记录。",
     epistemicAuthority: capabilityGranted
       ? optionalString(selectedReceipt.authority)
       : "system_recorded",
@@ -686,7 +686,7 @@ function relationMetricFromTyped(
     value: eligible ? numericMetricValue(metric?.value) ?? 0 : 0,
     tone,
     stage: eligible ? optionalString(metric?.stage) ?? "尚未形成" : "尚未形成",
-    basis: basis ?? `统一 Domain 尚未提供带依据的${label}记录。`,
+    basis: basis ?? `还没有${label}记录。`,
     epistemicAuthority: optionalString(metric?.epistemicAuthority) ?? optionalString(source.authority),
     lineage: [lineage],
     correctable: eligible,
@@ -966,11 +966,11 @@ function projectFeed(
     const evidenceRefId = optionalString(result.evidenceRefId);
     const whyNow =
       optionalString(result.whyNow) ||
-      "LEGACY：这条历史资讯未保存当时的推荐理由；当前张力和搜索词不会被拿来改写它。";
+      "这条历史资讯没有保存推荐理由。";
     return [{
       id: `web-${contentHash ?? stableHash(url)}`,
       title: result.title.trim(),
-      why: whyNow,
+      why: userFacingFeedWhy(whyNow),
       source: optionalString(result.source) || safeHostname(url),
       url,
       publishedAt: result.publishedAt,
@@ -985,11 +985,18 @@ function projectFeed(
         ? {
             entityType: "resource",
             entityId: evidenceNodeId,
-            label: "来自已留痕的外部搜索证据",
+            label: "来自外部搜索",
           }
         : undefined,
     } satisfies FeedItem];
   }).slice(0, 3);
+}
+
+function userFacingFeedWhy(value: string): string {
+  const result = value
+    .replace(/[；;，,]?\s*仅作为外部线索，不授予网页内容任何执行或写入权限。?/g, "")
+    .trim();
+  return result || "来自本次搜索。";
 }
 
 /** Rebuild the feed from durable Domain resources after refresh/restart. */

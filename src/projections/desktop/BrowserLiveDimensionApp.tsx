@@ -344,10 +344,10 @@ export function BrowserLiveDimensionSurface({
     try {
       const draft = uiDraftFromResource(candidate, uiComposition.document.id);
       uiComposition.applyChangeSet(draft);
-      setNotice("Agent 的组件调整已从可追溯图谱资源应用，并可随时回滚。");
+      setNotice("桌面调整已应用，也可以随时撤销。");
     } catch (error) {
       rejectedUiResources.current.add(candidate.id);
-      setNotice(readableError(error, "Agent 的 UI ChangeSet 未通过浏览器校验"));
+      setNotice(readableError(error, "这次桌面调整无法应用"));
     }
   }, [context.nodes, layout.arrangement.orderedCardIds, uiComposition]);
 
@@ -452,7 +452,7 @@ export function BrowserLiveDimensionSurface({
   const conversation = useMemo<ConversationRow>(
     () => ({
       id: sessionId,
-      title: "本地 Agent 会话",
+      title: "本地对话",
       channel: "local-browser",
       createdAt: messages[0]?.createdAt ?? new Date().toISOString(),
       updatedAt: messages[messages.length - 1]?.createdAt ?? new Date().toISOString(),
@@ -479,9 +479,9 @@ export function BrowserLiveDimensionSurface({
       const nextHealth = await refreshHealth();
       if (nextHealth.domain.state === "ready") {
         await refreshContext();
-        setNotice("已从本地认知图谱重新读取。");
+        setNotice("已刷新。");
       } else {
-        setNotice("Domain Service 尚未连接；没有用演示数据覆盖当前状态。");
+        setNotice("本地服务还没连上。");
       }
     } catch (error) {
       setNotice(readableError(error, "本地服务仍未连接"));
@@ -491,7 +491,7 @@ export function BrowserLiveDimensionSurface({
   const sendAgentTurn = useCallback(
     async (text: string) => {
       if (!agentReady) {
-        setNotice("Agent Host 未连接，这句话没有假装发送成功。");
+        setNotice("本地助手还没连上，请稍后再试。");
         return;
       }
       if (activeRunId) {
@@ -528,18 +528,18 @@ export function BrowserLiveDimensionSurface({
           onStatus: (run) => setAgentStatus(runStatusLabel(run.status)),
         });
         if (finished.status === "failed") {
-          appendMessage("assistant", finished.error?.message || "这轮执行失败了，图谱没有被假装改动。");
+          appendMessage("assistant", finished.error?.message || "这次没有完成，请再试一次。");
         } else if (finished.status === "cancelled") {
-          appendMessage("assistant", "这轮已经停止。停止前已经完成的可追溯写入仍会保留。");
+          appendMessage("assistant", "已停止。已完成的内容会保留。");
         } else {
           appendMessage(
             "assistant",
-            assistantTextFromRun(finished) || "这轮已完成；我已重新读取本地认知图谱。",
+            assistantTextFromRun(finished) || "完成了。",
           );
           const uiDraft = uiChangeSetFromAgentRun(finished as unknown as Record<string, unknown>);
           if (uiDraft) {
             uiComposition.applyChangeSet(uiDraft);
-            setNotice("Agent 的组件调整已作为可回滚 UiChangeSet 应用。");
+            setNotice("桌面已更新。");
           }
         }
       } catch (error) {
@@ -569,7 +569,7 @@ export function BrowserLiveDimensionSurface({
     try {
       setAgentStatus("正在停止");
       await runtime.agent.cancelRun(activeRunId);
-      setNotice("停止请求已送达 Agent Host；正在确认终态。");
+      setNotice("正在停止…");
     } catch (error) {
       setNotice(readableError(error, "停止请求没有送达"));
     }
@@ -580,11 +580,11 @@ export function BrowserLiveDimensionSurface({
     async (explicitQuery?: string) => {
       const query = explicitQuery?.trim() || searchDraft.trim() || derivedSearch.query;
       if (!query) {
-        setNotice("先写一个要查的问题，或在图谱里留下当前张力 / 目标。");
+        setNotice("先写一个要查的问题。");
         return;
       }
       if (!agentReady) {
-        setNotice("Agent Host 未连接，无法进行真实 Web Search。");
+        setNotice("本地助手还没连上，现在不能搜索。");
         return;
       }
       setSearchBusy(true);
@@ -617,7 +617,7 @@ export function BrowserLiveDimensionSurface({
 
   const createWeeklyReview = useCallback(async () => {
     if (!domainReady || domainBusy) {
-      setNotice("Domain Service 未连接，不能生成真实周回顾。");
+      setNotice("本地服务未连接，暂时不能生成周回顾。");
       return;
     }
     setDomainBusy(true);
@@ -626,7 +626,7 @@ export function BrowserLiveDimensionSurface({
         audit: { actor: "user", sessionId, authorizationMode: "automatic" },
       });
       await refreshContext();
-      setNotice("真实周回顾已由行动和结果生成，并写回图谱。");
+      setNotice("周回顾已生成。");
     } catch (error) {
       setNotice(readableError(error, "真实周回顾没有生成"));
     } finally {
@@ -639,7 +639,7 @@ export function BrowserLiveDimensionSurface({
     command: CandidateCommand,
   ) => {
     if (!domainReady || domainBusy) {
-      setNotice("Domain Service 未连接，候选状态没有假装改变。");
+      setNotice("本地服务未连接，本次没有保存。");
       return;
     }
     setDomainBusy(true);
@@ -661,7 +661,7 @@ export function BrowserLiveDimensionSurface({
   const recordFeedFeedback = useCallback(
     async (itemId: string, feedback: FeedFeedback) => {
       if (!domainReady) {
-        setNotice("Domain Service 未连接，这次反馈没有假装保存。");
+        setNotice("本地服务未连接，本次没有保存。");
         return;
       }
       const feed = projection.bindings["desktop.feed"];
@@ -677,7 +677,7 @@ export function BrowserLiveDimensionSurface({
         ? item.lineage.entityId
         : undefined;
       if (!item || !targetNodeId) {
-        setNotice("这条资讯还没有可追溯的 Domain 资源；反馈没有假装保存。");
+        setNotice("这条资讯暂时不能保存反馈。");
         return;
       }
       setDomainBusy(true);
@@ -859,6 +859,19 @@ export function BrowserLiveDimensionSurface({
           if (diagnosticsCanOpen) setDiagnosticsOpen(true);
         }}
         onAdjustDesktop={() => setCompositionOpen(true)}
+        onCardVisibilityChange={(cardId, visible) => {
+          uiComposition.applyChangeSet({
+            actor: "user",
+            reason: visible ? "添加桌面卡片" : "移除桌面卡片",
+            operations: [
+              {
+                op: "set_visibility",
+                componentId: cardId,
+                visible,
+              },
+            ],
+          });
+        }}
         onSecretaryInteract={(intent) => {
           if (intent === "chat") {
             if (threadCanOpen) setThreadOpen(true);
@@ -885,7 +898,7 @@ export function BrowserLiveDimensionSurface({
                 lineage: {
                   entityType: "action",
                   entityId: due.id,
-                  label: "来自统一认知行为星图",
+                  label: "来自你的行动",
                 },
               });
             } else {
@@ -943,7 +956,7 @@ export function BrowserLiveDimensionSurface({
               });
               setOutcomeTarget(null);
               await refreshContext();
-              setNotice("真实结果已回收；相关认知修订会保留前后版本。");
+              setNotice("结果已保存。");
             } catch (error) {
               setNotice(readableError(error, "结果没有写入"));
             } finally {
@@ -1001,11 +1014,11 @@ export function BrowserLiveDimensionSurface({
           history={uiComposition.history}
           onApply={(draft) => {
             uiComposition.applyChangeSet(draft);
-            setNotice("桌面组件已保存为可回滚 UiChangeSet。");
+            setNotice("桌面已保存。");
           }}
           onRollback={(id) => {
             uiComposition.rollbackChangeSet(id);
-            setNotice("已生成一条新的 UiChangeSet，回滚到变更前桌面。");
+            setNotice("已撤销上次桌面调整。");
           }}
           onReset={() => {
             uiComposition.resetToProductLayout();
@@ -1085,7 +1098,7 @@ function CandidateInterventionStrip({
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <strong style={{ fontSize: 13 }}>候选共创</strong>
-        <span className="dim-meta">推进由你或 Agent 显式落笔；超时只提醒，不代替结论</span>
+        <span className="dim-meta">你来决定如何推进，超时只会提醒。</span>
       </div>
       {visible.map((candidate) => {
         const state = candidateStateOf(candidate);
@@ -1175,7 +1188,7 @@ function BrowserControlStrip({
       data-runtime-state={healthState}
     >
       <span className="dim-meta" aria-label="本地服务状态">
-        图谱 {serviceLabel(domainState)} · Agent {agentServiceLabel(agentState, agentAuthentication)}
+        数据 {serviceLabel(domainState)} · 助手 {agentServiceLabel(agentState, agentAuthentication)}
         {contextLoading ? " · 读取中" : ""}
       </span>
       <form
@@ -1228,12 +1241,12 @@ function BrowserControlStrip({
           disabled={!actionAvailability.cancel}
           aria-disabled={!actionAvailability.cancel}
         >
-          停止 Agent
+          停止
         </button>
       )}
       {(agentStatus || notice) && (
         <span className="dim-meta" role="status">
-          {agentStatus ? `Agent · ${agentStatus}` : notice}
+          {agentStatus ? `助手 · ${agentStatus}` : notice}
         </span>
       )}
     </section>
@@ -1432,17 +1445,17 @@ function DiagnosticsDialog({
       aria-label="本地服务诊断"
     >
       <section className="dim-paper" style={dialogPaperStyle}>
-        <p className="dim-eyebrow">LOCAL SERVICES · 深层设置</p>
+        <p className="dim-eyebrow">深层设置</p>
         <h2 style={{ margin: "6px 0", fontSize: 20 }}>浏览器产品运行状态</h2>
-        <p className="dim-body">Domain Service：{serviceLabel(health?.domain.state ?? "starting")}</p>
+        <p className="dim-body">数据服务：{serviceLabel(health?.domain.state ?? "starting")}</p>
         <p className="dim-body">
-          Agent Host：{agentServiceLabel(
+          助手服务：{agentServiceLabel(
             health?.agent.state ?? "starting",
             optionalText(recordOf(health?.agent.details?.model)?.authentication),
           )}
         </p>
         <p className="dim-meta">会话 ID · {sessionId}</p>
-        <p className="dim-body">模型凭证只由本机 Agent Host 读取，不存进浏览器会话。</p>
+        <p className="dim-body">登录凭证只保存在本机。</p>
         {messageHydrationError && <p className="dim-body">{messageHydrationError}</p>}
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <button
@@ -1540,7 +1553,7 @@ function schedulerDeliveryNotice(kind: string): string {
   ) {
     return "秘书带回了一条有真实来源的资讯策展。";
   }
-  return "秘书带回了一条本地 Agent 推送。";
+  return "秘书带回了一条新消息。";
 }
 
 function candidateActions(
@@ -1548,20 +1561,20 @@ function candidateActions(
 ): Array<{ command: CandidateCommand; label: string }> {
   if (state === "proposed") {
     return [
-      { command: "touch", label: "触碰它" },
+      { command: "touch", label: "看看" },
       { command: "park", label: "先搁置" },
     ];
   }
   if (state === "touched") {
     return [
-      { command: "shape", label: "继续塑形" },
-      { command: "conclude", label: "形成结论" },
+      { command: "shape", label: "继续整理" },
+      { command: "conclude", label: "确认结论" },
       { command: "park", label: "先搁置" },
     ];
   }
   if (state === "shaping") {
     return [
-      { command: "conclude", label: "形成结论" },
+      { command: "conclude", label: "确认结论" },
       { command: "park", label: "先搁置" },
     ];
   }
@@ -1571,8 +1584,8 @@ function candidateActions(
 function candidateStateLabel(state: string): string {
   return {
     proposed: "候选",
-    touched: "已触碰",
-    shaping: "塑形中",
+    touched: "已查看",
+    shaping: "整理中",
     concluded: "已形成结论",
     parked: "已搁置",
   }[state] ?? "状态待校验";
@@ -1580,11 +1593,11 @@ function candidateStateLabel(state: string): string {
 
 function candidateCommandNotice(command: CandidateCommand): string {
   return {
-    touch: "候选已触碰；这不是结论，下一步可以继续塑形。",
-    shape: "候选进入塑形；7 天后若没有进展，只会轻提醒一次。",
-    conclude: "候选已形成结论，变更和回滚入口都已留痕。",
-    park: "候选已搁置；没有把安静误写成否定或结论。",
-    acknowledge_due: "候选提醒已留回执，没有改变候选结论。",
+    touch: "已打开，你可以继续整理。",
+    shape: "已开始整理，7 天没有进展时会提醒一次。",
+    conclude: "结论已保存。",
+    park: "已搁置。",
+    acknowledge_due: "收到！",
   }[command];
 }
 
@@ -1688,7 +1701,7 @@ function uiDraftFromResource(node: KnowledgeNode, expectedSurfaceId: string) {
       ? { baseRevision: Number(payload?.baseRevision) }
       : {}),
     surfaceId: expectedSurfaceId,
-    reason: optionalText(node.statement) || optionalText(node.label) || "Agent 调整桌面组件",
+    reason: optionalText(node.statement) || optionalText(node.label) || "助手调整桌面",
     sourceRunId: node.id,
     operations,
   };

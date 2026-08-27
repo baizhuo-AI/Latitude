@@ -30,8 +30,8 @@ describe("BrowserDataSafetyDialog truthfulness", () => {
     expect(screen.getByRole("dialog", { name: "数据与安全" })).toHaveStyle({
       zIndex: "100",
     });
-    expect(screen.getByText(/未加密的明文 JSON/)).toBeInTheDocument();
-    await user.click(screen.getByText("ChangeSet 历史与回滚"));
+    expect(screen.getByText(/下载文件未加密/)).toBeInTheDocument();
+    await user.click(screen.getByText("桌面变更记录"));
     await waitFor(() => expect(screen.getByText(/完整恢复.*不可回滚/)).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "不可回滚" })).toBeDisabled();
     const rollbackButtons = screen.getAllByRole("button", { name: "回滚" });
@@ -75,7 +75,7 @@ describe("BrowserDataSafetyDialog truthfulness", () => {
     expect(integrityButton).toBeDisabled();
     expect(screen.getByRole("button", { name: "第一步：准备可恢复清空" }))
       .toBeDisabled();
-    await user.click(screen.getByText("ChangeSet 历史与回滚"));
+    await user.click(screen.getByText("桌面变更记录"));
     await waitFor(() => expect(screen.getByRole("button", { name: "回滚" })).toBeDisabled());
     await user.click(exportButton);
     await user.click(integrityButton);

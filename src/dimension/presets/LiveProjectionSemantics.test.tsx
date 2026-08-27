@@ -80,13 +80,13 @@ describe("真实投影的上层语义边界", () => {
     render(<ClueBoardPreset projection={projection} />);
 
     expect(screen.getByRole("heading", { name: "中期目标线索板" })).toBeInTheDocument();
-    expect(screen.getByText("所有纸片可拖动 · 主题来自 Domain · 连线不改知识关系")).toBeVisible();
+    expect(screen.getByText("纸片可自由拖动 · 连线只整理当前桌面")).toBeVisible();
     expect(screen.getByRole("button", { name: /中期目标 1：完成客户交付/ })).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: /调整「完成客户交付」连接，当前为支撑/ })
     );
     expect(screen.getByRole("complementary", { name: "编辑连接：完成客户交付" }))
-      .toHaveTextContent("不会把视觉关系写成 Domain 事实");
+      .toHaveTextContent("不会改变原始关系");
   });
 
   it("星图只放长期方向与认知，不把今日锚点抬成星", () => {
@@ -151,11 +151,11 @@ describe("真实投影的上层语义边界", () => {
     const { container } = render(<ConstellationPreset projection={projection} />);
     expect(container.querySelector(".cst-orbit-svg line[data-relation='orbits']"))
       .toBeInTheDocument();
-    expect(screen.getByText("1 条来自 Domain 的正式轨道")).toBeInTheDocument();
+    expect(screen.getByText("1 条已确认的轨道")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /认知星：上午更容易进入写作状态/ }));
-    expect(screen.getByText(/真实星态：重要性 high/)).toBeInTheDocument();
-    expect(screen.getByText(/组织力 connecting/)).toBeInTheDocument();
-    expect(screen.getByText(/正式轨道：orbits → 把维度做成可靠的个人系统/)).toBeInTheDocument();
+    expect(screen.getByText(/已根据近期记录更新/)).toBeInTheDocument();
+    expect(screen.queryByText(/组织力 connecting/)).not.toBeInTheDocument();
+    expect(screen.getByText(/与「把维度做成可靠的个人系统」有已确认的关联/)).toBeInTheDocument();
   });
 });
