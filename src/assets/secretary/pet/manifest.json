@@ -1,0 +1,868 @@
+{
+  "version": 2,
+  "generatedAt": "2026-09-04",
+  "format": "PNG RGBA",
+  "canvas": {
+    "width": 1024,
+    "height": 1536
+  },
+  "display": {
+    "defaultCssScale": 0.75,
+    "perAssetCssScale": {
+      "walk_right": 0.82
+    },
+    "targetVisibleHeightPercent": 70
+  },
+  "identity": {
+    "hair": "暖灰金下巴长度短发，长侧刘海",
+    "eyes": "灰绿色",
+    "hairclip": "黄绿菱形发夹",
+    "outfit": "炭黑短秘书外套与短披肩、奶油色短裙、暖棕丝袜、蝴蝶结圆头鞋",
+    "prop": "深棕硬壳笔记本",
+    "proportion": "小巧、纤细、头部不过大"
+  },
+  "categories": {
+    "常驻与移动": [
+      "idle_breathe",
+      "idle_blink",
+      "idle_look_left",
+      "idle_look_right",
+      "idle_stretch",
+      "idle_hair_fix",
+      "walk_left",
+      "walk_right",
+      "lifted",
+      "landing",
+      "returning",
+      "sleepy_nod"
+    ],
+    "对话与工作": [
+      "listening",
+      "speaking_soft",
+      "speaking_happy",
+      "thinking",
+      "idea",
+      "writing",
+      "typing",
+      "reading",
+      "searching",
+      "offering",
+      "task_done",
+      "confused"
+    ],
+    "提醒与情绪": [
+      "wave_small",
+      "celebrate",
+      "proud",
+      "surprised",
+      "worried",
+      "apologetic",
+      "encourage",
+      "urgent_notice",
+      "gentle_notice",
+      "waiting_patient",
+      "pout",
+      "relieved"
+    ]
+  },
+  "sprites": {
+    "idle_breathe": {
+      "category": "常驻与移动",
+      "label": "安静呼吸",
+      "trigger": "桌宠无任务时的主待机",
+      "file": "idle_breathe.png",
+      "visibleBoundsAlpha128": [
+        290,
+        13,
+        724,
+        1433
+      ],
+      "subjectHeightPercent": 92.45,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 69.34,
+      "topPercent": 0.85,
+      "bottomPercent": 93.29,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1450480
+    },
+    "idle_blink": {
+      "category": "常驻与移动",
+      "label": "眨眼",
+      "trigger": "待机短动作",
+      "file": "idle_blink.png",
+      "visibleBoundsAlpha128": [
+        261,
+        14,
+        739,
+        1434
+      ],
+      "subjectHeightPercent": 92.45,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 69.34,
+      "topPercent": 0.91,
+      "bottomPercent": 93.36,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1436869
+    },
+    "idle_look_left": {
+      "category": "常驻与移动",
+      "label": "向左看",
+      "trigger": "待机观察",
+      "file": "idle_look_left.png",
+      "visibleBoundsAlpha128": [
+        281,
+        17,
+        743,
+        1421
+      ],
+      "subjectHeightPercent": 91.41,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 68.55,
+      "topPercent": 1.11,
+      "bottomPercent": 92.51,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1407599
+    },
+    "idle_look_right": {
+      "category": "常驻与移动",
+      "label": "向右看",
+      "trigger": "待机观察",
+      "file": "idle_look_right.png",
+      "visibleBoundsAlpha128": [
+        267,
+        13,
+        758,
+        1474
+      ],
+      "subjectHeightPercent": 95.12,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.34,
+      "topPercent": 0.85,
+      "bottomPercent": 95.96,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1504715
+    },
+    "idle_stretch": {
+      "category": "常驻与移动",
+      "label": "伸懒腰",
+      "trigger": "长时间待机后的低频动作",
+      "file": "idle_stretch.png",
+      "visibleBoundsAlpha128": [
+        250,
+        33,
+        751,
+        1493
+      ],
+      "subjectHeightPercent": 95.05,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.29,
+      "topPercent": 2.15,
+      "bottomPercent": 97.2,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1477093
+    },
+    "idle_hair_fix": {
+      "category": "常驻与移动",
+      "label": "整理头发",
+      "trigger": "低频待机动作",
+      "file": "idle_hair_fix.png",
+      "visibleBoundsAlpha128": [
+        239,
+        9,
+        746,
+        1485
+      ],
+      "subjectHeightPercent": 96.09,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 72.07,
+      "topPercent": 0.59,
+      "bottomPercent": 96.68,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1599632
+    },
+    "walk_left": {
+      "category": "常驻与移动",
+      "label": "向左走",
+      "trigger": "后续桌面移动扩展",
+      "file": "walk_left.png",
+      "visibleBoundsAlpha128": [
+        187,
+        17,
+        807,
+        1431
+      ],
+      "subjectHeightPercent": 92.06,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 69.04,
+      "topPercent": 1.11,
+      "bottomPercent": 93.16,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1604878
+    },
+    "walk_right": {
+      "category": "常驻与移动",
+      "label": "向右走",
+      "trigger": "后续桌面移动扩展",
+      "file": "walk_right.png",
+      "visibleBoundsAlpha128": [
+        223,
+        108,
+        838,
+        1401
+      ],
+      "subjectHeightPercent": 84.18,
+      "displayScale": 0.82,
+      "effectiveVisibleHeightPercent": 69.03,
+      "topPercent": 7.03,
+      "bottomPercent": 91.21,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1429062
+    },
+    "lifted": {
+      "category": "常驻与移动",
+      "label": "被提起",
+      "trigger": "按住拖动",
+      "file": "lifted.png",
+      "visibleBoundsAlpha128": [
+        96,
+        16,
+        840,
+        1475
+      ],
+      "subjectHeightPercent": 94.99,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.24,
+      "topPercent": 1.04,
+      "bottomPercent": 96.03,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1557689
+    },
+    "landing": {
+      "category": "常驻与移动",
+      "label": "落地",
+      "trigger": "拖到桌面并松手",
+      "file": "landing.png",
+      "visibleBoundsAlpha128": [
+        43,
+        14,
+        891,
+        1462
+      ],
+      "subjectHeightPercent": 94.27,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.7,
+      "topPercent": 0.91,
+      "bottomPercent": 95.18,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1679112
+    },
+    "returning": {
+      "category": "常驻与移动",
+      "label": "回框",
+      "trigger": "拖回秘书框",
+      "file": "returning.png",
+      "visibleBoundsAlpha128": [
+        208,
+        28,
+        837,
+        1488
+      ],
+      "subjectHeightPercent": 95.05,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.29,
+      "topPercent": 1.82,
+      "bottomPercent": 96.88,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1648180
+    },
+    "sleepy_nod": {
+      "category": "常驻与移动",
+      "label": "困倦点头",
+      "trigger": "可选长时表情",
+      "file": "sleepy_nod.png",
+      "visibleBoundsAlpha128": [
+        248,
+        17,
+        749,
+        1474
+      ],
+      "subjectHeightPercent": 94.86,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.14,
+      "topPercent": 1.11,
+      "bottomPercent": 95.96,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1494416
+    },
+    "listening": {
+      "category": "对话与工作",
+      "label": "倾听",
+      "trigger": "用户说话或录音时",
+      "file": "listening.png",
+      "visibleBoundsAlpha128": [
+        254,
+        32,
+        757,
+        1468
+      ],
+      "subjectHeightPercent": 93.49,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.12,
+      "topPercent": 2.08,
+      "bottomPercent": 95.57,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1450366
+    },
+    "speaking_soft": {
+      "category": "对话与工作",
+      "label": "轻声回应",
+      "trigger": "普通回复",
+      "file": "speaking_soft.png",
+      "visibleBoundsAlpha128": [
+        293,
+        15,
+        728,
+        1466
+      ],
+      "subjectHeightPercent": 94.47,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.85,
+      "topPercent": 0.98,
+      "bottomPercent": 95.44,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1472878
+    },
+    "speaking_happy": {
+      "category": "对话与工作",
+      "label": "开心回应",
+      "trigger": "轻松的正向回复",
+      "file": "speaking_happy.png",
+      "visibleBoundsAlpha128": [
+        287,
+        25,
+        725,
+        1467
+      ],
+      "subjectHeightPercent": 93.88,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.41,
+      "topPercent": 1.63,
+      "bottomPercent": 95.51,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1451810
+    },
+    "thinking": {
+      "category": "对话与工作",
+      "label": "思考",
+      "trigger": "整理思路",
+      "file": "thinking.png",
+      "visibleBoundsAlpha128": [
+        297,
+        34,
+        737,
+        1468
+      ],
+      "subjectHeightPercent": 93.36,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.02,
+      "topPercent": 2.21,
+      "bottomPercent": 95.57,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1414974
+    },
+    "idea": {
+      "category": "对话与工作",
+      "label": "想到办法",
+      "trigger": "发现新线索或可行方案",
+      "file": "idea.png",
+      "visibleBoundsAlpha128": [
+        276,
+        30,
+        746,
+        1468
+      ],
+      "subjectHeightPercent": 93.62,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.21,
+      "topPercent": 1.95,
+      "bottomPercent": 95.57,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1455272
+    },
+    "writing": {
+      "category": "对话与工作",
+      "label": "书写",
+      "trigger": "起草与记录",
+      "file": "writing.png",
+      "visibleBoundsAlpha128": [
+        281,
+        16,
+        728,
+        1474
+      ],
+      "subjectHeightPercent": 94.92,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.19,
+      "topPercent": 1.04,
+      "bottomPercent": 95.96,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1459321
+    },
+    "typing": {
+      "category": "对话与工作",
+      "label": "输入",
+      "trigger": "结构化处理或编辑",
+      "file": "typing.png",
+      "visibleBoundsAlpha128": [
+        190,
+        20,
+        736,
+        1467
+      ],
+      "subjectHeightPercent": 94.21,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.65,
+      "topPercent": 1.3,
+      "bottomPercent": 95.51,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1535364
+    },
+    "reading": {
+      "category": "对话与工作",
+      "label": "阅读",
+      "trigger": "读取材料",
+      "file": "reading.png",
+      "visibleBoundsAlpha128": [
+        267,
+        36,
+        722,
+        1476
+      ],
+      "subjectHeightPercent": 93.75,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.31,
+      "topPercent": 2.34,
+      "bottomPercent": 96.09,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1470653
+    },
+    "searching": {
+      "category": "对话与工作",
+      "label": "查找",
+      "trigger": "检索与对照",
+      "file": "searching.png",
+      "visibleBoundsAlpha128": [
+        267,
+        38,
+        734,
+        1475
+      ],
+      "subjectHeightPercent": 93.55,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.17,
+      "topPercent": 2.47,
+      "bottomPercent": 96.03,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1489891
+    },
+    "offering": {
+      "category": "对话与工作",
+      "label": "递交",
+      "trigger": "结果可查看",
+      "file": "offering.png",
+      "visibleBoundsAlpha128": [
+        304,
+        28,
+        730,
+        1480
+      ],
+      "subjectHeightPercent": 94.53,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.9,
+      "topPercent": 1.82,
+      "bottomPercent": 96.35,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1431257
+    },
+    "task_done": {
+      "category": "对话与工作",
+      "label": "任务完成",
+      "trigger": "明确完成后的反馈",
+      "file": "task_done.png",
+      "visibleBoundsAlpha128": [
+        310,
+        12,
+        744,
+        1496
+      ],
+      "subjectHeightPercent": 96.61,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 72.46,
+      "topPercent": 0.78,
+      "bottomPercent": 97.4,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1456730
+    },
+    "confused": {
+      "category": "对话与工作",
+      "label": "疑惑",
+      "trigger": "需要补充信息",
+      "file": "confused.png",
+      "visibleBoundsAlpha128": [
+        222,
+        10,
+        752,
+        1420
+      ],
+      "subjectHeightPercent": 91.8,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 68.85,
+      "topPercent": 0.65,
+      "bottomPercent": 92.45,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1481392
+    },
+    "wave_small": {
+      "category": "提醒与情绪",
+      "label": "小幅招手",
+      "trigger": "轻提醒或初次出现",
+      "file": "wave_small.png",
+      "visibleBoundsAlpha128": [
+        255,
+        29,
+        756,
+        1483
+      ],
+      "subjectHeightPercent": 94.66,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.0,
+      "topPercent": 1.89,
+      "bottomPercent": 96.55,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1611089
+    },
+    "celebrate": {
+      "category": "提醒与情绪",
+      "label": "庆祝",
+      "trigger": "完成重要事项",
+      "file": "celebrate.png",
+      "visibleBoundsAlpha128": [
+        266,
+        10,
+        778,
+        1482
+      ],
+      "subjectHeightPercent": 95.83,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.88,
+      "topPercent": 0.65,
+      "bottomPercent": 96.48,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1504232
+    },
+    "proud": {
+      "category": "提醒与情绪",
+      "label": "小得意",
+      "trigger": "用户达成阶段目标",
+      "file": "proud.png",
+      "visibleBoundsAlpha128": [
+        272,
+        16,
+        777,
+        1499
+      ],
+      "subjectHeightPercent": 96.55,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 72.41,
+      "topPercent": 1.04,
+      "bottomPercent": 97.59,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1515324
+    },
+    "surprised": {
+      "category": "提醒与情绪",
+      "label": "惊讶",
+      "trigger": "发现明显变化",
+      "file": "surprised.png",
+      "visibleBoundsAlpha128": [
+        236,
+        6,
+        790,
+        1486
+      ],
+      "subjectHeightPercent": 96.35,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 72.27,
+      "topPercent": 0.39,
+      "bottomPercent": 96.74,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1569342
+    },
+    "worried": {
+      "category": "提醒与情绪",
+      "label": "担心",
+      "trigger": "任务出现真实错误",
+      "file": "worried.png",
+      "visibleBoundsAlpha128": [
+        290,
+        16,
+        735,
+        1454
+      ],
+      "subjectHeightPercent": 93.62,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.21,
+      "topPercent": 1.04,
+      "bottomPercent": 94.66,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1449833
+    },
+    "apologetic": {
+      "category": "提醒与情绪",
+      "label": "抱歉",
+      "trigger": "执行失败或需要解释",
+      "file": "apologetic.png",
+      "visibleBoundsAlpha128": [
+        218,
+        7,
+        814,
+        1423
+      ],
+      "subjectHeightPercent": 92.19,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 69.14,
+      "topPercent": 0.46,
+      "bottomPercent": 92.64,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1479803
+    },
+    "encourage": {
+      "category": "提醒与情绪",
+      "label": "鼓励",
+      "trigger": "待用户继续处理",
+      "file": "encourage.png",
+      "visibleBoundsAlpha128": [
+        267,
+        15,
+        755,
+        1481
+      ],
+      "subjectHeightPercent": 95.44,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.58,
+      "topPercent": 0.98,
+      "bottomPercent": 96.42,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1499340
+    },
+    "urgent_notice": {
+      "category": "提醒与情绪",
+      "label": "紧急提醒",
+      "trigger": "明确高优先级事项",
+      "file": "urgent_notice.png",
+      "visibleBoundsAlpha128": [
+        218,
+        21,
+        752,
+        1483
+      ],
+      "subjectHeightPercent": 95.18,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 71.39,
+      "topPercent": 1.37,
+      "bottomPercent": 96.55,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1514254
+    },
+    "gentle_notice": {
+      "category": "提醒与情绪",
+      "label": "温和提醒",
+      "trigger": "普通提醒",
+      "file": "gentle_notice.png",
+      "visibleBoundsAlpha128": [
+        284,
+        14,
+        747,
+        1467
+      ],
+      "subjectHeightPercent": 94.6,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 70.95,
+      "topPercent": 0.91,
+      "bottomPercent": 95.51,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1474450
+    },
+    "waiting_patient": {
+      "category": "提醒与情绪",
+      "label": "耐心等待",
+      "trigger": "提醒持续显示",
+      "file": "waiting_patient.png",
+      "visibleBoundsAlpha128": [
+        292,
+        12,
+        733,
+        1401
+      ],
+      "subjectHeightPercent": 90.43,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 67.82,
+      "topPercent": 0.78,
+      "bottomPercent": 91.21,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1384064
+    },
+    "pout": {
+      "category": "提醒与情绪",
+      "label": "轻微不满",
+      "trigger": "可选情绪反馈",
+      "file": "pout.png",
+      "visibleBoundsAlpha128": [
+        279,
+        21,
+        718,
+        1447
+      ],
+      "subjectHeightPercent": 92.84,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 69.63,
+      "topPercent": 1.37,
+      "bottomPercent": 94.21,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1410781
+    },
+    "relieved": {
+      "category": "提醒与情绪",
+      "label": "松一口气",
+      "trigger": "风险解除或恢复成功",
+      "file": "relieved.png",
+      "visibleBoundsAlpha128": [
+        285,
+        8,
+        753,
+        1435
+      ],
+      "subjectHeightPercent": 92.9,
+      "displayScale": 0.75,
+      "effectiveVisibleHeightPercent": 69.68,
+      "topPercent": 0.52,
+      "bottomPercent": 93.42,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "bytes": 1414527
+    }
+  },
+  "qa": {
+    "visualAudit": "Production review used contrasting backgrounds to inspect transparency, scale and character consistency.",
+    "accepted": 36
+  },
+  "identityReference": "src/assets/secretary/pet/idle_breathe.png",
+  "identityNote": "The approved production concept guided this asset set; the original concept draft is not distributed. The idle artwork is a committed character reference."
+}

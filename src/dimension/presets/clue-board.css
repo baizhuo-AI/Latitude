@@ -1,13 +1,13 @@
-/**
- * 线索板 v3。
- *
- * 一块带框的板：木框 + 亚麻板面 + 细墨线。今日命题钉在顶梁，
- * 事件维度（工作现状 / 个人项目 / 短期规划…）以纸条钉在四周，
- * 金线连线索簇，暗红虚线连待验证的提案。点开线索纸，
- * 右侧抽屉展开这条线的全部记录。
- */
+/* 线索版：木框与暖软木板面，圆图钉固定纸片，细线随视野移动。 */
 
 .clue-board {
+  /* 保留线索版自己的纸墨色，不随主页手帐配色改变。 */
+  --dim-paper: #fdfaf2;
+  --dim-ink: #2a2a24;
+  --dim-ink-soft: #6b6656;
+  --dim-ink-faint: #9a9482;
+  --dim-olive-deep: #46521f;
+
   position: relative;
   height: 100%;
   display: flex;
@@ -18,18 +18,12 @@
     repeating-linear-gradient(2deg, transparent 0 18px, rgb(64 47 29 / 7%) 19px 20px),
     linear-gradient(145deg, #6d6754 0%, #555948 44%, #484b3c 100%);
   color: var(--dim-ink, #2a2a24);
-  padding: 18px 26px 22px;
+  padding: 0 26px 16px;
 }
 
-/* 接近桌面的一侧用一层暖雾软接；内容本身不做 filter blur。 */
+/* 板面本身保持清晰，转场交给共用的穿行层。 */
 .clue-board::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 42px;
-  pointer-events: none;
-  z-index: 0;
-  background: linear-gradient(180deg, rgb(233 234 223 / 24%), transparent);
+  content: none;
 }
 
 .clue-board > * {
@@ -41,11 +35,12 @@
 
 .clue-topbar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   flex-shrink: 0;
-  padding: 0 6px 12px;
+  min-height: 48px;
+  padding: 0 6px;
 }
 
 .clue-kicker {
@@ -57,10 +52,10 @@
 }
 
 .clue-topbar h1 {
-  margin: 5px 0 0;
-  font-size: 23px;
+  margin: 0;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: 0.03em;
   color: #f2eee1;
 }
 
@@ -107,7 +102,7 @@
 
 /* ---------- 板框 ---------- */
 
-/* 木框：四层阴影叠出截面 —— 外缘暗、受光面亮、内缘压板面 */
+/* 木框只界定视口，板内纸片和连线可以继续向外延展。 */
 .clue-frame {
   position: relative;
   flex: 1;
@@ -125,11 +120,16 @@
     #65482f;
 }
 
+.clue-frame::before,
+.clue-frame::after {
+  content: none;
+}
+
 .clue-surface {
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
   background:
     radial-gradient(780px 420px at 50% -4%, rgb(255 246 213 / 34%), transparent 68%),
     radial-gradient(circle at 18% 24%, rgb(92 68 41 / 12%) 0 1px, transparent 1.5px),
@@ -207,6 +207,7 @@
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #e3c478, #a88a3c 72%);
   box-shadow: 0 2px 3px rgb(50 40 20 / 45%);
+  pointer-events: none;
 }
 
 .clue-pin-red {
@@ -217,7 +218,7 @@
   background: radial-gradient(circle at 35% 30%, #b8b2a0, #6b6656 72%);
 }
 
-/* ---------- 纸（命题 / 线索 / 提案 / 剪报共用） ---------- */
+/* ---------- 纸（命题 / 线索 / 提案共用） ---------- */
 
 .clue-paper,
 .clue-thesis {
@@ -280,6 +281,7 @@ article.clue-paper {
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.4;
+  color: var(--dim-ink, #2a2a24);
 }
 
 .clue-paper ul {
@@ -345,6 +347,7 @@ article.clue-paper {
   font-size: 16.5px;
   letter-spacing: -0.01em;
   line-height: 1.45;
+  color: var(--dim-ink, #2a2a24);
 }
 
 .clue-thesis-copy {
@@ -382,24 +385,6 @@ article.clue-paper {
   color: var(--dim-ink-sticky, #a29656);
 }
 
-/* 剪报：报纸上剪下来的一条，斜钉在板上缘 */
-.clue-clipping {
-  width: 210px;
-  background: #f8f4e6;
-  border-color: #cfc8b2;
-}
-
-.clue-clipping h3 {
-  font-size: 13px;
-}
-
-.clue-clipping-why {
-  margin: 6px 0 0;
-  font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--dim-ink-soft, #6b6656);
-}
-
 /* ---------- 按钮 ---------- */
 
 .clue-verdicts {
@@ -416,7 +401,7 @@ article.clue-paper {
   border: 1px solid var(--dim-line, #d8d2c0);
   color: var(--dim-ink, #2a2a24);
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 1px;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
@@ -601,6 +586,13 @@ article.clue-paper {
 .clue-thesis.is-draggable {
   cursor: grab;
   touch-action: none;
+  transition: scale 100ms ease-out, box-shadow 150ms ease-out;
+}
+
+/* 按下先让纸微微离板；越过拖动阈值后再进入完整拿起状态。 */
+.clue-paper.is-pressed,
+.clue-thesis.is-pressed {
+  scale: 1.015;
 }
 
 .clue-paper.is-dragging,
@@ -609,10 +601,10 @@ article.clue-paper {
   z-index: 6;
   scale: 1.04;
   box-shadow: 0 4px 0 rgb(50 40 24 / 12%), 0 26px 34px -12px rgb(50 40 24 / 60%);
-  transition: none;
+  transition-duration: 90ms;
 }
 
-/* 整纸主入口：透明热区盖在纸上，点按 = 进这条线索的桌面 */
+/* 整纸主入口：双击进入对应主页板块，右键打开设置。 */
 .clue-paper-hit {
   position: absolute;
   inset: 0;
@@ -628,98 +620,65 @@ article.clue-paper {
   outline-offset: 3px;
 }
 
-/* 「进这张桌面 →」： hover 时浮在纸的下缘 */
-.clue-paper-hit-label {
-  position: absolute;
-  left: 50%;
-  bottom: 7px;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  color: var(--dim-olive-deep, #46521f);
-  background: color-mix(in srgb, var(--dim-paper, #fdfaf2) 88%, transparent);
-  border: 1px solid var(--dim-line, #d8d2c0);
-  border-radius: 999px;
-  padding: 3px 10px;
-  opacity: 0;
-  translate: 0 4px;
-  transition: opacity 0.22s ease, translate 0.22s ease;
-  pointer-events: none;
+/* 纸面只呈现内容；右键设置时才显示尺寸控制。 */
+.clue-thread-paper {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 14px;
+  min-width: 208px;
+  min-height: 132px;
 }
 
-.clue-thread-paper:hover .clue-paper-hit-label,
-.clue-paper-hit:focus-visible .clue-paper-hit-label {
-  opacity: 1;
-  translate: 0 0;
+.clue-thread-content {
+  min-height: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-/* 右上只保留详情与连接；纸片编辑统一由双击承担。 */
-.clue-paper-detail,
-.clue-paper-relation {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  background: none;
-  border: 0;
-  border-radius: 50%;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--dim-ink-faint, #9a9482);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, background 0.2s ease;
+.clue-thread-paper .clue-more {
+  min-height: 18px;
+  align-items: center;
 }
 
-/* 双击是主编辑入口；此按钮只为键盘/读屏保留，Tab 聚焦时才显形。 */
-.clue-paper-edit-keyboard {
+.clue-thread-paper.is-resizing {
+  z-index: 7;
+  outline: 1px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 3px;
+}
+
+.clue-resize-handle,
+.clue-resize-done {
   position: absolute;
   z-index: 3;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-.clue-paper-edit-keyboard:focus-visible {
-  right: 34px;
-  bottom: 7px;
-  width: auto;
-  height: 23px;
-  padding: 0 9px;
-  overflow: visible;
-  clip-path: none;
-  border: 1px solid var(--dim-olive, #7c8a3e);
-  border-radius: 999px;
+  border: 1px solid var(--dim-line, #d8d2c0);
   background: var(--dim-paper, #fdfaf2);
   color: var(--dim-olive-deep, #46521f);
-  font-size: 9px;
 }
 
-.clue-paper-relation {
-  inset: auto auto 7px 7px;
-  width: auto;
-  height: 23px;
-  padding: 0 8px;
-  display: inline-flex;
-  gap: 5px;
-  border-radius: 999px;
-  background: rgb(253 250 242 / 90%);
-  border: 1px solid rgb(108 99 72 / 20%);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  opacity: 0.58;
+.clue-resize-handle {
+  right: -10px;
+  bottom: -10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  cursor: nwse-resize;
+  touch-action: none;
 }
 
-.clue-paper-relation i,
+.clue-resize-done {
+  right: 0;
+  bottom: calc(100% + 9px);
+  padding: 5px 9px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .clue-line-editor-options i {
   display: inline-block;
   width: 15px;
@@ -727,35 +686,20 @@ article.clue-paper {
   border-top: 1.5px solid #a88a3c;
 }
 
-.clue-paper-relation.is-verify i,
 .clue-line-editor-options i.is-verify {
   border-color: #b0503f;
   border-top-style: dashed;
 }
 
-.clue-paper-relation.is-related i,
 .clue-line-editor-options i.is-related {
   border-color: #69746d;
   border-top-style: dotted;
 }
 
-.clue-paper-relation.is-none i,
 .clue-line-editor-options i.is-none {
   border-color: #99917f;
   opacity: 0.5;
   rotate: -24deg;
-}
-
-.clue-thread-paper:hover .clue-paper-detail,
-.clue-thread-paper:hover .clue-paper-relation,
-.clue-paper-detail:focus-visible,
-.clue-paper-relation:focus-visible {
-  opacity: 1;
-}
-
-.clue-paper-detail:hover {
-  background: rgb(60 55 40 / 8%);
-  color: var(--dim-ink, #2a2a24);
 }
 
 .clue-paper[data-card-editable="true"]:focus-visible {
@@ -763,11 +707,6 @@ article.clue-paper {
   outline-offset: 3px;
 }
 
-.clue-paper-relation:hover {
-  background: rgb(255 252 240 / 96%);
-  color: var(--dim-ink, #2a2a24);
-  border-color: rgb(108 99 72 / 40%);
-}
 
 /* ---------- 连接编辑：选一根线后出现的真实本地设置 ---------- */
 
@@ -794,6 +733,7 @@ article.clue-paper {
 
 .clue-line-editor > strong {
   font-size: 14px;
+  color: var(--dim-ink, #2a2a24);
 }
 
 .clue-line-editor p {
@@ -841,10 +781,7 @@ article.clue-paper {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .clue-paper-hit-label,
-  .clue-paper-detail,
-  .clue-paper-relation,
-  .clue-paper-edit-keyboard {
+  .clue-paper-relation {
     transition: none;
   }
 
@@ -857,4 +794,116 @@ article.clue-paper {
   .clue-btn {
     transition: none;
   }
+}
+.clue-thesis-home {
+  display: block;
+  margin-top: 8px;
+  color: var(--dim-olive-deep);
+  font-size: 11px;
+}
+
+.clue-goal-create {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 4;
+  padding: 7px 12px;
+  border: 1px solid var(--dim-line);
+  border-radius: 1px;
+  background: var(--dim-paper);
+  color: var(--dim-olive-deep);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.clue-goal-editor {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  padding: 0;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.clue-goal-editor::backdrop {
+  background: rgb(35 34 27 / 34%);
+  backdrop-filter: blur(4px);
+}
+
+.clue-goal-editor .dim-editor-actions button {
+  padding: 7px 12px;
+  border: 1px solid var(--dim-line);
+  background: var(--dim-paper);
+  color: var(--dim-olive-deep);
+  cursor: pointer;
+}
+
+.clue-goal-pages {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.clue-goal-pages button {
+  padding: 5px 8px;
+  border: 1px solid var(--dim-line);
+  border-radius: 3px;
+  background: var(--dim-paper);
+  color: var(--dim-olive-deep);
+  cursor: pointer;
+}
+
+.clue-goal-pages button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 外框裁切视野，纸与连线共享可无限平移的世界层。 */
+.clue-world {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.clue-world .clue-paper,
+.clue-world .clue-thesis {
+  pointer-events: auto;
+}
+
+.clue-world .clue-threads { overflow: visible; }
+
+.clue-surface {
+  touch-action: none;
+  cursor: grab;
+}
+
+.clue-surface.is-panning { cursor: grabbing; user-select: none; }
+
+.clue-camera-reset {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 4;
+  padding: 7px 12px;
+  border: 1px solid var(--dim-line);
+  border-radius: 1px;
+  color: var(--dim-olive-deep);
+  background: var(--dim-paper);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.clue-topbar .clue-legend {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+@media (width <= 760px) {
+  .clue-board { padding: 0 12px 12px; }
+  .clue-topbar { flex-wrap: wrap; gap: 4px 12px; padding-block: 8px; }
+  .clue-legend { flex-wrap: wrap; gap: 6px 12px; }
 }

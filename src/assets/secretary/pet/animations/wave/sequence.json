@@ -1,0 +1,63 @@
+{
+  "id": "wave",
+  "title": "招手提醒",
+  "description": "抬手招呼两下，放下手等你。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "手放在身前",
+    "自然抬手",
+    "掌心朝向你",
+    "轻摆一下",
+    "摆向另一边",
+    "手掌回正",
+    "慢慢放下",
+    "等你回应"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1500
+    },
+    {
+      "frame": 1,
+      "ms": 180
+    },
+    {
+      "frame": 2,
+      "ms": 180
+    },
+    {
+      "frame": 3,
+      "ms": 220
+    },
+    {
+      "frame": 4,
+      "ms": 220
+    },
+    {
+      "frame": 3,
+      "ms": 220
+    },
+    {
+      "frame": 4,
+      "ms": 220
+    },
+    {
+      "frame": 5,
+      "ms": 180
+    },
+    {
+      "frame": 6,
+      "ms": 180
+    },
+    {
+      "frame": 7,
+      "ms": 2300
+    }
+  ],
+  "duration": 5400
+}

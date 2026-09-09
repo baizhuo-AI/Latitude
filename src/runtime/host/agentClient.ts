@@ -1,4 +1,6 @@
 import type { RuntimeJson, RuntimeRequestOptions } from "./DesktopRuntimePort";
+import type { PersonaState, PersonaChange, AgentProgressPage } from "../../shared/agentExperience";
+export type { PersonaState, PersonaChange, AgentProgressPage, AgentProgressItem } from "../../shared/agentExperience";
 
 export type AgentRunState =
   | "queued"
@@ -6,6 +8,7 @@ export type AgentRunState =
   | "completed"
   /** rc.6 Host 内部旧名；浏览器默认以 completed 为终态。 */
   | "succeeded"
+  | "budget_exhausted"
   | "failed"
   | "cancelled";
 
@@ -15,11 +18,37 @@ export interface AgentHistoryMessage {
   content: string;
   createdAt?: string;
   seq?: number;
+  explanation?: AgentResponseExplanation;
+}
+
+export interface AgentResponseExplanation {
+  summary: string;
+  steps: string[];
+  uncertainty?: string;
 }
 
 export interface AgentSessionMessagesResponse {
   sessionId: string;
   messages: AgentHistoryMessage[];
+}
+
+export interface ModelProviderOption {
+  id: string;
+  label: string;
+  configured: boolean;
+  credentialName: string;
+  models: Array<{ id: string; label: string }>;
+}
+
+export interface ModelProviderSettings {
+  active: { provider: string; model: string };
+  options: ModelProviderOption[];
+  appliesTo: "next_turn";
+}
+
+export interface UpdateModelProviderRequest {
+  provider: string;
+  model: string;
 }
 
 export interface SchedulerOutboxItem {
@@ -107,6 +136,7 @@ export interface AgentTurnBudgets {
 }
 
 export interface AgentTurnRequest {
+  useHistory?: boolean;
   sessionId: string;
   text: string;
   systemPrompt?: string;
@@ -146,6 +176,7 @@ export interface AgentExecutionResult {
     cacheWriteTokens: number;
     reasoningTokens: number;
   };
+  explanation?: AgentResponseExplanation;
   events?: RuntimeJson[];
   [key: string]: unknown;
 }
@@ -221,7 +252,20 @@ export interface WebSearchCoverage {
 }
 
 export interface AgentClient {
+  desktop?: {
+    read(date: string, options?: RuntimeRequestOptions): Promise<import("../../shared/desktopContent").DesktopContent>;
+    updateTodo(request: import("../../shared/desktopContent").DesktopTodoUpdate, options?: RuntimeRequestOptions): Promise<{ saved: boolean; updatedAt: string }>;
+  };
+  getPersona(options?: RuntimeRequestOptions): Promise<PersonaState>;
+  updatePersona(request: PersonaChange, options?: RuntimeRequestOptions): Promise<PersonaState>;
+  getProgress(runId: string, after?: number, options?: RuntimeRequestOptions): Promise<AgentProgressPage>;
+  getLatestRun(sessionId: string, options?: RuntimeRequestOptions): Promise<{ run: AgentRunResult | null }>;
   health(options?: RuntimeRequestOptions): Promise<Record<string, RuntimeJson>>;
+  getProviderSettings(options?: RuntimeRequestOptions): Promise<ModelProviderSettings>;
+  updateProviderSettings(
+    request: UpdateModelProviderRequest,
+    options?: RuntimeRequestOptions
+  ): Promise<ModelProviderSettings>;
   startTurn(
     request: AgentTurnRequest,
     options?: RuntimeRequestOptions
@@ -262,6 +306,7 @@ export function isTerminalAgentRun(state: AgentRunState): boolean {
   return (
     state === "completed" ||
     state === "succeeded" ||
+    state === "budget_exhausted" ||
     state === "failed" ||
     state === "cancelled"
   );
@@ -270,4 +315,10 @@ export function isTerminalAgentRun(state: AgentRunState): boolean {
 /** UI 只在终态读取；不把任务快照结构泄漏进卡片组件。 */
 export function assistantTextFromRun(run: AgentRunResult): string {
   return run.result?.assistantText ?? run.assistantText ?? run.content ?? "";
+}
+
+export function assistantExplanationFromRun(
+  run: AgentRunResult,
+): AgentResponseExplanation | undefined {
+  return run.result?.explanation;
 }

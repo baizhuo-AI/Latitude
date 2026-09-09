@@ -257,7 +257,7 @@ confidence = f(证据数与质量, 用户确认强度, 反证存在性, 时效)
 
 ## 10. 隐私与生命周期
 
-- **privacy_level** 随 evidence 源：quick_note/chat 标准级；recording / computer_history 最高级（纯本地、不进任何跨设备同步、单独加密可选）。
+- **privacy_level** 仍随 evidence 源记录：quick_note/chat 标准级；recording / computer_history 最高级。但它只描述数据性质，不作为交互式 Agent 的读取隔离；用户拥有的本地 Agent 默认可检索全部原始证据。若当前配置的是云模型，命中的原始片段会进入该供应商的模型请求。
 - **导出**：全量 JSON（机器可读）+ markdown 卡片集（人可读）；两层导出包（指标层/内容层）是它的子集视图。
 - **删除语义**：
   - 删单条 evidence → 其 supports 的 claim 若失去全部证据，降级为 `unsupported` 待用户处置（保留或一并删）；

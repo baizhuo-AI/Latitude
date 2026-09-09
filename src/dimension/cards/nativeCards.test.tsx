@@ -8,6 +8,7 @@ import {
 import {
   limitFeedItems,
   type AnchorCard,
+  type ChartCard,
   type FeedCard,
   type FeedItem,
   type NativeCardLayout,
@@ -52,6 +53,32 @@ describe("native cards", () => {
 
     await user.click(screen.getAllByRole("button", { name: "有新角度" })[1]);
     expect(onFeedFeedback).toHaveBeenCalledWith("feed-2", "new-angle");
+  });
+
+  it("图表空数组显示紧凑说明，真实的零值仍按数据时段渲染", () => {
+    const empty: ChartCard = {
+      kind: "chart",
+      id: "rhythm-card",
+      span: 4,
+      eyebrow: "行动回看",
+      title: "这些行动该看结果了",
+      bars: [],
+      emptyHint: "还没有安排需要回看的行动。",
+      link: "不应显示成动作",
+    };
+    const { container, rerender } = render(<DeskCardView card={empty} handlers={{}} />);
+
+    expect(screen.getByText("还没有安排需要回看的行动。")).toBeInTheDocument();
+    expect(container.querySelector(".dim-chart-card--empty")).toBeInTheDocument();
+    expect(container.querySelector(".dim-chart-bars")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /不应显示成动作/ })).not.toBeInTheDocument();
+
+    rerender(<DeskCardView card={{ ...empty, bars: [0, 0], emptyHint: undefined }} handlers={{}} />);
+    expect(screen.queryByText("还没有安排需要回看的行动。")).not.toBeInTheDocument();
+    const bars = container.querySelectorAll("[data-chart-value]");
+    expect(bars).toHaveLength(2);
+    expect(bars[0]).toHaveStyle({ height: "0%" });
+    expect(bars[1]).toHaveAttribute("data-chart-value", "0");
   });
 
   it("锚点卡的血缘入口上报完整实体引用", async () => {
@@ -110,10 +137,68 @@ describe("native cards", () => {
     expect(onAnchorEdit).toHaveBeenCalledWith(row, "和设计走完核心路径");
   });
 
-  it("注册表穷尽九种 kind，未知 kind 直接抛错", () => {
+  it("今天做过卡可以写入、修改、撤下并发起待确认回看", async () => {
+    const user = userEvent.setup();
+    const onActivityCapture = vi.fn();
+    const onActivityEdit = vi.fn();
+    const onActivityRetract = vi.fn();
+    const onActivityReflect = vi.fn();
+    const entry = {
+      id: "activity-1",
+      text: "把第一版服务接回原来的纸面",
+      occurredAt: "2026-09-01T15:20:00Z",
+      timeLabel: "11:20",
+      lineage: {
+        entityType: "evidence_event",
+        entityId: "activity-1",
+        label: "你在今天留下的记录"
+      }
+    };
+
+    render(
+      <DeskCardView
+        card={{
+          kind: "activity",
+          id: "activity-card",
+          span: 7,
+          eyebrow: "真实记录",
+          title: "今天做过",
+          entries: [entry, { ...entry, id: "activity-2", text: "确认第一步只做真实记录" }],
+          emptyHint: "还没有记录",
+          capturePlaceholder: "刚才做了什么？一句话就够",
+          canCapture: true,
+          canReflect: true
+        }}
+        handlers={{
+          onActivityCapture,
+          onActivityEdit,
+          onActivityRetract,
+          onActivityReflect
+        }}
+      />
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "记下一件已经做过的事" }), "写完活动记录卡");
+    await user.click(screen.getByRole("button", { name: "记下" }));
+    expect(onActivityCapture).toHaveBeenCalledWith("写完活动记录卡");
+
+    await user.click(screen.getByRole("button", { name: "修改：把第一版服务接回原来的纸面" }));
+    const edit = screen.getByRole("textbox", { name: "编辑做过的事：把第一版服务接回原来的纸面" });
+    await user.clear(edit);
+    await user.type(edit, "把服务接回原纸面{Enter}");
+    expect(onActivityEdit).toHaveBeenCalledWith(entry, "把服务接回原纸面");
+
+    await user.click(screen.getByRole("button", { name: "撤下：把第一版服务接回原来的纸面" }));
+    expect(onActivityRetract).toHaveBeenCalledWith(entry);
+    await user.click(screen.getByRole("button", { name: "帮我看看今天" }));
+    expect(onActivityReflect).toHaveBeenCalledOnce();
+  });
+
+  it("注册表穷尽十种 kind，未知 kind 直接抛错", () => {
     expect(Object.keys(NATIVE_CARD_REGISTRY)).toEqual([
       "cognition",
       "feed",
+      "activity",
       "anchors",
       "count",
       "note",

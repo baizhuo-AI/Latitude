@@ -1,0 +1,167 @@
+.dim-resizable {
+  --dim-resize-hit: 20px;
+  --dim-resize-inset: 2px;
+  --dim-resize-edge: 7px;
+  --dim-resize-edge-offset: -4px;
+  --dim-resize-edge-clearance: 24px;
+  --dim-resize-mark: 8px;
+  --dim-resize-max-width: 100cqw;
+
+  display: flow-root;
+  max-width: var(--dim-resize-max-width);
+  transition: scale 110ms ease-out;
+}
+
+.dim-resizable > .dim-paper {
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.dim-resizable.is-sized > .dim-paper {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0 !important;
+  margin-top: 0 !important;
+  overflow: visible;
+}
+
+.dim-resizable.is-resizing {
+  user-select: none;
+}
+
+.dim-resizable.is-resizing > .dim-paper {
+  transition-duration: 110ms;
+}
+
+/* Paper coordinates are independent: resizing a card never changes another slot. */
+.dim-grid[data-free-desktop] {
+  display: block;
+}
+
+.dim-grid[data-free-desktop] > [data-layout-card-id] {
+  position: absolute;
+}
+
+.dim-grid[data-free-desktop] .dim-resizable {
+  --dim-resize-max-width: none;
+}
+
+.dim-grid[data-free-desktop] .dim-resizable > .dim-paper {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0 !important;
+  margin-top: 0 !important;
+  overflow: visible;
+}
+
+/* Legacy grid exists only while its previous positions are measured for migration. */
+.dim-grid[data-arranged]:not([data-free-desktop]) {
+  --dim-arranged-card-height: clamp(190px, calc((100dvh - 310px) / 2), 290px);
+
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dim-grid[data-arranged]:not([data-free-desktop]) > [data-layout-card-id] {
+  grid-column: auto;
+}
+
+.dim-grid[data-arranged]:not([data-free-desktop]) .dim-resizable:not(.is-sized) {
+  height: var(--dim-arranged-card-height);
+}
+
+.dim-grid[data-arranged]:not([data-free-desktop]) .dim-resizable:not(.is-sized) > .dim-paper {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0 !important;
+  margin-top: 0 !important;
+  overflow: visible;
+}
+
+@container (width < 980px) {
+  .dim-grid[data-arranged]:not([data-free-desktop]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (width < 620px) {
+  .dim-grid[data-arranged]:not([data-free-desktop]) { grid-template-columns: minmax(0, 1fr); }
+}
+
+.dim-resizable.is-located {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 6px;
+  border-radius: 2px;
+}
+
+.dim-card-resize {
+  position: absolute;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--dim-ink-soft);
+  background: transparent;
+  border: 0;
+  opacity: 0;
+  touch-action: none;
+  transition: opacity 120ms ease;
+}
+
+.dim-card-resize[data-resize-direction="right"] {
+  top: var(--dim-resize-edge-clearance);
+  right: var(--dim-resize-edge-offset);
+  bottom: var(--dim-resize-edge-clearance);
+  width: var(--dim-resize-edge);
+  cursor: ew-resize;
+}
+
+.dim-card-resize[data-resize-direction="bottom"] {
+  right: var(--dim-resize-edge-clearance);
+  bottom: var(--dim-resize-edge-offset);
+  left: var(--dim-resize-edge-clearance);
+  height: var(--dim-resize-edge);
+  cursor: ns-resize;
+}
+
+.dim-card-resize[data-resize-direction="corner"] {
+  right: var(--dim-resize-inset);
+  bottom: var(--dim-resize-inset);
+  width: var(--dim-resize-hit);
+  height: var(--dim-resize-hit);
+  cursor: nwse-resize;
+  opacity: 0.5;
+}
+
+.dim-card-resize[data-resize-direction="corner"]::after {
+  width: var(--dim-resize-mark);
+  height: var(--dim-resize-mark);
+  content: "";
+  border-right: 3px double currentcolor;
+  border-bottom: 3px double currentcolor;
+}
+
+.dim-card-resize:focus-visible {
+  color: var(--dim-olive);
+  outline: 2px solid currentcolor;
+  outline-offset: -2px;
+}
+
+.dim-resizable:hover .dim-card-resize,
+.dim-resizable:focus-within .dim-card-resize {
+  opacity: 0.85;
+}
+
+@media (pointer: coarse) {
+  .dim-resizable {
+    --dim-resize-hit: 32px;
+    --dim-resize-edge: 12px;
+    --dim-resize-edge-clearance: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dim-resizable,
+  .dim-card-resize {
+    transition: none;
+  }
+}

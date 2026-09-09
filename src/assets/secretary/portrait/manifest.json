@@ -1,0 +1,34 @@
+[
+  {
+    "file": "idle_breathe.png",
+    "mode": "RGB",
+    "width": 1024,
+    "height": 1536,
+    "background": "white",
+    "sha256": "083fa12501ce5689a7854bbda36f0a6c1d988f0cb798682304959dee8204bc61"
+  },
+  {
+    "file": "offering.png",
+    "mode": "RGB",
+    "width": 1024,
+    "height": 1536,
+    "background": "white",
+    "sha256": "423e74eb1009f06eebf3aace99031cb531d0793a4e909e511745e3686546c11c"
+  },
+  {
+    "file": "thinking.png",
+    "mode": "RGB",
+    "width": 1024,
+    "height": 1536,
+    "background": "white",
+    "sha256": "e103b2846d48320c343e0ca17a912aca4c3f09296c9ff1522b36c327fb1f4061"
+  },
+  {
+    "file": "wave_small.png",
+    "mode": "RGB",
+    "width": 1024,
+    "height": 1536,
+    "background": "white",
+    "sha256": "21a379806d42a88537f375dc77329d52e907a8ded199f0f1287429f565817a8b"
+  }
+]

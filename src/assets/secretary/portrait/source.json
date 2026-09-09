@@ -1,0 +1,79 @@
+{
+  "method": "built-in image_gen style transfer; frame-only white-background RGB assets, CSS multiply into the paper frame",
+  "entries": [
+    {
+      "key": "offering",
+      "prompt": "Use case: style-transfer with identity and pose preservation.\nAsset: ONE production illustration for the framed secretary portrait in Latitude.\nImage 1 is the edit target: current full-body offering pose. Preserve her exact face shape, body proportions, hairstyle silhouette, hairclip, short cape jacket, short cream skirt, tights, shoes, notebook, hand positions, blank paper card, full-body framing and canvas placement.\nImage 2 is the user-approved master and the primary rendering-style reference. Image 3 is an additional reference ONLY for muted gouache/colored-pencil material treatment, never its older long-coat costume.\nRepaint Image 1 in the matte, restrained hand-painted finish of Image 2 and Image 3. Warm ash-beige hair instead of pink-white, very soft broken painted hair highlights instead of sharp glossy white bands. Natural warm cream skin with subtle warm-gray shadows and visible delicate brush transitions, not smooth porcelain. Keep lively gray-green eyes and the same expression, with small restrained catchlights. Charcoal/olive cloth with subtle fine woven/pencil texture, soft diffuse shading; small muted old-brass gold details without shiny bevels or bright metallic reflections. Notebook is matte dark leather with quiet brass corners. Preserve depth, clean readable thin brown/olive linework and the character's charm; do not just lower exposure or wash the colors out. No added grain overlay or dirty face texture. The result should feel like a softly painted character in a paper illustration, not a glossy game card.\nOutput ONE full-body 1024x1536 PNG with actual RGBA transparency, alpha zero outside the figure. Use Image 1's existing transparent silhouette; ignore invisible RGB background colors. No backdrop, halo, paper rectangle, floor, shadows outside the character, checkerboard, text, border, UI or watermark. The head-to-waist part will be displayed inside the existing frame by CSS, so preserve Image 1's full-body scale and placement.",
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "offering-cleanup",
+      "prompt": "Edit Image 1 into the final framed-portrait asset.\nKeep the entire character, pose, silhouette, canvas scale, clothing, muted matte cloth and notebook exactly as shown. Clean up only the excessive mottled parchment texture on her skin: face and hands should have the gentle clean warm-cream skin and delicate soft shading of Image 2, with no speckled/tan paper staining. Keep her hair softly painted ash-beige rather than pink or metallic. Do not increase shine or add glossy highlights.\nRemove the entire gray-white checkerboard backdrop to REAL TRANSPARENCY. Export a true RGBA PNG with background alpha zero, not a picture of transparency. Image 3 is a technical reference of an actual RGBA export; preserve its transparent-file behavior only and do not borrow its shiny rendering or change Image 1's pose. Retain the exact full-body framing and 1024 x 1536 canvas. No backdrop replacement, paper rectangle, halo, shadow, text, UI, border or cropping.",
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "offering-green",
+      "prompt": "Preserve the exact character pixels, pose, framing and matte painting of this image. Replace ONLY the gray-white checkerboard backdrop with a perfectly uniform solid chroma green #00FF00. No green light on the character, no color shift, no sharpening, no new drawing or detail, no glow, no floor, no grain, no text. Keep 1024x1536 and the exact existing figure, hands, face, clothing and full body.",
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "idle_breathe",
+      "prompt": "Use case: style-transfer, identity and pose preserve. Make one full-body 1024x1536 portrait asset for a fixed paper-style secretary frame.\nImage 1 is the target pose. Preserve its exact character proportions, head/face geometry, full-body scale and placement, outfit silhouette, hands, props, expression, and shoes.\nImage 2 is the matched rendering reference for this three-image portrait set. Repaint Image 1 using Image 2's muted ash-beige hair, charcoal/olive woven cloth, matte dark notebook, subdued old-brass trim, warm cream skin and thin brown/olive hand-drawn lines. Use gentle watercolor/gouache shading; quiet fragmented hair highlights, fine cloth texture, clean naturally shaded face. No shiny white hair bands, smooth plastic skin, bright beveled metals, or paper grain on face. Keep Image 1's pose and camera. Image 3 is the original approved identity reference.\nReturn ONE genuine transparent RGBA PNG cutout. Every pixel outside the character must have alpha zero; do not draw a checkerboard or a white/paper/black background. No text, decoration, frame, floor or halo.\nPose: retain Image 1's relaxed neutral posture hugging the closed notebook with both hands, a gentle small closed-mouth smile.",
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "thinking",
+      "prompt": "Use case: style-transfer, identity and pose preserve. Make one full-body 1024x1536 portrait asset for a fixed paper-style secretary frame.\nImage 1 is the target pose. Preserve its exact character proportions, head/face geometry, full-body scale and placement, outfit silhouette, hands, props, expression, and shoes.\nImage 2 is the matched rendering reference for this three-image portrait set. Repaint Image 1 using Image 2's muted ash-beige hair, charcoal/olive woven cloth, matte dark notebook, subdued old-brass trim, warm cream skin and thin brown/olive hand-drawn lines. Use gentle watercolor/gouache shading; quiet fragmented hair highlights, fine cloth texture, clean naturally shaded face. No shiny white hair bands, smooth plastic skin, bright beveled metals, or paper grain on face. Keep Image 1's pose and camera. Image 3 is the original approved identity reference.\nReturn ONE genuine transparent RGBA PNG cutout. Every pixel outside the character must have alpha zero; do not draw a checkerboard or a white/paper/black background. No text, decoration, frame, floor or halo.\nPose: retain Image 1's thoughtful upward glance with one index finger under her chin and the other arm holding the notebook. Same thoughtful expression, no added question mark.",
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "offering-alpha",
+      "prompt": "Remove the solid green background from Image 1 and export the identical isolated character as a real transparent PNG, RGBA with alpha=0 outside her silhouette. Image 2 is only an example of the required real PNG alpha channel; do not copy its character or rendering. Background extraction only: keep Image 1's exact matte watercolor character, every face and cloth detail, full body, pose, canvas placement, scale and 1024x1536 size. No redraw or recoloring. No replacement background, checkerboard, halo, vignette or floor shadow.",
+      "accepted": false,
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "idle-green",
+      "prompt": "Preserve this exact matte hand-painted character, face, eyes, hair, posture, notebook, clothing detail, skin, full-body scale, canvas and placement. Replace ONLY the checkerboard with a perfectly flat chroma green #00FF00 background. Do not change or repaint the subject. No added shine, smoothening, sharpening, color shift, green spill, glow, floor or text. Keep 1024x1536.",
+      "accepted": false,
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "thinking-green",
+      "prompt": "Preserve this exact matte hand-painted character, face, upward gaze, hand under chin, notebook, clothing detail, skin, full-body scale, canvas and placement. Replace ONLY the checkerboard with a perfectly flat chroma green #00FF00 background. Do not change or repaint the subject. No added shine, smoothening, sharpening, color shift, green spill, glow, floor or text. Keep 1024x1536.",
+      "accepted": false,
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "idle_breathe-white",
+      "prompt": "Edit this exact image for a framed secretary illustration. The ONLY change is the background: replace ALL gray checkerboard background with a perfectly plain, flat, solid pure WHITE (#FFFFFF) background, including all visible background gaps between the limbs and between hair and body. Output a normal opaque RGB image. Do not attempt transparency. No checkerboard, no gray squares, no green background, no gradient, no floor, no cast shadow, no text. Preserve the character's exact silhouette, pose, size, position and 1024 by 1536 full-body composition; do not crop or reposition her. Preserve ALL existing matte hand-painted/pencil surface qualities and muted colors: soft ash-beige hair, natural smooth cream skin, muted olive-charcoal cloth, understated antique brass. Keep the exact existing face, eyes, expression, hairstyle, dress, accessory and props. Do not redraw the character into a shiny 3D model; no metallic shine added to the hair or fabric; no pink hair or orange highlights. Treat this as background cleanup of the supplied finished artwork, with the character unchanged.",
+      "accepted": true,
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "thinking-white",
+      "prompt": "Edit this exact image for a framed secretary illustration. The ONLY change is the background: replace ALL gray checkerboard background with a perfectly plain, flat, solid pure WHITE (#FFFFFF) background, including all visible background gaps between the limbs and between hair and body. Output a normal opaque RGB image. Do not attempt transparency. No checkerboard, no gray squares, no green background, no gradient, no floor, no cast shadow, no text. Preserve the character's exact silhouette, pose, size, position and 1024 by 1536 full-body composition; do not crop or reposition her. Preserve ALL existing matte hand-painted/pencil surface qualities and muted colors: soft ash-beige hair, natural smooth cream skin, muted olive-charcoal cloth, understated antique brass. Keep the exact existing face, eyes, expression, hairstyle, dress, accessory and props. Do not redraw the character into a shiny 3D model; no metallic shine added to the hair or fabric; no pink hair or orange highlights. Treat this as background cleanup of the supplied finished artwork, with the character unchanged.",
+      "accepted": true,
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "offering-white",
+      "prompt": "Edit this exact image for a framed secretary illustration. The ONLY change is the background: replace ALL gray checkerboard background with a perfectly plain, flat, solid pure WHITE (#FFFFFF) background, including all visible background gaps between the limbs and between hair and body. Output a normal opaque RGB image. Do not attempt transparency. No checkerboard, no gray squares, no green background, no gradient, no floor, no cast shadow, no text. Preserve the character's exact silhouette, pose, size, position and 1024 by 1536 full-body composition; do not crop or reposition her. Preserve ALL existing matte hand-painted/pencil surface qualities and muted colors: soft ash-beige hair, natural smooth cream skin, muted olive-charcoal cloth, understated antique brass. Keep the exact existing face, eyes, expression, hairstyle, dress, accessory and props. Do not redraw the character into a shiny 3D model; no metallic shine added to the hair or fabric; no pink hair or orange highlights. Treat this as background cleanup of the supplied finished artwork, with the character unchanged.",
+      "accepted": true,
+      "sourceNote": "Generated candidate in the matte portrait production sequence; only the final assets listed below are distributed."
+    },
+    {
+      "key": "wave_small",
+      "prompt": "Use case: identity-preserve. Asset type: secretary portrait-frame animation base. Edit the referenced approved character artwork. Preserve EXACT face, small slender cute proportions, ash blonde bob with gold geometric hairclip, olive brown gold trimmed secretary dress and cream pleats, matte watercolor paper texture, restrained diffuse lighting, book design, camera, full-body standing centered composition, 1024x1536 canvas. Change pose only: hold the closed notebook against chest with left arm (image right); right forearm raised (image left), open palm facing viewer to gently wave. Place the waving palm well to the LEFT of the head with a wide WHITE GAP between fingertips and hair, and keep fingers away from the face and body, so the hand can be animated independently from the cuff at the wrist. Wrist at about x29%,y37%, palm x27%,y30%. Body straight, both feet firmly still. Background flat pure white, NO shadow, NO checkerboard, no text, no motion lines. One single character. Keep the approved matte portrait material, not glossy or metal.",
+      "reference": "src/assets/secretary/portrait/idle_breathe.png",
+      "sourceNote": "Generated independently after the three matte portraits; the final wave asset uses a white RGB background."
+    }
+  ],
+  "finalAssets": {
+    "idle_breathe": "src/assets/secretary/portrait/idle_breathe.png",
+    "thinking": "src/assets/secretary/portrait/thinking.png",
+    "offering": "src/assets/secretary/portrait/offering.png",
+    "wave_small": "src/assets/secretary/portrait/wave_small.png"
+  },
+  "note": "Transparency attempts returned RGB checkerboards; rejected. Final white-background images were copied byte-for-byte. The 36 existing floating pet PNG files are preserved."
+}

@@ -1,12 +1,35 @@
+import { ComputerHistoryPanel } from "../../dimension/computer-history/ComputerHistoryPanel";
+import { AnimatePresence } from "motion/react";
+import { MotionSurface } from "../../dimension/SurfaceMotion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DeskThread } from "../../dimension/DeskThread";
+import {
+  DeskThread,
+  type AssistantExplanation,
+} from "../../dimension/DeskThread";
+import { SecretaryInvitation } from "../../dimension/SecretaryInvitation";
+import { listen, emitTo } from "@tauri-apps/api/event";
+import { SecretaryDock, BrowserPet } from "../../dimension/pet/SecretaryDock";
+import { useSecretaryPet } from "../../dimension/pet/useSecretaryPet";
+import { usePetInbox } from "../../dimension/pet/usePetInbox";
+import { petCommand, nativePetAvailable } from "../../dimension/pet/nativePet";
+import { besidePet } from "../../dimension/pet/geometry";
+import type { PetAction, PetSnapshot } from "../../dimension/pet/types";
+import { displayComposerMessage, type ComposerSubmission } from "../../dimension/composer/attachments";
+import { updateDraft } from "../../dimension/composer/draftStore";
+import { NoticeSettings, PetNoticeBubble, useNoticePreferences, type PetNotice } from "../../dimension/pet-notices";
+import { DimToast } from "../../dimension/Shell";
+import type { GoalChange } from "../../dimension/presets/GoalEditorDialog";
 import { DimensionPresetApp } from "../../dimension/presets/DimensionPresetApp";
+import type { DesktopViewContext } from "../../dimension/desktopWorkspace";
+import { serializeDesktopViewContext } from "../../dimension/desktopViewContext";
 import type {
+  ActivityEntry,
   AnchorRow,
   CardHandlers,
   FeedFeedback,
   FeedItem,
   LineageRef,
+  SecretaryIntent,
 } from "../../dimension/types";
 import type { ChatMessageRow, ConversationRow } from "../../lib/db";
 import {
@@ -15,6 +38,7 @@ import {
   resolveBrowserComponentRuntimeState,
 } from "../../runtime/composition/browserProduction";
 import {
+  assistantExplanationFromRun,
   assistantTextFromRun,
   type CandidateCommand,
   type DueCandidateItem,
@@ -22,10 +46,9 @@ import {
   type DesktopRuntimePort,
   type KnowledgeContext,
   type KnowledgeNode,
+  type ModelProviderSettings,
   type RuntimeServiceState,
   type SchedulerOutboxItem,
-  type WebSearchItem,
-  type WebSearchResponse,
   useDesktopRuntime,
 } from "../../runtime/host";
 import {
@@ -34,6 +57,12 @@ import {
   isCandidateNode,
 } from "./browserProjection";
 import { BrowserCompositionDialog } from "./BrowserCompositionDialog";
+import { useDesktopContent } from "./useDesktopContent";
+import { projectPublishedDesktop } from "./publishedDesktopProjection";
+import { PersonaSettings } from "./PersonaSettings";
+import { SettingsFrame } from "../../dimension/settings/SettingsFrame";
+import { useAgentRun } from "../../runtime/host/useAgentRun";
+import type { AgentRunResult } from "../../runtime/host/agentClient";
 import {
   BrowserDataSafetyDialog,
   type BrowserDataSafetyActionAvailability,
@@ -51,8 +80,36 @@ import {
 } from "./browserProfile";
 
 const EMPTY_CONTEXT: KnowledgeContext = { nodes: [], edges: [] };
+const BROWSER_CONTEXT_KINDS = [
+  "evidence_event",
+  "observation",
+  "claim",
+  "tension",
+  "decision",
+  "experiment",
+  "action",
+  "outcome",
+  "topic",
+  "goal",
+  "project",
+  "method",
+  "interest",
+  "value",
+  "boundary",
+  "resource",
+  "question",
+  "insight",
+] as const;
 
-type BrowserMessage = Pick<ChatMessageRow, "id" | "role" | "content" | "createdAt">;
+type BrowserMessage = Pick<ChatMessageRow, "id" | "role" | "content" | "createdAt"> & {
+  explanation?: AssistantExplanation;
+};
+type BrowserWindowId = "thread" | "outcome" | "node" | "settings" | "data-safety" | "composition";
+
+const ACTIVE_WINDOW_Z_INDEX = 230;
+const BACKGROUND_WINDOW_Z_INDEX = 170;
+const DEFAULT_THREAD_Z_INDEX = 180;
+const DEFAULT_DIALOG_Z_INDEX = 100;
 
 export interface BrowserLiveDimensionAppProps {
   /** Tests and future shells can inject a compatible runtime without changing the UI. */
@@ -97,43 +154,99 @@ export function BrowserLiveDimensionSurface({
   const [now, setNow] = useState(() => new Date());
   const [notice, setNotice] = useState<string | null>(null);
   const [secretaryNotice, setSecretaryNotice] = useState<string | null>(null);
+  const [secretaryNoticeKind, setSecretaryNoticeKind] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [threadOpen, setThreadOpen] = useState(false);
+  const [useComputerHistory,setUseComputerHistory]=useState(true);
   const [messages, setMessages] = useState<BrowserMessage[]>([]);
+  const desktop = useDesktopContent(runtime.agent.desktop, String(messages.length));
   const [messageHydrationError, setMessageHydrationError] = useState<string | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [agentStatus, setAgentStatus] = useState<string | null>(null);
-  const [searchDraft, setSearchDraft] = useState("");
-  const [searchBusy, setSearchBusy] = useState(false);
-  const [webResults, setWebResults] = useState<WebSearchItem[]>([]);
-  const [searchReason, setSearchReason] = useState<string | undefined>();
-  const [lastSearchQuery, setLastSearchQuery] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [outcomeTarget, setOutcomeTarget] = useState<AnchorRow | null>(null);
   const [inspectedNode, setInspectedNode] = useState<KnowledgeNode | null>(null);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (!nativePetAvailable()) return;
+    let disposed = false; let cleanup: (() => void) | undefined;
+    void listen("latitude://history-open", () => { setSettingsOpen(true); setTimeout(() => document.getElementById("computer-history-settings")?.scrollIntoView({block:"start"}), 100); }).then(fn => { if (disposed) fn(); else cleanup = fn; });
+    return () => { disposed = true; cleanup?.(); };
+  }, []);
   const [dataSafetyOpen, setDataSafetyOpen] = useState(false);
   const [compositionOpen, setCompositionOpen] = useState(false);
+  const [frontWindow, setFrontWindow] = useState<BrowserWindowId | null>(null);
   const [domainBusy, setDomainBusy] = useState(false);
   const [candidateDueItems, setCandidateDueItems] = useState<DueCandidateItem[]>([]);
   const [outcomeCollectionActionId, setOutcomeCollectionActionId] = useState<string | null>(null);
-  const pollController = useRef<AbortController | null>(null);
+  const submitInFlight = useRef(false);
+  // Shared by the rail, floating thread and native pet. Read at submission time
+  // so opening a chat cannot freeze the selected area for later turns.
+  const desktopViewContext = useRef<DesktopViewContext | null>(null);
+  const updateDesktopViewContext = useCallback((next: DesktopViewContext) => { desktopViewContext.current = next; }, []);
   const activeDueNotice = useRef<string | null>(null);
   const acknowledgedCandidateDue = useRef(new Set<string>());
-  const sessionId = useMemo(getOrCreateBrowserSessionId, []);
+  const [sessionId, setSessionId] = useState(getOrCreateBrowserSessionId);
+  useEffect(()=>{try{setUseComputerHistory(localStorage.getItem(`latitude:history-use:${sessionId}`)!=="false");}catch{setUseComputerHistory(false);}},[sessionId]);
+  const petInbox = usePetInbox();
+  const { preferences: noticePreferences } = useNoticePreferences();
+  const pet = useSecretaryPet(() => {
+    if (pet.native && pet.state.mode === "floating") {
+      void petCommand("pet_show_chat").catch((error) => setNotice(String(error)));
+    } else {
+      setFrontWindow("thread");
+      setThreadOpen((open) => !open);
+    }
+  });
   const browserProfile = useMemo(
     () => new BrowserProfileCoordinator(runtime, () => sessionId, profileRecoveryStore),
     [profileRecoveryStore, runtime, sessionId],
   );
 
+  const openWindowIds = useMemo<BrowserWindowId[]>(() => [
+    ...(threadOpen ? ["thread" as const] : []),
+    ...(outcomeTarget ? ["outcome" as const] : []),
+    ...(inspectedNode ? ["node" as const] : []),
+    ...(settingsOpen ? ["settings" as const] : []),
+    ...(dataSafetyOpen ? ["data-safety" as const] : []),
+    ...(compositionOpen ? ["composition" as const] : []),
+  ], [
+    compositionOpen,
+    dataSafetyOpen,
+    inspectedNode,
+    outcomeTarget,
+    settingsOpen,
+    threadOpen,
+  ]);
+
+  useEffect(() => {
+    if (frontWindow && openWindowIds.includes(frontWindow)) return;
+    const fallback = openWindowIds[openWindowIds.length - 1] ?? null;
+    if (fallback !== frontWindow) setFrontWindow(fallback);
+  }, [frontWindow, openWindowIds]);
+
+  const windowZIndex = (id: BrowserWindowId) => {
+    if (openWindowIds.length <= 1) {
+      return id === "thread" ? DEFAULT_THREAD_Z_INDEX : DEFAULT_DIALOG_Z_INDEX;
+    }
+    return frontWindow === id ? ACTIVE_WINDOW_Z_INDEX : BACKGROUND_WINDOW_Z_INDEX;
+  };
+  const stackedWindowMode = openWindowIds.length > 1;
+
   const domainReady = health?.domain.state === "ready";
   const agentReady = health?.agent.state === "ready";
-  const agentAuthentication = optionalText(
-    recordOf(health?.agent.details?.model)?.authentication,
-  );
 
   const refreshContext = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!options.silent) setContextLoading(true);
     try {
-      const next = await runtime.getContext({ limit: 300 }, { retries: 1 });
+      const next = await runtime.getContext({
+        kinds: [...BROWSER_CONTEXT_KINDS],
+        evidenceTypes: ["activity"],
+        sensitivityCeiling: "highest",
+        limit: 500,
+      }, { retries: 1 });
       setContext(next);
       setContextError(null);
       setNow(new Date());
@@ -165,6 +278,7 @@ export function BrowserLiveDimensionSurface({
           role: message.role,
           content: message.content,
           createdAt: message.createdAt ?? new Date().toISOString(),
+          ...(message.explanation ? { explanation: message.explanation } : {}),
         }));
         setMessages((current) => current.length > 0 ? current : restored);
         setMessageHydrationError(null);
@@ -199,15 +313,6 @@ export function BrowserLiveDimensionSurface({
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(
-    () => () => {
-      // Leaving the page only stops browser polling. It does not silently cancel
-      // the durable Host task; explicit cancellation has its own button below.
-      pollController.current?.abort();
-    },
-    [],
-  );
-
   const effectiveState: RuntimeServiceState = contextError && context.nodes.length === 0
     ? "unavailable"
     : state;
@@ -216,14 +321,15 @@ export function BrowserLiveDimensionSurface({
       buildBrowserProjection({
         context,
         runtimeState: effectiveState,
+        domainState: health?.domain.state,
+        agentState: health?.agent.state,
         now,
-        webResults,
-        searchReason,
       }),
-    [context, effectiveState, now, searchReason, webResults],
+    [context, effectiveState, health?.agent.state, health?.domain.state, now],
   );
   const uiComposition = useBrowserUiComposition(browserProjection.layout);
-  const projection = browserProjection.projection;
+  const projection = useMemo(() => projectPublishedDesktop(browserProjection.projection, desktop.state),
+    [browserProjection.projection, desktop.state]);
   const layout = uiComposition.layout;
   const livingUi = useMemo(() => {
     const state = (componentId: string) =>
@@ -239,6 +345,7 @@ export function BrowserLiveDimensionSurface({
       outcome: state(BROWSER_SYSTEM_COMPONENT_IDS.outcome),
       diagnostics: state(BROWSER_SYSTEM_COMPONENT_IDS.diagnostics),
       dataSafety: state(BROWSER_SYSTEM_COMPONENT_IDS.dataSafety),
+      commandBar: state(BROWSER_SYSTEM_COMPONENT_IDS.commandBar),
       inspector: state(BROWSER_SYSTEM_COMPONENT_IDS.inspector),
     };
   }, [uiComposition.document, uiComposition.registry]);
@@ -254,8 +361,6 @@ export function BrowserLiveDimensionSurface({
   const outcomeCanOpen = livingUi.outcome.visible &&
     livingUi.outcome.actions.close === true;
   const threadCanOpen = livingUi.thread.visible && livingUi.thread.actions.close === true;
-  const diagnosticsCanOpen = livingUi.diagnostics.visible &&
-    livingUi.diagnostics.actions.close === true;
   const dataSafetyCanOpen = livingUi.dataSafety.visible &&
     livingUi.dataSafety.actions.close === true;
   const inspectorCanOpen = livingUi.inspector.visible &&
@@ -267,12 +372,10 @@ export function BrowserLiveDimensionSurface({
   useEffect(() => {
     if (!threadCanOpen) setThreadOpen(false);
     if (!outcomeCanOpen) setOutcomeTarget(null);
-    if (!diagnosticsCanOpen) setDiagnosticsOpen(false);
     if (!dataSafetyCanOpen) setDataSafetyOpen(false);
     if (!inspectorCanOpen) setInspectedNode(null);
   }, [
     dataSafetyCanOpen,
-    diagnosticsCanOpen,
     inspectorCanOpen,
     outcomeCanOpen,
     threadCanOpen,
@@ -283,7 +386,7 @@ export function BrowserLiveDimensionSurface({
     let active = true;
     let polling = false;
     const poll = async () => {
-      if (!active || polling || document.visibilityState !== "visible") return;
+      if (!active || polling || (!pet.native && document.visibilityState !== "visible")) return;
       polling = true;
       try {
         const response = await runtime.agent.listSchedulerOutbox({ retries: 1 });
@@ -299,6 +402,7 @@ export function BrowserLiveDimensionSurface({
           // receipts so a restart can still open the unresolved action.
           setOutcomeCollectionActionId(latestOutcomeCollection.domainId);
           setSecretaryNotice(schedulerSecretaryNotice(latestOutcomeCollection, context.nodes));
+          setSecretaryNoticeKind(latestOutcomeCollection.kind);
         }
         const item = response.items.find(
           (candidate) =>
@@ -308,7 +412,9 @@ export function BrowserLiveDimensionSurface({
         if (!item || !active) return;
         deliveredSchedulerReceipts.current.add(item.receiptKey);
         setSecretaryNotice(schedulerSecretaryNotice(item, context.nodes));
-        setNotice(schedulerDeliveryNotice(item.kind));
+        setSecretaryNoticeKind(item.kind);
+        petInbox.enqueue({ id: item.receiptKey, text: schedulerSecretaryNotice(item, context.nodes),
+          kind: item.kind === "outcome_collection" ? "action" : "reminder", createdAt: Date.now() });
         await runtime.agent.acknowledgeSchedulerOutbox(item.receiptKey, {
           idempotencyKey: `browser-delivery:${item.receiptKey}`,
         });
@@ -328,7 +434,7 @@ export function BrowserLiveDimensionSurface({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [agentReady, context.nodes, runtime.agent]);
+  }, [agentReady, context.nodes, runtime.agent, pet.native, petInbox.enqueue]);
 
   useEffect(() => {
     const alreadyApplied = new Set(
@@ -368,6 +474,7 @@ export function BrowserLiveDimensionSurface({
       setNotice(dueNotice);
       activeDueNotice.current = dueNotice;
       setSecretaryNotice(dueNotice);
+      setSecretaryNoticeKind("outcome_collection");
     } else if (due.length === 0 && activeDueNotice.current) {
       const staleDueNotice = activeDueNotice.current;
       activeDueNotice.current = null;
@@ -388,6 +495,7 @@ export function BrowserLiveDimensionSurface({
         const first = response.items[0];
         if (first) {
           setSecretaryNotice(first.prompt);
+          setSecretaryNoticeKind("candidate");
         }
         for (const item of response.items) {
           if (acknowledgedCandidateDue.current.has(item.receiptKey)) continue;
@@ -446,6 +554,7 @@ export function BrowserLiveDimensionSurface({
     () =>
       messages.map((message) => ({
         ...message,
+        content: message.role === "user" ? displayComposerMessage(message.content) : message.content,
         convId: sessionId,
       })),
     [messages, sessionId],
@@ -461,7 +570,11 @@ export function BrowserLiveDimensionSurface({
     [messages, sessionId],
   );
 
-  const appendMessage = useCallback((role: "user" | "assistant", content: string) => {
+  const appendMessage = useCallback((
+    role: "user" | "assistant",
+    content: string,
+    explanation?: AssistantExplanation,
+  ) => {
     const createdAt = new Date().toISOString();
     setMessages((current) => [
       ...current,
@@ -470,6 +583,7 @@ export function BrowserLiveDimensionSurface({
         role,
         content,
         createdAt,
+        ...(role === "assistant" && explanation ? { explanation } : {}),
       },
     ]);
   }, []);
@@ -477,6 +591,7 @@ export function BrowserLiveDimensionSurface({
   const refreshAll = useCallback(async () => {
     setNotice("正在重新连接本地服务…");
     try {
+      await desktop.refresh();
       const nextHealth = await refreshHealth();
       if (nextHealth.domain.state === "ready") {
         await refreshContext();
@@ -487,71 +602,83 @@ export function BrowserLiveDimensionSurface({
     } catch (error) {
       setNotice(readableError(error, "本地服务仍未连接"));
     }
-  }, [refreshContext, refreshHealth]);
+  }, [refreshContext, refreshHealth, desktop.refresh]);
+
+  const finishAgentRun = async (finished: AgentRunResult, recovered: boolean) => {
+    if (recovered) {
+      const history = await runtime.agent.listMessages(sessionId);
+      setMessages(history.messages.map((message, index) => ({
+        id: message.id ?? `host-message-${message.seq ?? index}`, role: message.role,
+        content: message.content, createdAt: message.createdAt ?? new Date().toISOString(),
+        ...(message.explanation ? { explanation: message.explanation } : {}),
+      })));
+    }
+    if (finished.status === "failed") {
+      appendMessage("assistant", finished.error?.message ? `这次没有完成：${finished.error.message}` : "这次没有完成，请再试一次。");
+    } else if (finished.status === "cancelled") {
+      appendMessage("assistant", "已停止。已完成的内容会保留。");
+    } else if (!recovered) {
+      appendMessage("assistant", assistantTextFromRun(finished).trim() ||
+        (finished.status === "budget_exhausted" ? budgetExhaustedMessage(finished.result?.budgetStopReason) : "这轮没有生成回复，请再试一次。"),
+        assistantExplanationFromRun(finished));
+      if (finished.status === "completed" || finished.status === "succeeded") {
+        petInbox.enqueue({ id: `run:${finished.runId}`, text: "这轮已经完成，点开看看结果。", kind: "completed", createdAt: Date.now() });
+      }
+    }
+    const uiDraft = uiChangeSetFromAgentRun(finished as unknown as Record<string, unknown>);
+    if (uiDraft && !recovered) { uiComposition.applyChangeSet(uiDraft); setNotice("桌面已更新。"); }
+    await desktop.refresh();
+    if (domainReady) await refreshContext();
+  };
+  const agentRun = useAgentRun(runtime.agent, sessionId, agentReady, finishAgentRun);
+  const activeRunId = agentRun.activeRunId;
+  const agentStatus = submitting ? "正在提交…" : agentRun.status;
+  useEffect(() => { if (activeRunId) setThreadOpen(true); }, [activeRunId]);
 
   const sendAgentTurn = useCallback(
-    async (text: string) => {
+    async (text: string, submission?: ComposerSubmission, clientRequestId?: string): Promise<boolean> => {
       if (!agentReady) {
         setNotice("本地助手还没连上，请稍后再试。");
-        return;
+        return false;
       }
-      if (activeRunId) {
+      if (activeRunId || submitInFlight.current) {
         setNotice("上一轮仍在本机执行；可以等待，或明确停止它。");
-        return;
+        return false;
       }
+      setFrontWindow("thread");
       setThreadOpen(true);
-      appendMessage("user", text);
-      setAgentStatus("正在提交");
-      const controller = new AbortController();
-      pollController.current = controller;
+      submitInFlight.current = true;
+      setSubmitting(true);
       try {
         const accepted = await runtime.agent.startTurn(
           {
             sessionId,
             text,
+            useHistory:useComputerHistory,
+            clientRequestId,
             systemPrompt:
               `Current Latitude browser UiSurfaceV2 is ${uiComposition.document.id} revision ${uiComposition.document.revision}. ` +
-              "If and only if the user asks to customize the interface, call ui_customize with this exact surfaceId and baseRevision. " +
+              "For safe declarative adjustments grounded in the user's request or recorded friction, use ui_customize with this surfaceId and baseRevision. " +
               `Registered components in current order: ${uiComposition.document.components
                 .slice()
                 .sort((left, right) => left.order - right.order)
                 .map((component) => `${component.id}:${component.type}`)
                 .join(", ")}. ` +
-              "Only visibility, move/order, registered spans, presentation props, and registered event-command bindings are allowed; never put Domain content in UI props.",
+              "Only visibility, move/order, registered spans, presentation props, and registered event-command bindings are allowed; never put Domain content in UI props.\n" +
+              serializeDesktopViewContext(desktopViewContext.current),
           },
-          { signal: controller.signal },
         );
-        setActiveRunId(accepted.runId);
-        setAgentStatus(runStatusLabel(accepted.status));
-        const finished = await runtime.agent.waitForRun(accepted.runId, {
-          signal: controller.signal,
-          pollIntervalMs: 350,
-          onStatus: (run) => setAgentStatus(runStatusLabel(run.status)),
-        });
-        if (finished.status === "failed") {
-          appendMessage("assistant", finished.error?.message || "这次没有完成，请再试一次。");
-        } else if (finished.status === "cancelled") {
-          appendMessage("assistant", "已停止。已完成的内容会保留。");
-        } else {
-          appendMessage(
-            "assistant",
-            assistantTextFromRun(finished) || "完成了。",
-          );
-          const uiDraft = uiChangeSetFromAgentRun(finished as unknown as Record<string, unknown>);
-          if (uiDraft) {
-            uiComposition.applyChangeSet(uiDraft);
-            setNotice("桌面已更新。");
-          }
-        }
+        appendMessage("user", submission?.displayText ?? text);
+        agentRun.follow(accepted.runId);
+        return true;
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          appendMessage("assistant", readableError(error, "这轮没有完成"));
+          setNotice(readableError(error, "消息没有成功提交"));
         }
+        return false;
       } finally {
-        setActiveRunId(null);
-        setAgentStatus(null);
-        pollController.current = null;
-        if (domainReady) await refreshContext().catch(() => undefined);
+        submitInFlight.current = false;
+        setSubmitting(false);
       }
     }, [
       activeRunId,
@@ -561,60 +688,21 @@ export function BrowserLiveDimensionSurface({
       refreshContext,
       runtime.agent,
       sessionId,
+      useComputerHistory,
       uiComposition,
+      agentRun.follow,
     ],
   );
 
   const cancelAgentTurn = useCallback(async () => {
     if (!activeRunId) return;
     try {
-      setAgentStatus("正在停止");
       await runtime.agent.cancelRun(activeRunId);
       setNotice("正在停止…");
     } catch (error) {
       setNotice(readableError(error, "停止请求没有送达"));
     }
   }, [activeRunId, runtime.agent]);
-
-  const derivedSearch = useMemo(() => deriveSearchQuery(context), [context]);
-  const searchWeb = useCallback(
-    async (explicitQuery?: string) => {
-      const query = explicitQuery?.trim() || searchDraft.trim() || derivedSearch.query;
-      if (!query) {
-        setNotice("先写一个要查的问题。");
-        return;
-      }
-      if (!agentReady) {
-        setNotice("本地助手还没连上，现在不能搜索。");
-        return;
-      }
-      setSearchBusy(true);
-      try {
-        const response = await runtime.searchWeb({ query, maxResults: 3, freshnessDays: 30 });
-        setWebResults(response.results ?? []);
-        setLastSearchQuery(response.query || query);
-        setSearchReason(
-          searchDraft.trim()
-            ? `你主动搜索“${query}”`
-            : derivedSearch.reason,
-        );
-        setNotice(webSearchCoverageNotice(response));
-        if (domainReady) await refreshContext().catch(() => undefined);
-      } catch (error) {
-        setNotice(readableError(error, "搜索没有完成"));
-      } finally {
-        setSearchBusy(false);
-      }
-    }, [
-      agentReady,
-      derivedSearch.query,
-      derivedSearch.reason,
-      domainReady,
-      refreshContext,
-      runtime,
-      searchDraft,
-    ],
-  );
 
   const createWeeklyReview = useCallback(async () => {
     if (!domainReady || domainBusy) {
@@ -694,8 +782,8 @@ export function BrowserLiveDimensionSurface({
               itemId,
               feedback,
               item,
-              lastSearchQuery,
-              searchReason,
+              "",
+              item.why,
             ),
           },
           audit: { actor: "user", sessionId, authorizationMode: "automatic" },
@@ -710,16 +798,46 @@ export function BrowserLiveDimensionSurface({
     }, [
       domainReady,
       projection.bindings,
-      lastSearchQuery,
       refreshContext,
       runtime,
-      searchReason,
       sessionId,
     ],
   );
 
+  const saveGoal = useCallback(async (change: GoalChange) => {
+    if (!domainReady || domainBusy) throw new Error("本地服务暂不可用或正忙，请稍后重试。");
+    if (!change.title.trim()) throw new Error("请填写目标名称。");
+    if (change.remove && !change.id) throw new Error("找不到要删除的目标。");
+    setDomainBusy(true);
+    try {
+      const audit = { actor: "user", sessionId, authorizationMode: "automatic" as const };
+      await runtime.applyChange(change.remove
+        ? { operation: "retract", id: change.id!, reason: "用户在线索板删除中期目标", audit }
+        : change.id
+          ? { operation: "update", id: change.id, label: change.title, statement: change.detail, audit }
+          : { operation: "remember", kind: "goal", label: change.title, statement: change.detail,
+              payload: { horizon: "medium-term", surfaceRole: "clue.theme" }, audit });
+      // A committed mutation must not be submitted again just because readback failed.
+      try {
+        await refreshContext();
+        setNotice(change.remove ? "中期目标已删除，关联记录已保留。" : "中期目标已保存。");
+      } catch {
+        setNotice("目标改动已保存，画面刷新失败，请刷新页面查看。");
+      }
+    } catch (error) {
+      throw new Error(readableError(error, "目标改动没有保存，请重试"));
+    } finally {
+      setDomainBusy(false);
+    }
+  }, [domainReady, domainBusy, runtime, sessionId, refreshContext]);
+
   const editAction = useCallback(
     async (row: AnchorRow, nextText: string) => {
+      if (row.lineage?.entityType === "todo") {
+        try { await desktop.updateTodo(row.lineage.entityId, { title: nextText }); setNotice("待办名称已保存。"); }
+        catch (error) { setNotice(readableError(error, "待办名称没有保存")); throw error; }
+        return;
+      }
       if (!domainReady || row.lineage?.entityType !== "action") return;
       setDomainBusy(true);
       try {
@@ -736,43 +854,329 @@ export function BrowserLiveDimensionSurface({
       } finally {
         setDomainBusy(false);
       }
-    }, [domainReady, refreshContext, runtime, sessionId],
+    }, [domainReady, refreshContext, runtime, sessionId, desktop.updateTodo],
   );
+
+  const recordActivity = useCallback(
+    async (text: string) => {
+      if (!domainReady || domainBusy) {
+        setNotice("本地记录服务还没准备好，本次没有保存。");
+        throw new Error("activity_capture_unavailable");
+      }
+      setDomainBusy(true);
+      try {
+        await runtime.recordActivity({
+          content: text,
+          occurredAt: new Date().toISOString(),
+          sensitivity: "low",
+          audit: { actor: "user", sessionId, authorizationMode: "automatic" },
+        });
+        await refreshContext();
+        setNotice("记下了。这只是你的真实记录，还不是系统结论。");
+      } catch (error) {
+        setNotice(readableError(error, "这件事没有记下来"));
+        throw error;
+      } finally {
+        setDomainBusy(false);
+      }
+    }, [domainBusy, domainReady, refreshContext, runtime, sessionId],
+  );
+
+  const editActivity = useCallback(
+    async (entry: ActivityEntry, nextText: string) => {
+      if (!domainReady || domainBusy) {
+        setNotice("本地记录服务正忙，这条记录还没有改动。");
+        throw new Error("activity_edit_unavailable");
+      }
+      setDomainBusy(true);
+      try {
+        await runtime.applyChange({
+          operation: "update",
+          id: entry.id,
+          statement: nextText,
+          audit: { actor: "user", sessionId, authorizationMode: "automatic" },
+        });
+        await refreshContext();
+        setNotice("这条记录已改好。");
+      } catch (error) {
+        setNotice(readableError(error, "这条记录没有改动"));
+        throw error;
+      } finally {
+        setDomainBusy(false);
+      }
+    }, [domainBusy, domainReady, refreshContext, runtime, sessionId],
+  );
+
+  const retractActivity = useCallback(
+    async (entry: ActivityEntry) => {
+      if (!domainReady || domainBusy) {
+        setNotice("本地记录服务正忙，这条记录还没有撤下。");
+        throw new Error("activity_retract_unavailable");
+      }
+      setDomainBusy(true);
+      try {
+        await runtime.applyChange({
+          operation: "retract",
+          id: entry.id,
+          reason: "用户从今天做过中撤下这条记录",
+          audit: { actor: "user", sessionId, authorizationMode: "automatic" },
+        });
+        await refreshContext();
+        setNotice("已从今天撤下；变更记录仍可追溯。");
+      } catch (error) {
+        setNotice(readableError(error, "这条记录没有撤下"));
+        throw error;
+      } finally {
+        setDomainBusy(false);
+      }
+    }, [domainBusy, domainReady, refreshContext, runtime, sessionId],
+  );
+
+  const reflectOnToday = useCallback(() => {
+    void sendAgentTurn(
+      "请和我一起看看今天：只基于我今天标记为“做过”的真实记录，先复述事实，再提出一到两条待确认观察，并用自然的问题问我哪条更像我。不要把观察自动升级成已确认认知，也不要替我创建目标或行动。",
+    );
+  }, [sendAgentTurn]);
 
   const openLineage = useCallback(
     (lineage: LineageRef) => {
+      if (lineage.entityType === "todo" || lineage.entityType === "calendar_event" || lineage.entityType === "digest") {
+        const sources = lineage.entityType === "todo"
+          ? desktop.state?.data?.todos.find(todo => todo.id === lineage.entityId)?.sourceNodeIds
+          : desktop.state?.data?.digests.find(digest => digest.date === lineage.entityId)?.sourceNodeIds;
+        const node = context.nodes.find(candidate => sources?.includes(candidate.id));
+        if (node && inspectorCanOpen) { setFrontWindow("node"); setInspectedNode(node); }
+        else setNotice("内容保存在本机业务记录中；当前没有可展开的图谱依据。每日整理可在便签中阅读全文。");
+        return;
+      }
       if (!inspectorCanOpen) {
         setNotice("来源检查器已在组件设置中关闭。");
         return;
       }
       const node = context.nodes.find((candidate) => candidate.id === lineage.entityId);
-      if (node) setInspectedNode(node);
+      if (node) {
+        setFrontWindow("node");
+        setInspectedNode(node);
+      }
       else setNotice("当前投影能确认这条来源，但完整节点不在本次 context 窗口里。");
     },
-    [context.nodes, inspectorCanOpen],
+    [context.nodes, inspectorCanOpen, desktop.state],
   );
 
   const cardHandlers = useMemo<CardHandlers>(
     () => ({
-      ...(outcomeCanOpen
+      ...(outcomeCanOpen || runtime.agent.desktop
         ? {
             onAnchorComplete: (row: AnchorRow) => {
-              if (row.lineage?.entityType === "action") setOutcomeTarget(row);
+              if (row.lineage?.entityType === "todo") {
+                void desktop.updateTodo(row.lineage.entityId, { status: "done" }).then(
+                  () => setNotice("待办已完成。"), error => setNotice(readableError(error, "待办没有保存")));
+                return;
+              }
+              if (row.lineage?.entityType === "action" && outcomeCanOpen) {
+                setFrontWindow("outcome");
+                setOutcomeTarget(row);
+              }
             },
           }
         : {}),
       onAnchorEdit: editAction,
-      ...(inspectorCanOpen ? { onLineage: openLineage } : {}),
+      onActivityCapture: recordActivity,
+      onActivityEdit: editActivity,
+      onActivityRetract: retractActivity,
+      onActivityReflect: reflectOnToday,
+      ...(inspectorCanOpen || runtime.agent.desktop ? { onLineage: openLineage } : {}),
       onFeedFeedback: (itemId, feedback) => {
+        if (itemId.startsWith("digest-")) {
+          setNotice("这是已保存的每日整理；资讯反馈暂不适用于这条记录。");
+          return;
+        }
         void recordFeedFeedback(itemId, feedback);
       },
     }),
-    [editAction, inspectorCanOpen, openLineage, outcomeCanOpen, recordFeedFeedback],
+    [
+      editAction,
+      desktop.updateTodo,
+      runtime.agent.desktop,
+      editActivity,
+      inspectorCanOpen,
+      openLineage,
+      outcomeCanOpen,
+      recordActivity,
+      recordFeedFeedback,
+      reflectOnToday,
+      retractActivity,
+    ],
   );
+
+  const closeThread = useCallback(() => {
+    setThreadOpen(false);
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>("[data-secretary-launcher]")?.focus();
+    });
+  }, []);
+
+  const startNewConversation = useCallback(() => {
+    if (activeRunId) {
+      setNotice("当前回复完成后再新开对话，或先停止这一轮。");
+      return;
+    }
+    const nextSessionId = createBrowserSessionId();
+    persistBrowserSessionId(nextSessionId);
+    setMessages([]);
+    setMessageHydrationError(null);
+    setSessionId(nextSessionId);
+    setFrontWindow("thread");
+    setThreadOpen(true);
+    setNotice("已新开一段对话；上一段仍保留在本机。");
+  }, [activeRunId]);
+
+  const handleSecretaryInteract = useCallback((intent: SecretaryIntent) => {
+    if (intent === "chat") {
+      if (pet.native && pet.state.mode === "floating") {
+        void petCommand("pet_show_chat").catch((error) => setNotice(String(error)));
+        return;
+      }
+      if (threadCanOpen) {
+        setFrontWindow("thread");
+        setThreadOpen((open) => !open);
+      }
+      return;
+    }
+    if (intent === "review") {
+      void createWeeklyReview();
+      return;
+    }
+    if (!outcomeCanOpen) {
+      setNotice("结果回收模块已在组件设置中关闭。");
+      return;
+    }
+    const eventDue = outcomeCollectionActionId
+      ? context.nodes.find((node) =>
+          node.id === outcomeCollectionActionId &&
+          node.kind === "action" &&
+          !isClosed(node),
+        )
+      : undefined;
+    const due = eventDue ?? firstDueAction(context.nodes, now);
+    if (due) {
+      setFrontWindow("outcome");
+      setOutcomeTarget({
+        text: nodeLabel(due),
+        meta: "结果待回收",
+        actionable: true,
+        lineage: {
+          entityType: "action",
+          entityId: due.id,
+          label: "来自你的行动",
+        },
+      });
+    } else {
+      setOutcomeCollectionActionId(null);
+      setNotice("现在没有到期、需要你裁决结果的行动。");
+    }
+  }, [
+    context.nodes,
+    createWeeklyReview,
+    now,
+    outcomeCanOpen,
+    outcomeCollectionActionId,
+    threadCanOpen,
+    pet.native,
+    pet.state.mode,
+  ]);
+
+  const openPetNotice = (item: PetNotice) => {
+    setSecretaryNotice(item.text);
+    if (pet.native && pet.state.mode === "floating") void petCommand("pet_show_chat");
+    else { setThreadOpen(true); setFrontWindow("thread"); }
+  };
+  const openContextConversation = (contextText: string) => {
+    if (!threadCanOpen) {
+      setNotice("对话已在组件设置中关闭，请先开启对话。");
+      return;
+    }
+    // Keep unfinished text and attachments; context actions prepare a draft, never send it.
+    const persisted = updateDraft(sessionId, draft => ({
+      ...draft,
+      text: draft.text.includes(contextText) ? draft.text
+        : [draft.text.trim(), contextText].filter(Boolean).join("\n\n"),
+    }));
+    if (!persisted) setNotice("草稿已放入对话，暂时无法保存到本机，请保持窗口打开。");
+    if (pet.native && pet.state.mode === "floating") {
+      void petCommand("pet_show_chat").catch(error => setNotice(readableError(error, "对话窗口未打开，草稿已保留")));
+    } else {
+      setFrontWindow("thread");
+      setThreadOpen(true);
+    }
+  };
+  const petActionHandler = useRef<(action: PetAction) => Promise<void>>(async () => undefined);
+  petActionHandler.current = async (action) => {
+    switch (action.type) {
+      case "send": {
+        const ok = await sendAgentTurn(action.text, action.submission, action.requestId);
+        await emitTo("chatbar", "latitude://pet-send-result", { requestId: action.requestId, ok,
+          ...(!ok ? { error: "消息暂未提交，请查看连接和任务状态。草稿已保留。" } : {}) });
+        break;
+      }
+      case "cancel": await cancelAgentTurn(); break;
+      case "reconnect": await agentRun.reconnect(); break;
+      case "new-conversation": startNewConversation(); break;
+      case "open-main": await petCommand("show_main"); break;
+      case "settings": await petCommand("show_main"); setSettingsOpen(true); setFrontWindow("settings"); break;
+      case "handle-prompt": await petCommand("show_main"); handleSecretaryInteract("decide"); break;
+      case "open-notice": openPetNotice(action.notice); break;
+      case "dismiss-notice": petInbox.dismiss(action.id); break;
+    }
+  };
+  useEffect(() => {
+    if (!pet.native) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<PetAction>("latitude://pet-action", (event) => {
+      void petActionHandler.current(event.payload).catch((error) => setNotice(String(error)));
+    }).then((dispose) => { if (disposed) dispose(); else unlisten = dispose; });
+    return () => { disposed = true; unlisten?.(); };
+  }, [pet.native]);
+  const petSnapshot: PetSnapshot = {
+    secretary: { ...projection.secretary, ...(activeRunId ? { state: "thinking", stateCn: "思考中" } : {}) },
+    sessionId, messages: deskMessages, conversation, loading: Boolean(activeRunId) || submitting,
+    progress: agentRun.progress, progressRunId: agentRun.progressRunId, status: agentStatus,
+    error: agentRun.connectionError ?? messageHydrationError,
+    sendEnabled: agentReady && livingUi.commandBar.visible && livingUi.commandBar.actions.send === true,
+    notice: petInbox.notice, noticePreferences, proactivePrompt: secretaryNotice,
+    proactiveActionEnabled: secretaryNoticeKind === "outcome_collection" && outcomeCanOpen,
+  };
+  useEffect(() => {
+    if (pet.native) void petCommand("pet_sync", { snapshot: petSnapshot }).catch((error) => setNotice(String(error)));
+  }, [pet.native, petSnapshot.secretary.state, petSnapshot.secretary.stateCn, sessionId, deskMessages, conversation, activeRunId, submitting,
+    agentRun.progress, agentRun.progressRunId, agentStatus, petSnapshot.error, petSnapshot.sendEnabled, petInbox.notice, noticePreferences, secretaryNotice, petSnapshot.proactiveActionEnabled]);
+  const bubblePosition = besidePet({ x: pet.state.x, y: pet.state.y, width: 180, height: 220 },
+    { x: 12, y: 12, width: window.innerWidth - 24, height: window.innerHeight - 24 });
 
   return (
     <>
       <DimensionPresetApp
+        onDesktopContextChange={updateDesktopViewContext}
+        secretaryPortrait={(interaction) => <SecretaryDock pet={pet} secretary={petSnapshot.secretary} notice={petInbox.notice} preferences={noticePreferences} {...interaction} />}
+        secretaryInvitation={livingUi.candidates.visible && context.nodes.some(isCandidateNode) ? (
+          <SecretaryInvitation count={context.nodes.filter((node) =>
+            isCandidateNode(node) && ["proposed", "touched", "shaping"].includes(candidateStateOf(node)),
+          ).length}>
+            <CandidateInterventionCards
+              candidates={context.nodes.filter(isCandidateNode)}
+              dueItems={candidateDueItems}
+              busy={domainBusy || !domainReady}
+              actionAvailability={{
+                touch: livingUi.candidates.actions.touch === true,
+                shape: livingUi.candidates.actions.shape === true,
+                conclude: livingUi.candidates.actions.conclude === true,
+                park: livingUi.candidates.actions.park === true,
+              }}
+              onCommand={(candidateId, command) => void applyCandidateCommand(candidateId, command)}
+            />
+          </SecretaryInvitation>
+        ) : undefined}
         projection={projection}
         layout={layout}
         composition={{
@@ -782,6 +1186,7 @@ export function BrowserLiveDimensionSurface({
         paperHandlers={cardHandlers}
         localCardEditing="disabled"
         secretaryPresentation="rail"
+        secretaryChatOpen={threadOpen}
         secretaryNotice={secretaryNotice}
         onCompanionVisibilityChange={(visible) => {
           uiComposition.applyChangeSet({
@@ -796,70 +1201,56 @@ export function BrowserLiveDimensionSurface({
             ],
           });
         }}
-        onSendMessage={(text) => void sendAgentTurn(text)}
+        composerSessionId={sessionId}
+        onSendMessage={sendAgentTurn}
         thread={
-          <>
-            {livingUi.control.visible && (
-              <BrowserControlStrip
-                healthState={state}
-                domainState={health?.domain.state ?? "starting"}
-                agentState={health?.agent.state ?? "starting"}
-                agentAuthentication={agentAuthentication}
-                contextLoading={contextLoading}
-                notice={notice ?? contextError}
-                searchDraft={searchDraft}
-                searchBusy={searchBusy}
-                activeRunId={activeRunId}
-                agentStatus={agentStatus}
-                domainBusy={domainBusy}
-                actionAvailability={{
-                  search: livingUi.control.actions.search === true,
-                  refresh: livingUi.control.actions.refresh === true,
-                  review: livingUi.control.actions.review === true,
-                  cancel: livingUi.control.actions.cancel === true,
-                }}
-                onSearchDraftChange={setSearchDraft}
-                onSearch={() => void searchWeb()}
-                onRefresh={() => void refreshAll()}
-                onReview={() => void createWeeklyReview()}
-                onCancel={() => void cancelAgentTurn()}
-              />
-            )}
-            {livingUi.candidates.visible && (
-              <CandidateInterventionStrip
-                candidates={context.nodes.filter(isCandidateNode)}
-                dueItems={candidateDueItems}
-                busy={domainBusy || !domainReady}
-                actionAvailability={{
-                  touch: livingUi.candidates.actions.touch === true,
-                  shape: livingUi.candidates.actions.shape === true,
-                  conclude: livingUi.candidates.actions.conclude === true,
-                  park: livingUi.candidates.actions.park === true,
-                }}
-                onCommand={(candidateId, command) => {
-                  void applyCandidateCommand(candidateId, command);
-                }}
-              />
-            )}
-            {threadOpen && threadCanOpen && (
+          <AnimatePresence initial={false}>
+            {threadOpen && threadCanOpen && !(pet.native && pet.state.mode === "floating") && (
               <DeskThread
+                key="secretary-thread"
+                useComputerHistory={useComputerHistory}
+                onComputerHistoryChange={enabled=>{setUseComputerHistory(enabled);try{localStorage.setItem(`latitude:history-use:${sessionId}`,String(enabled));}catch{/* request still carries the explicit choice */}}}
                 messages={deskMessages}
                 conversations={[conversation]}
                 currentId={sessionId}
                 streaming=""
-                loading={Boolean(activeRunId)}
+                loading={Boolean(activeRunId) || submitting}
+                progress={agentRun.progress}
+                progressRunId={agentRun.progressRunId}
                 onSelectConversation={() => undefined}
-                onClose={() => setThreadOpen(false)}
+                onNewConversation={startNewConversation}
+                onClose={closeThread}
                 closeEnabled={livingUi.thread.actions.close === true}
+                newConversationEnabled={!activeRunId && !submitting}
+                variant="floating"
+                onSend={(text, submission) => sendAgentTurn(text, submission)}
+                sendEnabled={agentReady &&
+                  livingUi.commandBar.visible &&
+                  livingUi.commandBar.actions.send === true}
+                status={agentStatus}
+                historyError={agentRun.connectionError ?? messageHydrationError}
+                onCancel={cancelAgentTurn}
+                onReconnect={agentRun.reconnect}
+                proactivePrompt={secretaryNotice}
+                onProactivePromptAction={secretaryNoticeKind === "outcome_collection" && outcomeCanOpen
+                  ? () => handleSecretaryInteract("decide")
+                  : undefined}
+                zIndex={windowZIndex("thread")}
+                onActivate={() => setFrontWindow("thread")}
               />
             )}
-          </>
+          </AnimatePresence>
         }
         onOpenReview={() => void createWeeklyReview()}
+        onReconnect={refreshAll}
         onOpenSettings={() => {
-          if (diagnosticsCanOpen) setDiagnosticsOpen(true);
+          setFrontWindow("settings");
+          setSettingsOpen(true);
         }}
-        onAdjustDesktop={() => setCompositionOpen(true)}
+        onAdjustDesktop={() => {
+          setFrontWindow("composition");
+          setCompositionOpen(true);
+        }}
         onCardVisibilityChange={(cardId, visible) => {
           uiComposition.applyChangeSet({
             actor: "user",
@@ -873,68 +1264,63 @@ export function BrowserLiveDimensionSurface({
             ],
           });
         }}
-        onSecretaryInteract={(intent) => {
-          if (intent === "chat") {
-            if (threadCanOpen) setThreadOpen(true);
-          }
-          else if (intent === "review") void createWeeklyReview();
-          else {
-            if (!outcomeCanOpen) {
-              setNotice("结果回收模块已在组件设置中关闭。");
-              return;
-            }
-            const eventDue = outcomeCollectionActionId
-              ? context.nodes.find((node) =>
-                  node.id === outcomeCollectionActionId &&
-                  node.kind === "action" &&
-                  !isClosed(node),
-                )
-              : undefined;
-            const due = eventDue ?? firstDueAction(context.nodes, now);
-            if (due) {
-              setOutcomeTarget({
-                text: nodeLabel(due),
-                meta: "结果待回收",
-                actionable: true,
-                lineage: {
-                  entityType: "action",
-                  entityId: due.id,
-                  label: "来自你的行动",
-                },
-              });
-            } else {
-              setOutcomeCollectionActionId(null);
-              setNotice("现在没有到期、需要你裁决结果的行动。");
-            }
-          }
-        }}
+        onSecretaryInteract={handleSecretaryInteract}
+        onRequestCardHelp={({ title, content }) => openContextConversation(
+          `请帮我修改主页上的卡片「${title}」。\n\n当前内容：\n${content}\n\n我想调整的是：`,
+        )}
         layerHandlers={{
-          onFeedFeedback: (itemId, feedback) => void recordFeedFeedback(itemId, feedback),
+          onDiscussNode: node => openContextConversation(
+            `我想和你聊聊星图里的「${node.label}」。\n\n${node.detail}\n\n我想聊的是：`,
+          ),
+          onSaveGoal: saveGoal,
+          onFeedFeedback: cardHandlers.onFeedFeedback,
           onLineage: openLineage,
           onRelationInspect: (metric) => {
             const lineage = metric.lineage?.[0];
             if (lineage) openLineage(lineage);
           },
           onCompleteAnchor: (row) => {
+            if (row.lineage?.entityType === "todo") { cardHandlers.onAnchorComplete?.(row); return; }
             if (row.lineage?.entityType === "action" && outcomeCanOpen) {
+              setFrontWindow("outcome");
               setOutcomeTarget(row);
             }
           },
           onNodeOpen: (node) => {
             if (!inspectorCanOpen) return;
             const source = context.nodes.find((candidate) => candidate.id === node.id);
-            if (source) setInspectedNode(source);
+            if (source) {
+              setFrontWindow("node");
+              setInspectedNode(source);
+            }
           },
         }}
       />
 
+      <div className="dimension-root" style={{ display: "contents" }}>
+        <DimToast message={notice ?? desktop.state?.error ?? contextError} />
+        <BrowserPet pet={pet} secretary={petSnapshot.secretary} notice={petInbox.notice} preferences={noticePreferences} />
+        {petInbox.notice && !pet.state.dragging && !(pet.native && pet.state.mode === "floating") && (
+          <div className="latitude-pet-bubble" style={pet.state.mode === "floating"
+            ? { left: bubblePosition.x, top: bubblePosition.y } : { left: 24, bottom: 24 }}>
+            <PetNoticeBubble notice={petInbox.notice} preferences={noticePreferences}
+              onOpen={openPetNotice} onDismiss={(item) => petInbox.dismiss(item.id)} />
+          </div>
+        )}
+      </div>
+
+      <AnimatePresence initial={false}>
       {outcomeTarget && outcomeCanOpen && (
         <OutcomeDialog
+          key="outcome"
           row={outcomeTarget}
           action={context.nodes.find((node) => node.id === outcomeTarget.lineage?.entityId)}
           busy={domainBusy}
           closeEnabled={livingUi.outcome.actions.close === true}
           submitEnabled={livingUi.outcome.actions.submit === true}
+          zIndex={windowZIndex("outcome")}
+          onActivate={() => setFrontWindow("outcome")}
+          windowMode={stackedWindowMode}
           onClose={() => setOutcomeTarget(null)}
           onSubmit={async ({ outcome, effect, revisedStatement }) => {
             if (!outcomeTarget.lineage || !domainReady) return;
@@ -969,34 +1355,51 @@ export function BrowserLiveDimensionSurface({
 
       {inspectedNode && inspectorCanOpen && (
         <NodeDialog
+          key="node"
           node={inspectedNode}
           closeEnabled={livingUi.inspector.actions.close === true}
+          zIndex={windowZIndex("node")}
+          onActivate={() => setFrontWindow("node")}
+          windowMode={stackedWindowMode}
           onClose={() => setInspectedNode(null)}
         />
       )}
 
-      {diagnosticsOpen && diagnosticsCanOpen && (
-        <DiagnosticsDialog
+      {settingsOpen && (
+        <SettingsDialog
+          key="settings"
+          onHistoryAsk={(text) => { setSettingsOpen(false); void sendAgentTurn(text); }}
           sessionId={sessionId}
           health={health}
+          contextLoading={contextLoading}
+          onRefresh={() => void refreshAll()}
+          refreshEnabled={livingUi.control.actions.refresh === true}
           messageHydrationError={messageHydrationError}
           actionAvailability={{
             dataSafety: livingUi.diagnostics.actions.data_safety === true && dataSafetyCanOpen,
-            close: livingUi.diagnostics.actions.close === true,
+            close: true,
           }}
+          zIndex={windowZIndex("settings")}
+          onActivate={() => setFrontWindow("settings")}
+          windowMode={stackedWindowMode}
           onDataSafety={() => {
             if (!dataSafetyCanOpen) return;
-            setDiagnosticsOpen(false);
+            setSettingsOpen(false);
+            setFrontWindow("data-safety");
             setDataSafetyOpen(true);
           }}
-          onClose={() => setDiagnosticsOpen(false)}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 
       {dataSafetyOpen && dataSafetyCanOpen && (
         <BrowserDataSafetyDialog
+          key="data-safety"
           actions={resolvedDataSafetyActions}
           actionAvailability={dataSafetyAvailability}
+          zIndex={windowZIndex("data-safety")}
+          onActivate={() => setFrontWindow("data-safety")}
+          windowMode={stackedWindowMode}
           onChanged={async () => {
             await refreshContext().catch(() => undefined);
           }}
@@ -1013,6 +1416,9 @@ export function BrowserLiveDimensionSurface({
           document={uiComposition.document}
           registry={uiComposition.registry}
           history={uiComposition.history}
+          zIndex={windowZIndex("composition")}
+          onActivate={() => setFrontWindow("composition")}
+          windowMode={stackedWindowMode}
           onApply={(draft) => {
             uiComposition.applyChangeSet(draft);
             setNotice("桌面已保存。");
@@ -1028,36 +1434,12 @@ export function BrowserLiveDimensionSurface({
           onClose={() => setCompositionOpen(false)}
         />
       )}
+      </AnimatePresence>
     </>
   );
 }
 
-interface BrowserControlStripProps {
-  healthState: RuntimeServiceState;
-  domainState: RuntimeServiceState;
-  agentState: RuntimeServiceState;
-  agentAuthentication?: string;
-  contextLoading: boolean;
-  notice: string | null;
-  searchDraft: string;
-  searchBusy: boolean;
-  activeRunId: string | null;
-  agentStatus: string | null;
-  domainBusy: boolean;
-  actionAvailability: {
-    search: boolean;
-    refresh: boolean;
-    review: boolean;
-    cancel: boolean;
-  };
-  onSearchDraftChange: (value: string) => void;
-  onSearch: () => void;
-  onRefresh: () => void;
-  onReview: () => void;
-  onCancel: () => void;
-}
-
-function CandidateInterventionStrip({
+function CandidateInterventionCards({
   candidates,
   dueItems,
   busy,
@@ -1082,25 +1464,14 @@ function CandidateInterventionStrip({
       const rank = { shaping: 0, touched: 1, proposed: 2, concluded: 3, parked: 4 };
       return (rank[candidateStateOf(left) as keyof typeof rank] ?? 9) -
         (rank[candidateStateOf(right) as keyof typeof rank] ?? 9);
-    })
-    .slice(0, 3);
+    });
   if (visible.length === 0) return null;
 
   return (
     <section
-      className="dim-paper"
+      className="dim-cocreation-cards"
       aria-label="候选共创"
-      style={{
-        flexShrink: 0,
-        padding: "10px 12px",
-        display: "grid",
-        gap: 8,
-      }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <strong style={{ fontSize: 13 }}>候选共创</strong>
-        <span className="dim-meta">你来决定如何推进，超时只会提醒。</span>
-      </div>
       {visible.map((candidate) => {
         const state = candidateStateOf(candidate);
         const due = dueByCandidate.get(candidate.id);
@@ -1108,148 +1479,44 @@ function CandidateInterventionStrip({
         return (
           <article
             key={candidate.id}
+            className="dim-cocreation-card"
             data-candidate-id={candidate.id}
             data-candidate-state={state}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-              borderTop: "1px solid color-mix(in srgb, var(--dim-ink) 12%, transparent)",
-              paddingTop: 8,
-            }}
           >
-            <span style={{ flex: "1 1 260px", minWidth: 0 }}>
-              <strong style={{ display: "block", fontSize: 13 }}>{nodeLabel(candidate)}</strong>
-              <span className="dim-meta">
-                {candidateStateLabel(state)} · {optionalText(candidate.statement)
-                  || optionalText(candidate.content)
-                  || "等待进一步塑形"}
-              </span>
-              {due && (
-                <span className="dim-meta" role="status" style={{ display: "block" }}>
-                  {due.prompt}
-                </span>
-              )}
-            </span>
-            {actions.map((action) => (
-              <button
-                key={action.command}
-                type="button"
-                className={action.command === "park" ? "dim-btn dim-btn--quiet" : "dim-btn"}
-                disabled={busy || actionAvailability[action.command] !== true}
-                aria-disabled={busy || actionAvailability[action.command] !== true}
-                title={actionAvailability[action.command] === true
-                  ? undefined
-                  : "该候选动作已在组件设置中关闭"}
-                aria-label={`${action.label}：${nodeLabel(candidate)}`}
-                onClick={() => onCommand(candidate.id, action.command)}
-              >
-                {action.label}
-              </button>
-            ))}
+            <h3>{nodeLabel(candidate)}</h3>
+            <p className="dim-cocreation-card__body">
+              {candidateStateLabel(state)} · {optionalText(candidate.statement)
+                || optionalText(candidate.content)
+                || "还在整理这个想法"}
+            </p>
+            {due && (
+              <p className="dim-cocreation-card__reminder" role="status">
+                {due.prompt}
+              </p>
+            )}
+            {actions.length > 0 && (
+              <div className="dim-cocreation-card__actions">
+                {actions.map((action) => (
+                  <button
+                    key={action.command}
+                    type="button"
+                    className={action.command === "park" ? "dim-btn dim-btn--quiet" : "dim-btn"}
+                    disabled={busy || actionAvailability[action.command] !== true}
+                    aria-disabled={busy || actionAvailability[action.command] !== true}
+                    title={actionAvailability[action.command] === true
+                      ? undefined
+                      : "该候选动作已在组件设置中关闭"}
+                    aria-label={`${action.label}：${nodeLabel(candidate)}`}
+                    onClick={() => onCommand(candidate.id, action.command)}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </article>
         );
       })}
-    </section>
-  );
-}
-
-function BrowserControlStrip({
-  healthState,
-  domainState,
-  agentState,
-  agentAuthentication,
-  contextLoading,
-  notice,
-  searchDraft,
-  searchBusy,
-  activeRunId,
-  agentStatus,
-  domainBusy,
-  actionAvailability,
-  onSearchDraftChange,
-  onSearch,
-  onRefresh,
-  onReview,
-  onCancel,
-}: BrowserControlStripProps) {
-  return (
-    <section
-      className="dim-paper"
-      aria-label="本地产品闭环控制"
-      style={{
-        flexShrink: 0,
-        padding: "8px 12px",
-        display: "flex",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 8,
-      }}
-      data-runtime-state={healthState}
-    >
-      <span className="dim-meta" aria-label="本地服务状态">
-        数据 {serviceLabel(domainState)} · 助手 {agentServiceLabel(agentState, agentAuthentication)}
-        {contextLoading ? " · 读取中" : ""}
-      </span>
-      <form
-        style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 280px" }}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (actionAvailability.search) onSearch();
-        }}
-      >
-        <input
-          className="dim-input"
-          aria-label="搜索资讯"
-          value={searchDraft}
-          onChange={(event) => onSearchDraftChange(event.target.value)}
-          placeholder="搜索资讯…"
-          disabled={!actionAvailability.search}
-        />
-        <button
-          type="submit"
-          className="dim-btn"
-          disabled={!actionAvailability.search || searchBusy || agentState !== "ready"}
-          aria-disabled={!actionAvailability.search || searchBusy || agentState !== "ready"}
-        >
-          {searchBusy ? "搜索中…" : "搜索"}
-        </button>
-      </form>
-      <button
-        type="button"
-        className="dim-btn dim-btn--quiet"
-        onClick={onRefresh}
-        disabled={!actionAvailability.refresh}
-        aria-disabled={!actionAvailability.refresh}
-      >
-        刷新
-      </button>
-      <button
-        type="button"
-        className="dim-btn dim-btn--accent"
-        onClick={onReview}
-        disabled={!actionAvailability.review || domainBusy || domainState !== "ready"}
-        aria-disabled={!actionAvailability.review || domainBusy || domainState !== "ready"}
-      >
-        周回顾
-      </button>
-      {activeRunId && (
-        <button
-          type="button"
-          className="dim-btn"
-          onClick={onCancel}
-          disabled={!actionAvailability.cancel}
-          aria-disabled={!actionAvailability.cancel}
-        >
-          停止
-        </button>
-      )}
-      {(agentStatus || notice) && (
-        <span className="dim-meta" role="status">
-          {agentStatus ? `助手 · ${agentStatus}` : notice}
-        </span>
-      )}
     </section>
   );
 }
@@ -1262,6 +1529,9 @@ function OutcomeDialog({
   submitEnabled,
   onClose,
   onSubmit,
+  zIndex = 100,
+  onActivate,
+  windowMode = false,
 }: {
   row: AnchorRow;
   action?: KnowledgeNode;
@@ -1274,6 +1544,9 @@ function OutcomeDialog({
     effect: "confirms" | "contracts" | "revises" | "refutes" | "unknown";
     revisedStatement: string;
   }) => Promise<void>;
+  zIndex?: number;
+  onActivate?: () => void;
+  windowMode?: boolean;
 }) {
   const [outcome, setOutcome] = useState("");
   const [effect, setEffect] = useState<
@@ -1286,16 +1559,24 @@ function OutcomeDialog({
   const needsRevisedStatement = effect === "contracts" || effect === "revises";
 
   return (
-    <div
+    <MotionSurface
       className="dimension-root"
-      style={dialogBackdropStyle}
+      style={{
+        ...dialogBackdropStyle,
+        zIndex,
+        ...(windowMode ? dialogWindowStyle : {}),
+      }}
       role="dialog"
-      aria-modal="true"
+      aria-modal={!windowMode}
       aria-label="回收行动结果"
+      onPointerDown={onActivate}
     >
       <form
         className="dim-paper"
-        style={dialogPaperStyle}
+        style={{
+          ...dialogPaperStyle,
+          ...(windowMode ? dialogWindowPaperStyle : {}),
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           if (
@@ -1378,7 +1659,7 @@ function OutcomeDialog({
           </button>
         </div>
       </form>
-    </div>
+    </MotionSurface>
   );
 }
 
@@ -1386,20 +1667,37 @@ function NodeDialog({
   node,
   closeEnabled,
   onClose,
+  zIndex = 100,
+  onActivate,
+  windowMode = false,
 }: {
   node: KnowledgeNode;
   closeEnabled: boolean;
   onClose: () => void;
+  zIndex?: number;
+  onActivate?: () => void;
+  windowMode?: boolean;
 }) {
   return (
-    <div
+    <MotionSurface
       className="dimension-root"
-      style={dialogBackdropStyle}
+      style={{
+        ...dialogBackdropStyle,
+        zIndex,
+        ...(windowMode ? dialogWindowStyle : {}),
+      }}
       role="dialog"
-      aria-modal="true"
+      aria-modal={!windowMode}
       aria-label="图谱来源详情"
+      onPointerDown={onActivate}
     >
-      <section className="dim-paper" style={dialogPaperStyle}>
+      <section
+        className="dim-paper"
+        style={{
+          ...dialogPaperStyle,
+          ...(windowMode ? dialogWindowPaperStyle : {}),
+        }}
+      >
         <p className="dim-eyebrow">{node.kind} · {node.authority ?? "authority unknown"}</p>
         <h2 style={{ margin: "6px 0", fontSize: 20 }}>{nodeLabel(node)}</h2>
         <p className="dim-body" style={{ whiteSpace: "pre-wrap" }}>
@@ -1418,68 +1716,227 @@ function NodeDialog({
           </button>
         </div>
       </section>
-    </div>
+    </MotionSurface>
   );
 }
 
-function DiagnosticsDialog({
+function SettingsDialog({
+  onHistoryAsk,
   sessionId,
   health,
+  contextLoading,
+  onRefresh,
+  refreshEnabled,
   messageHydrationError,
   actionAvailability,
   onDataSafety,
   onClose,
+  zIndex = 100,
+  onActivate,
+  windowMode = false,
 }: {
+  onHistoryAsk: (text: string) => void;
   sessionId: string;
   health: ReturnType<typeof useDesktopRuntime>["health"];
+  contextLoading: boolean;
+  onRefresh: () => void;
+  refreshEnabled: boolean;
   messageHydrationError: string | null;
   actionAvailability: { dataSafety: boolean; close: boolean };
   onDataSafety: () => void;
   onClose: () => void;
+  zIndex?: number;
+  onActivate?: () => void;
+  windowMode?: boolean;
 }) {
+  const { runtime, refreshHealth } = useDesktopRuntime();
+  const [providerSettings, setProviderSettings] = useState<ModelProviderSettings | null>(null);
+  const [providerDraft, setProviderDraft] = useState("");
+  const [modelDraft, setModelDraft] = useState("");
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [providerNotice, setProviderNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void runtime.agent.getProviderSettings({ retries: 1 })
+      .then((settings) => {
+        if (!active) return;
+        setProviderSettings(settings);
+        setProviderDraft(settings.active.provider);
+        setModelDraft(settings.active.model);
+        setProviderError(null);
+      })
+      .catch((error) => {
+        if (active) setProviderError(readableError(error, "模型服务设置暂时读取失败"));
+      });
+    return () => {
+      active = false;
+    };
+  }, [runtime.agent]);
+
+  const selectedProvider = providerSettings?.options.find(
+    (option) => option.id === providerDraft,
+  );
+  const selectionChanged = providerSettings !== null && (
+    providerSettings.active.provider !== providerDraft ||
+    providerSettings.active.model !== modelDraft
+  );
+
+  const saveProvider = async () => {
+    if (!selectedProvider?.configured || !selectionChanged || providerBusy) return;
+    setProviderBusy(true);
+    setProviderError(null);
+    setProviderNotice(null);
+    try {
+      const next = await runtime.agent.updateProviderSettings({
+        provider: providerDraft,
+        model: modelDraft,
+      });
+      setProviderSettings(next);
+      setProviderDraft(next.active.provider);
+      setModelDraft(next.active.model);
+      setProviderNotice("已切换；下一次对话会使用这个 Provider 和模型。");
+      await refreshHealth();
+    } catch (error) {
+      setProviderError(readableError(error, "模型服务没有切换"));
+    } finally {
+      setProviderBusy(false);
+    }
+  };
+
   return (
-    <div
+    <MotionSurface
       className="dimension-root"
-      style={dialogBackdropStyle}
+      style={{
+        ...dialogBackdropStyle,
+        zIndex,
+        ...(windowMode ? dialogWindowStyle : {}),
+      }}
       role="dialog"
-      aria-modal="true"
-      aria-label="本地服务诊断"
+      aria-modal={!windowMode}
+      aria-label="设置"
+      onPointerDown={onActivate}
     >
-      <section className="dim-paper" style={dialogPaperStyle}>
-        <p className="dim-eyebrow">深层设置</p>
-        <h2 style={{ margin: "6px 0", fontSize: 20 }}>浏览器产品运行状态</h2>
-        <p className="dim-body">数据服务：{serviceLabel(health?.domain.state ?? "starting")}</p>
-        <p className="dim-body">
-          助手服务：{agentServiceLabel(
-            health?.agent.state ?? "starting",
-            optionalText(recordOf(health?.agent.details?.model)?.authentication),
-          )}
-        </p>
-        <p className="dim-meta">会话 ID · {sessionId}</p>
-        <p className="dim-body">登录凭证只保存在本机。</p>
-        {messageHydrationError && <p className="dim-body">{messageHydrationError}</p>}
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <button
-            type="button"
-            className="dim-btn dim-btn--quiet"
-            onClick={onDataSafety}
-            disabled={!actionAvailability.dataSafety}
-            aria-disabled={!actionAvailability.dataSafety}
-          >
-            数据与安全…
-          </button>
-          <button
-            type="button"
-            className="dim-btn"
-            onClick={onClose}
-            disabled={!actionAvailability.close}
-            aria-disabled={!actionAvailability.close}
-          >
-            合上
-          </button>
+      <SettingsFrame
+        onClose={onClose}
+        closeEnabled={actionAvailability.close}
+        onDataSafety={onDataSafety}
+        dataSafetyEnabled={actionAvailability.dataSafety}
+      >
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <span className="dim-meta" aria-label="本地服务状态">
+            数据 {serviceLabel(health?.domain.state ?? "starting")} · 助手 {agentServiceLabel(
+              health?.agent.state ?? "starting",
+              optionalText(recordOf(health?.agent.details?.model)?.authentication),
+            )}
+            {contextLoading ? " · 读取中" : ""}
+          </span>
+          <button type="button" className="dim-btn dim-btn--quiet"
+            onClick={onRefresh} disabled={!refreshEnabled || contextLoading}>刷新</button>
         </div>
-      </section>
-    </div>
+        <section id="settings-persona" tabIndex={-1} aria-label="人设与相处方式">
+          <PersonaSettings agent={runtime.agent} />
+        </section>
+        <section id="settings-model" tabIndex={-1} aria-label="对话模型" className="dim-paper" style={{ padding: "12px 14px" }}>
+          <p className="dim-eyebrow">对话模型</p>
+          <p className="dim-meta" style={{ marginTop: 4 }}>
+            这里切换 Agent 对话模型；联网搜索仍使用单独配置的 DeepSeek 搜索服务。
+          </p>
+          {!providerSettings && !providerError && (
+            <p role="status" className="dim-body">正在读取当前 Provider…</p>
+          )}
+          {providerSettings && (
+            <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+              <label className="dim-meta">
+                Provider
+                <select
+                  aria-label="Provider"
+                  value={providerDraft}
+                  disabled={providerBusy}
+                  onChange={(event) => {
+                    const provider = providerSettings.options.find(
+                      (option) => option.id === event.target.value,
+                    );
+                    setProviderDraft(event.target.value);
+                    setModelDraft(provider?.models[0]?.id ?? "");
+                    setProviderNotice(null);
+                    setProviderError(null);
+                  }}
+                  style={dialogFieldStyle}
+                >
+                  {providerSettings.options.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}{option.configured ? "" : "（未配置）"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="dim-meta">
+                模型
+                <select
+                  aria-label="模型"
+                  value={modelDraft}
+                  disabled={providerBusy || !selectedProvider}
+                  onChange={(event) => {
+                    setModelDraft(event.target.value);
+                    setProviderNotice(null);
+                    setProviderError(null);
+                  }}
+                  style={dialogFieldStyle}
+                >
+                  {(selectedProvider?.models ?? []).map((model) => (
+                    <option key={model.id} value={model.id}>{model.label}</option>
+                  ))}
+                </select>
+              </label>
+              {!selectedProvider?.configured && selectedProvider && (
+                <p className="dim-meta">
+                  先在本机 <code>.env.local</code> 配置 {selectedProvider.credentialName}，
+                  然后重启 Agent Host。密钥不会进入浏览器。
+                </p>
+              )}
+              {providerError && <p role="alert" className="dim-body">{providerError}</p>}
+              {providerNotice && <p role="status" className="dim-body">{providerNotice}</p>}
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="dim-btn"
+                  disabled={
+                    providerBusy ||
+                    !selectionChanged ||
+                    !selectedProvider?.configured ||
+                    !modelDraft
+                  }
+                  onClick={() => void saveProvider()}
+                >
+                  {providerBusy ? "正在切换…" : "保存模型设置"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+        <section id="settings-history" tabIndex={-1} aria-label="电脑记录设置">
+          <ComputerHistoryPanel onAsk={onHistoryAsk} />
+        </section>
+        <section id="settings-notices" tabIndex={-1} aria-label="提醒显示">
+          <NoticeSettings />
+        </section>
+        <section id="settings-status" tabIndex={-1} aria-label="运行状态" className="dim-settings-status">
+          <p className="dim-eyebrow">运行状态</p>
+          <p className="dim-body">数据服务：{serviceLabel(health?.domain.state ?? "starting")}</p>
+          <p className="dim-body">
+            助手服务：{agentServiceLabel(
+              health?.agent.state ?? "starting",
+              optionalText(recordOf(health?.agent.details?.model)?.authentication),
+            )}
+          </p>
+          <p className="dim-meta">会话 ID · {sessionId}</p>
+          <p className="dim-body">登录凭证只保存在本机。</p>
+          {messageHydrationError && <p className="dim-body">{messageHydrationError}</p>}
+        </section>
+      </SettingsFrame>
+    </MotionSurface>
   );
 }
 
@@ -1497,12 +1954,34 @@ const dialogBackdropStyle = {
 const dialogPaperStyle = {
   width: "min(560px, 100%)",
   maxHeight: "min(720px, 90vh)",
-  overflowY: "auto",
+  overflow: "auto",
+  resize: "both",
+  minWidth: "min(300px, calc(100vw - 48px))",
+  minHeight: 220,
+  maxWidth: "calc(100vw - 48px)",
+  boxSizing: "border-box",
   padding: 22,
   display: "flex",
   flexDirection: "column",
   gap: 12,
   color: "var(--dim-ink)",
+} as const;
+
+const dialogWindowStyle = {
+  inset: "auto",
+  top: "50%",
+  left: "50%",
+  width: "max-content",
+  maxWidth: "calc(100vw - 48px)",
+  padding: 0,
+  display: "block",
+  background: "transparent",
+  transform: "translate(-50%, -50%)",
+} as const;
+
+const dialogWindowPaperStyle = {
+  width: "min(560px, calc(100vw - 48px))",
+  boxShadow: "0 26px 64px rgb(55 48 34 / 24%), 0 3px 10px rgb(55 48 34 / 12%)",
 } as const;
 
 const dialogFieldStyle = {
@@ -1516,20 +1995,6 @@ const dialogFieldStyle = {
   font: "inherit",
   boxSizing: "border-box",
 } as const;
-
-function deriveSearchQuery(context: KnowledgeContext): { query: string; reason?: string } {
-  const tension = context.nodes.find((node) => node.kind === "tension" && !isClosed(node));
-  const goal = context.nodes.find((node) => node.kind === "goal" && !isClosed(node));
-  const source = tension ?? goal;
-  if (!source) return { query: "" };
-  const query = optionalText(source.statement) || optionalText(source.content) || nodeLabel(source);
-  return {
-    query,
-    reason: tension
-      ? `因为你正在验证张力“${nodeLabel(source)}”`
-      : `因为它关系到目标“${nodeLabel(source)}”`,
-  };
-}
 
 function firstDueAction(nodes: readonly KnowledgeNode[], now: Date): KnowledgeNode | undefined {
   return nodes.find((node) => {
@@ -1583,6 +2048,7 @@ function schedulerSecretaryNotice(
 function candidateActions(
   state: string,
 ): Array<{ command: CandidateCommand; label: string }> {
+  if (state === "parked") return [{ command: "touch", label: "继续共创" }];
   if (state === "proposed") {
     return [
       { command: "touch", label: "看看" },
@@ -1745,30 +2211,6 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function webSearchCoverageNotice(response: WebSearchResponse): string {
-  const coverage = response.coverage;
-  if (!coverage) {
-    return response.results.length
-      ? `已回收 ${response.results.length} 条有真实链接的讯息；当前 Host 未返回时间覆盖说明。`
-      : "搜索完成，但没有返回可展示结果；当前 Host 未返回时间覆盖说明。";
-  }
-  if (coverage.mode === "published_at_post_filter") {
-    const cutoff = coverage.cutoff ? formatCoverageCutoff(coverage.cutoff) : "请求时间窗起点";
-    const result = response.results.length
-      ? `已回收 ${response.results.length} 条有真实链接的讯息`
-      : "时间过滤后没有可展示的 dated 结果";
-    return `${result}；Host 在 provider 返回的 ${coverage.providerResultCount} 条候选中，按 publishedAt 过滤到 ${cutoff} 之后，排除无日期 ${coverage.excludedUndatedCount} 条、过期 ${coverage.excludedStaleCount} 条。provider 检索有上限，这不是该时间段的穷尽结果。`;
-  }
-  return `${response.results.length
-    ? `已回收 ${response.results.length} 条有真实链接的讯息`
-    : "搜索没有返回可展示结果"}；provider 返回 ${coverage.providerResultCount} 条候选，未执行发布时间过滤，且不是穷尽结果。`;
-}
-
-function formatCoverageCutoff(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("zh-CN");
-}
-
 function serviceLabel(state: RuntimeServiceState): string {
   return state === "ready" ? "已连接" : state === "starting" ? "启动中" : "未连接";
 }
@@ -1782,13 +2224,24 @@ function agentServiceLabel(
 
 function runStatusLabel(status: string): string {
   return {
-    queued: "已排队",
-    running: "执行中",
+    queued: "准备中",
+    running: "正在理解、核对并整理…",
     completed: "已完成",
     succeeded: "已完成",
+    budget_exhausted: "未完成",
     failed: "失败",
     cancelled: "已停止",
   }[status] ?? status;
+}
+
+function budgetExhaustedMessage(reason: string | undefined): string {
+  if (reason === "wall_clock") {
+    return "这轮读取和整理的内容太多，超过了等待时间，因此没有生成最终回答。我没有把它算作完成。";
+  }
+  if (reason === "tool") {
+    return "这轮查询次数达到上限，还没有形成最终回答。我没有把它算作完成。";
+  }
+  return "这轮在形成最终回答前达到了处理上限，因此没有完成。";
 }
 
 function readableError(error: unknown, fallback: string): string {
@@ -1800,13 +2253,25 @@ function getOrCreateBrowserSessionId(): string {
   try {
     const existing = window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY)?.trim();
     if (existing) return existing;
-    const suffix = typeof crypto?.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const sessionId = `latitude-browser-${suffix}`;
-    window.localStorage.setItem(BROWSER_SESSION_STORAGE_KEY, sessionId);
+    const sessionId = createBrowserSessionId();
+    persistBrowserSessionId(sessionId);
     return sessionId;
   } catch {
-    return `latitude-browser-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return createBrowserSessionId();
+  }
+}
+
+function createBrowserSessionId(): string {
+  const suffix = typeof crypto?.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `latitude-browser-${suffix}`;
+}
+
+function persistBrowserSessionId(sessionId: string): void {
+  try {
+    window.localStorage.setItem(BROWSER_SESSION_STORAGE_KEY, sessionId);
+  } catch {
+    // The new session still works for this page even when storage is unavailable.
   }
 }

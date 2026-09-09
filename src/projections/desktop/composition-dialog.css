@@ -1,0 +1,328 @@
+.dim-composition-dialog {
+  --composition-space-xs: 4px;
+  --composition-space-sm: 8px;
+  --composition-space-md: 12px;
+  --composition-space-lg: 18px;
+  --composition-control-size: 32px;
+  --composition-number-width: 22px;
+  --composition-title-padding: 6px 0;
+  --composition-row-padding: 14px 0;
+  --composition-action-padding: 8px 12px;
+  --composition-section-padding: 12px 0;
+  --composition-toggle-width: 30px;
+  --composition-toggle-height: 18px;
+  --composition-toggle-knob: 12px;
+  --composition-toggle-offset: 2px;
+  --composition-summary-width: fit-content;
+}
+
+.dim-composition-paper {
+  container: composition-sheet / inline-size;
+  border-top: 3px solid var(--dim-olive);
+}
+
+.dim-composition-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--composition-space-lg);
+}
+
+.dim-composition-header h2 {
+  margin: var(--composition-title-padding);
+  font-family: "Songti SC", STSong, serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--dim-olive-deep);
+}
+
+.dim-composition-description {
+  margin: 0;
+  color: var(--dim-ink-soft);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.dim-composition-card-list {
+  border-top: 1px solid var(--dim-line);
+}
+
+.dim-composition-card {
+  padding: var(--composition-row-padding);
+  border-bottom: 1px solid var(--dim-line-soft);
+}
+
+.dim-composition-card-heading {
+  display: grid;
+  grid-template-columns: var(--composition-number-width) minmax(100px, 1fr) auto auto;
+  align-items: center;
+  gap: var(--composition-space-md);
+}
+
+.dim-composition-number {
+  align-self: start;
+  padding-top: var(--composition-space-xs);
+  color: var(--dim-olive);
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.dim-composition-title {
+  min-width: 0;
+}
+
+.dim-composition-title .dim-eyebrow {
+  font-size: 10px;
+  color: var(--dim-ink-soft);
+}
+
+.dim-composition-title .dim-input {
+  display: block;
+  padding: var(--composition-title-padding);
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dim-composition-title .dim-input:hover {
+  border-bottom-color: var(--dim-line);
+}
+
+.dim-composition-title .dim-input:focus-visible {
+  border-bottom-color: var(--dim-olive);
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+.dim-composition-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--composition-space-sm);
+  min-height: var(--composition-control-size);
+  color: var(--dim-ink-soft);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dim-composition-dialog input[role="switch"] {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: var(--composition-toggle-width);
+  height: var(--composition-toggle-height);
+  margin: 0;
+  border: 1px solid var(--dim-line);
+  border-radius: 20px;
+  background: var(--dim-line-soft);
+  cursor: pointer;
+}
+
+.dim-composition-dialog input[role="switch"]::after {
+  content: "";
+  position: absolute;
+  top: var(--composition-toggle-offset);
+  left: var(--composition-toggle-offset);
+  width: var(--composition-toggle-knob);
+  height: var(--composition-toggle-knob);
+  border-radius: 50%;
+  background: var(--dim-paper);
+}
+
+.dim-composition-dialog input[role="switch"]:checked {
+  border-color: var(--dim-olive);
+  background: var(--dim-olive);
+}
+
+.dim-composition-dialog input[role="switch"]:checked::after {
+  transform: translateX(12px);
+}
+
+.dim-composition-dialog input[role="switch"]:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+.dim-composition-order {
+  display: flex;
+  gap: var(--composition-space-xs);
+}
+
+.dim-composition-footer .dim-btn {
+  min-height: var(--composition-control-size);
+}
+
+.dim-composition-order .dim-btn {
+  width: var(--composition-control-size);
+  height: var(--composition-control-size);
+  padding: 0;
+  font-size: 14px;
+  color: var(--dim-ink-soft);
+}
+
+.dim-composition-order .dim-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.dim-composition-actions {
+  margin-top: var(--composition-space-sm);
+  margin-left: var(--composition-control-size);
+}
+
+.dim-composition-actions summary,
+.dim-composition-section > summary {
+  width: var(--composition-summary-width);
+  min-height: var(--composition-control-size);
+  align-content: center;
+  color: var(--dim-ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dim-composition-actions summary:hover,
+.dim-composition-section > summary:hover {
+  color: var(--dim-olive-deep);
+}
+
+.dim-composition-actions summary:focus-visible,
+.dim-composition-section > summary:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+.dim-composition-action-count {
+  margin-left: var(--composition-space-md);
+  color: var(--dim-ink-faint);
+  font-size: 10px;
+}
+
+.dim-composition-action-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  column-gap: var(--composition-space-lg);
+  margin-top: var(--composition-space-xs);
+  padding: var(--composition-action-padding);
+  background: var(--dim-page);
+  border-left: 2px solid var(--dim-line);
+}
+
+.dim-composition-action-row {
+  min-width: 0;
+}
+
+.dim-composition-action-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--composition-space-md);
+  min-height: var(--composition-control-size);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dim-composition-binding-options {
+  display: grid;
+  gap: var(--composition-space-sm);
+  margin: 0;
+  padding: var(--composition-section-padding);
+  border: none;
+  color: var(--dim-ink-soft);
+  font-size: 11px;
+}
+
+.dim-composition-binding-options label {
+  display: flex;
+  align-items: center;
+  gap: var(--composition-space-sm);
+  overflow-wrap: anywhere;
+}
+
+.dim-composition-binding-options input {
+  accent-color: var(--dim-olive);
+}
+
+.dim-composition-module-list {
+  display: grid;
+  gap: var(--composition-space-md);
+  margin-top: var(--composition-space-sm);
+}
+
+.dim-composition-module {
+  padding: var(--composition-action-padding);
+  border-left: 2px solid var(--dim-line-soft);
+}
+
+.dim-composition-module-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--composition-space-md);
+}
+
+.dim-composition-module-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dim-composition-module .dim-composition-actions {
+  margin-left: 0;
+}
+
+.dim-composition-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--composition-space-sm);
+  padding-top: var(--composition-space-md);
+  padding-bottom: var(--composition-space-sm);
+  border-top: 1px solid var(--dim-line);
+  background: var(--dim-paper);
+}
+
+.dim-composition-history {
+  display: grid;
+  gap: var(--composition-space-sm);
+}
+
+.dim-composition-history-row {
+  display: flex;
+  align-items: center;
+  gap: var(--composition-space-sm);
+  overflow-wrap: anywhere;
+}
+
+.dim-composition-error {
+  margin: 0;
+  color: var(--dim-rust);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@container composition-sheet (width <= 500px) {
+  .dim-composition-card-heading {
+    grid-template-columns: var(--composition-number-width) minmax(0, 1fr) auto;
+    column-gap: var(--composition-space-sm);
+  }
+
+  .dim-composition-visibility {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .dim-composition-order {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+
+  .dim-composition-history-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

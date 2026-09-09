@@ -1,0 +1,55 @@
+{
+  "id": "thinking",
+  "title": "停下来想一想",
+  "description": "停笔琢磨片刻，再把注意力放回本子。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "静静思考",
+    "指尖靠近下巴",
+    "轻轻碰一下",
+    "想一会儿",
+    "眼皮放松",
+    "想清楚一点",
+    "手指稍微放松",
+    "继续思考"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1700
+    },
+    {
+      "frame": 1,
+      "ms": 350
+    },
+    {
+      "frame": 2,
+      "ms": 350
+    },
+    {
+      "frame": 3,
+      "ms": 2400
+    },
+    {
+      "frame": 4,
+      "ms": 150
+    },
+    {
+      "frame": 5,
+      "ms": 1500
+    },
+    {
+      "frame": 6,
+      "ms": 350
+    },
+    {
+      "frame": 7,
+      "ms": 1200
+    }
+  ],
+  "duration": 8000
+}

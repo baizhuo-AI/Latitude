@@ -1,0 +1,55 @@
+{
+  "id": "notes",
+  "title": "整理便笺",
+  "description": "分好便笺，把边缘轻轻对齐。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "托住便笺",
+    "分出一张",
+    "挪齐上边",
+    "轻轻叠回",
+    "对齐侧边",
+    "按平便笺",
+    "轻眨一下眼",
+    "继续整理"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1500
+    },
+    {
+      "frame": 1,
+      "ms": 300
+    },
+    {
+      "frame": 2,
+      "ms": 400
+    },
+    {
+      "frame": 3,
+      "ms": 400
+    },
+    {
+      "frame": 4,
+      "ms": 450
+    },
+    {
+      "frame": 5,
+      "ms": 450
+    },
+    {
+      "frame": 6,
+      "ms": 120
+    },
+    {
+      "frame": 7,
+      "ms": 3380
+    }
+  ],
+  "duration": 7000
+}

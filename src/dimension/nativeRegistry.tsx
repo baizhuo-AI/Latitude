@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { CognitionCard } from "./cards/CognitionCard";
 import { FeedCard } from "./cards/FeedCard";
 import {
+  ActivityCardView,
   AnchorsCardView,
   ChartCardView,
   CountCardView,
@@ -64,6 +65,19 @@ export const NATIVE_CARD_REGISTRY = {
       <FeedCard
         card={card}
         onFeedback={handlers.onFeedFeedback}
+        onLineage={handlers.onLineage}
+      />
+    );
+  },
+  activity: (payload, layout, handlers) => {
+    const card = materializeTyped(payload, layout);
+    return (
+      <ActivityCardView
+        card={card}
+        onCapture={handlers.onActivityCapture}
+        onEdit={handlers.onActivityEdit}
+        onRetract={handlers.onActivityRetract}
+        onReflect={handlers.onActivityReflect}
         onLineage={handlers.onLineage}
       />
     );

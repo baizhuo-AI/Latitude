@@ -1,4 +1,7 @@
 import process from "node:process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import {
   assertLoopbackPortsAvailable,
   signalManagedProcess,
@@ -23,6 +26,17 @@ const domainUrl = loopbackOrigin(
   "LATITUDE_DOMAIN_URL",
 );
 const domainEndpoint = new URL(domainUrl);
+const computerHistoryRoot = process.env.LATITUDE_COMPUTER_HISTORY_ROOT?.trim() || path.join(
+  homedir(),
+  "Library",
+  "Group Containers",
+  "2DC432GLL2.com.openai.sky.CUAService",
+  "Library",
+  "Caches",
+  "ComputerUse",
+  "Skysight",
+);
+const computerHistoryAvailable = existsSync(path.join(computerHistoryRoot, "segments"));
 const services = [
   {
     name: "domain",
@@ -35,7 +49,10 @@ const services = [
     name: "agent",
     script: "dev:agent",
     health: `http://127.0.0.1:${agentPort}/health`,
-    requireReadyStatus: true,
+    // A listening Host remains useful when no provider is configured yet: the
+    // Browser Settings surface is the recovery path. Health still reports the
+    // model unavailable and turns remain blocked by the provider adapter.
+    requireReadyStatus: false,
   },
   {
     name: "web",
@@ -224,7 +241,7 @@ function withoutModelCredentials(environment) {
  * DSH plugins execute inside the Agent Host process. Keep the ordinary runtime
  * environment (PATH, HOME, proxy settings, locale), but do not give those
  * plugins unrelated developer credentials that happened to be present in the
- * parent shell. Latitude's P0 providers need only this explicit DeepSeek set.
+ * parent shell. Latitude providers receive only this explicit allowlist.
  */
 function agentEnvironment(environment) {
   const safe = withoutModelCredentials(environment);
@@ -233,6 +250,12 @@ function agentEnvironment(environment) {
     "DEEPSEEK_BASE_URL",
     "DEEPSEEK_SEARCH_BASE_URL",
     "DEEPSEEK_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_MODEL",
   ]) {
     if (environment[name] !== undefined) safe[name] = environment[name];
   }

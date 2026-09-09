@@ -1,3 +1,4 @@
+import { MotionSurface } from "../../dimension/SurfaceMotion";
 import { useEffect, useState } from "react";
 
 export interface DangerousPreparation {
@@ -65,11 +66,17 @@ export function BrowserDataSafetyDialog({
   actionAvailability = DEFAULT_ACTION_AVAILABILITY,
   onChanged,
   onClose,
+  zIndex = 100,
+  onActivate,
+  windowMode = false,
 }: {
   actions?: BrowserDataSafetyActions;
   actionAvailability?: BrowserDataSafetyActionAvailability;
   onChanged: () => Promise<void>;
   onClose: () => void;
+  zIndex?: number;
+  onActivate?: () => void;
+  windowMode?: boolean;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -226,14 +233,25 @@ export function BrowserDataSafetyDialog({
   }
 
   return (
-    <div
+    <MotionSurface
       className="dimension-root"
-      style={backdropStyle}
+      style={{
+        ...backdropStyle,
+        zIndex,
+        ...(windowMode ? windowStyle : {}),
+      }}
       role="dialog"
-      aria-modal="true"
+      aria-modal={!windowMode}
       aria-label="数据与安全"
+      onPointerDown={onActivate}
     >
-      <section className="dim-paper" style={paperStyle}>
+      <section
+        className="dim-paper"
+        style={{
+          ...paperStyle,
+          ...(windowMode ? windowPaperStyle : {}),
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div>
             <p className="dim-eyebrow">数据管理</p>
@@ -261,7 +279,7 @@ export function BrowserDataSafetyDialog({
 
         <section className="dim-paper" style={sectionStyle}>
           <p className="dim-eyebrow">完整导出</p>
-          <p className="dim-body">导出你的记录、对话、任务和桌面设置。下载文件未加密，请妥善保管。</p>
+          <p className="dim-body">导出认知图谱、助手对话与运行记录、桌面设置。便签业务库中的待办、日历和每日整理需另行备份，不包含在此文件中。下载文件未加密，请妥善保管。</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               type="button"
@@ -449,7 +467,7 @@ export function BrowserDataSafetyDialog({
 
         {notice && <p className="dim-body" role="status">{notice}</p>}
       </section>
-    </div>
+    </MotionSurface>
   );
 }
 
@@ -468,12 +486,34 @@ const backdropStyle = {
 const paperStyle = {
   width: "min(760px, 100%)",
   maxHeight: "min(860px, 92vh)",
-  overflowY: "auto",
+  overflow: "auto",
+  resize: "both",
+  minWidth: "min(300px, calc(100vw - 48px))",
+  minHeight: 220,
+  maxWidth: "calc(100vw - 48px)",
+  boxSizing: "border-box",
   padding: 22,
   display: "flex",
   flexDirection: "column",
   gap: 13,
   color: "var(--dim-ink)",
+} as const;
+
+const windowStyle = {
+  inset: "auto",
+  top: "50%",
+  left: "50%",
+  width: "max-content",
+  maxWidth: "calc(100vw - 48px)",
+  padding: 0,
+  display: "block",
+  background: "transparent",
+  transform: "translate(-50%, -50%)",
+} as const;
+
+const windowPaperStyle = {
+  width: "min(760px, calc(100vw - 48px))",
+  boxShadow: "0 26px 64px rgb(55 48 34 / 24%), 0 3px 10px rgb(55 48 34 / 12%)",
 } as const;
 
 const sectionStyle = {

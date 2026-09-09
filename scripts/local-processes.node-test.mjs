@@ -73,7 +73,7 @@ test("a missing model credential is terminal instead of a 90 second boot wait", 
   assert.match(
     terminalLocalHealthFailure("agent", {
       status: "unavailable",
-      model: { configured: false },
+      model: { provider: "deepseek-official", configured: false },
       domain: { healthy: false },
     }),
     /DEEPSEEK_API_KEY/u,
@@ -93,5 +93,12 @@ test("a missing model credential is terminal instead of a 90 second boot wait", 
       domain: { healthy: true },
     }),
     /authentication was rejected/u,
+  );
+  assert.match(
+    terminalLocalHealthFailure("agent", {
+      status: "unavailable",
+      model: { provider: "openai", configured: false },
+    }),
+    /OPENAI_API_KEY/u,
   );
 });

@@ -10,6 +10,7 @@ export type LayoutRendererKind = "native" | "declarative" | "html";
 
 /** 种子桌面的五个稳定内容区。 */
 export type LayoutRegion =
+  | "activity"
   | "feed"
   | "schedule"
   | "review-plan"

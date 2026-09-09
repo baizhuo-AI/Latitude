@@ -19,8 +19,8 @@ async fn open_test_database() -> (TempDir, Database) {
     let (database, report) = Database::open(&db_path, &backup_dir)
         .await
         .expect("fresh database migrates");
-    assert_eq!(report.schema_version, "3");
-    assert_eq!(report.migrations_applied, vec![1, 2, 3]);
+    assert_eq!(report.schema_version, "5");
+    assert_eq!(report.migrations_applied, vec![1, 2, 3, 4, 5]);
     (directory, database)
 }
 
@@ -557,6 +557,8 @@ async fn candidate_intervention_is_typed_due_only_reversible_and_profile_safe() 
 
     for (key, command, expected) in [
         ("candidate-touch-2", "touch", "touched"),
+        ("candidate-park", "park", "parked"),
+        ("candidate-reopen", "touch", "touched"),
         ("candidate-shape", "shape", "shaping"),
     ] {
         let (status, response) = request_json(
@@ -577,6 +579,16 @@ async fn candidate_intervention_is_typed_due_only_reversible_and_profile_safe() 
             response["value"]["receipt"]["changeSetId"],
             response["changeSetId"]
         );
+        if key == "candidate-reopen" {
+            assert_eq!(response["value"]["receipt"]["previousState"], "parked");
+            assert_eq!(response["value"]["candidate"]["status"], "active");
+            assert!(response["value"]["candidate"]["payload"]["shapingFollowupDueAt"].is_null());
+            assert_eq!(
+                candidate_context(&app, &candidate_id).await["payload"]["candidateState"],
+                "touched",
+                "reopening restores collaboration without manufacturing a conclusion"
+            );
+        }
     }
     let shaping = candidate_context(&app, &candidate_id).await;
     let shaping_due_at = shaping["payload"]["shapingFollowupDueAt"].as_str().unwrap();
@@ -728,8 +740,8 @@ async fn candidate_intervention_is_typed_due_only_reversible_and_profile_safe() 
     database.close().await;
     let (reopened, report) = Database::open(&db_path, &backup_dir)
         .await
-        .expect("v3 database with candidate reopens without enum migration");
-    assert_eq!(report.schema_version, "3");
+        .expect("v4 database with candidate reopens without enum migration");
+    assert_eq!(report.schema_version, "5");
     assert!(report.migrations_applied.is_empty());
     let reopened_app = build_router(AppState::new(reopened.clone()));
     assert_eq!(
@@ -1049,7 +1061,7 @@ async fn fresh_migration_is_transactional_and_reopen_creates_startup_backup() {
     let (directory, database) = open_test_database().await;
     let integrity = database.integrity().await.expect("integrity report");
     assert_eq!(integrity["ok"], true);
-    assert_eq!(integrity["migrationCount"], 3);
+    assert_eq!(integrity["migrationCount"], 5);
     let db_path = database.path().to_path_buf();
     #[cfg(unix)]
     {
@@ -1085,6 +1097,143 @@ async fn fresh_migration_is_transactional_and_reopen_creates_startup_backup() {
             0o600
         );
     }
+    reopened.close().await;
+}
+
+#[tokio::test]
+async fn v4_migration_soft_deletes_computer_history_graph_nodes_but_keeps_raw_evidence() {
+    let (directory, database) = open_test_database().await;
+    let db_path = database.path().to_path_buf();
+    let backup_dir = directory.path().join("backups");
+    let app = build_router(AppState::new(database.clone()));
+
+    let (status, stale) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/message",
+        Some(json!({
+            "clientRequestId": "legacy-computer-history-node",
+            "messageId": "legacy-computer-history-node",
+            "content": "旧导入器生成的原始电脑事件",
+            "sensitivity": "highest",
+            "audit": {
+                "actor": "user",
+                "sessionId": "legacy-importer",
+                "authorizationMode": "automatic"
+            }
+        })),
+        Some("legacy-computer-history-node"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stale}");
+    let stale_source_id = stale["value"]["sourceRecordId"].as_str().unwrap();
+    let stale_node_id = stale["value"]["nodeId"].as_str().unwrap();
+
+    let (status, codex) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/message",
+        Some(json!({
+            "clientRequestId": "legacy-codex-source",
+            "messageId": "legacy-codex-source",
+            "content": "需要回填来源的 Codex 对话",
+            "sensitivity": "low",
+            "audit": {
+                "actor": "user",
+                "sessionId": "codex-legacy-session",
+                "authorizationMode": "automatic"
+            }
+        })),
+        Some("legacy-codex-source"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{codex}");
+    let codex_source_id = codex["value"]["sourceRecordId"].as_str().unwrap();
+
+    sqlx::query("UPDATE source_records SET source_type='computer_history' WHERE id=?")
+        .bind(stale_source_id)
+        .execute(database.pool())
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE nodes SET origin='sensor', authority='source_verified', \
+         label='Computer History 原始事件' WHERE id=?",
+    )
+    .bind(stale_node_id)
+    .execute(database.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE source_records SET metadata_json=json_remove(metadata_json, \
+         '$.conversationContext', '$.sourceLabel') WHERE id=?",
+    )
+    .bind(codex_source_id)
+    .execute(database.pool())
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM schema_migrations WHERE version=4")
+        .execute(database.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE schema_meta SET value='3' WHERE key='constellation_schema_version'")
+        .execute(database.pool())
+        .await
+        .unwrap();
+
+    drop(app);
+    database.close().await;
+    let (reopened, report) = Database::open(&db_path, &backup_dir)
+        .await
+        .expect("v4 data migration applies");
+    assert_eq!(report.migrations_applied, vec![4]);
+
+    let (status, deleted_at): (String, Option<String>) =
+        sqlx::query_as("SELECT status, deleted_at FROM nodes WHERE id=?")
+            .bind(stale_node_id)
+            .fetch_one(reopened.pool())
+            .await
+            .unwrap();
+    assert_eq!(status, "deleted");
+    assert!(deleted_at.is_some());
+
+    let raw_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM evidence_refs e JOIN source_records s \
+         ON s.id=e.source_record_id WHERE s.id=? AND s.source_type='computer_history'",
+    )
+    .bind(stale_source_id)
+    .fetch_one(reopened.pool())
+    .await
+    .unwrap();
+    assert_eq!(raw_count, 1);
+    let metadata_json: String =
+        sqlx::query_scalar("SELECT metadata_json FROM source_records WHERE id=?")
+            .bind(codex_source_id)
+            .fetch_one(reopened.pool())
+            .await
+            .unwrap();
+    let metadata: Value = serde_json::from_str(&metadata_json).unwrap();
+    assert_eq!(metadata["conversationContext"], "codex_coding_agent");
+    assert_eq!(metadata["sourceLabel"], "Codex 编程助手对话");
+
+    let reopened_app = build_router(AppState::new(reopened.clone()));
+    let (status, raw) = request_json(
+        &reopened_app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({
+            "query": "旧导入器",
+            "sourceTypes": ["computer_history"],
+            "limit": 10
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{raw}");
+    assert_eq!(raw["items"].as_array().unwrap().len(), 1);
+    assert!(raw["items"][0]["linkedNodes"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     reopened.close().await;
 }
 
@@ -1406,6 +1555,575 @@ async fn review_status_keeps_revision_claim_and_candidate_bindings_in_their_own_
     assert_eq!(status, StatusCode::OK, "{mixed_due}");
     assert_eq!(mixed_due["latestCompleteWeek"]["status"], "due");
     assert_eq!(mixed_due["latestCompleteWeek"]["eligibleArtifactCount"], 2);
+}
+
+#[tokio::test]
+async fn user_activity_is_source_linked_and_distinct_from_ordinary_chat() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database));
+
+    let (status, activity) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/message",
+        Some(json!({
+            "clientRequestId": "activity-1",
+            "content": "把第一版服务接回原来的纸面",
+            "occurredAt": "2030-01-01T08:00:00.000Z",
+            "evidenceType": "activity",
+            "sensitivity": "low",
+            "audit": { "actor": "user", "sessionId": "session-1", "authorizationMode": "automatic" }
+        })),
+        Some("idem-activity-1"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{activity}");
+    assert_eq!(activity["value"]["node"]["label"], "用户记录的行动");
+    assert_eq!(
+        activity["value"]["node"]["payload"]["evidenceType"],
+        "activity"
+    );
+    assert_eq!(activity["value"]["node"]["authority"], "source_verified");
+    assert!(activity["value"]["evidenceRefId"].as_str().is_some());
+    assert!(activity["value"]["sourceRecordId"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn computer_history_raw_events_are_searchable_and_trace_back_from_knowledge() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database.clone()));
+    let import_body = json!({
+        "clientRequestId": "computer-history-segment-1",
+        "segmentId": "2030-01-01T08-00-00Z",
+        "startedAt": "2030-01-01T08:00:00.000Z",
+        "endedAt": "2030-01-01T08:00:03.000Z",
+        "storageUri": "file:///local/skysight/segments/2030-01-01T08-00-00Z/events.jsonl",
+        "contentHash": "sha256:segment-one",
+        "coverageStatus": "complete",
+        "collectorVersion": "test-skysight",
+        "metadata": { "fixture": true },
+        "events": [
+            {
+                "id": 101,
+                "kind": "window.changed",
+                "timestamp": "2030-01-01T08:00:01.000Z",
+                "app": { "name": "Latitude" },
+                "window": { "title": "认知图谱" }
+            },
+            {
+                "id": 102,
+                "kind": "keyboard.text_input",
+                "timestamp": "2030-01-01T08:00:03.000Z",
+                "keyboard": { "text": format!("原始记录也要可查询{}TAIL_MARKER", "长资料😀".repeat(2000)) }
+            }
+        ],
+        "audit": {
+            "actor": "importer",
+            "sessionId": "computer-history-sync",
+            "authorizationMode": "preauthorized"
+        }
+    });
+    let (status, imported) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/computer-history",
+        Some(import_body.clone()),
+        Some("computer-history-segment-1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{imported}");
+    assert_eq!(imported["value"]["importedEventCount"], 2);
+    assert!(imported["value"]["evidence"][0]
+        .get("eventNodeId")
+        .is_none());
+    let text_evidence_ref = imported["value"]["evidence"][1]["evidenceRefId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let imported_graph_node_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM nodes n \
+         JOIN node_evidence_links nel ON nel.node_id=n.id \
+         JOIN evidence_refs e ON e.id=nel.evidence_ref_id \
+         JOIN source_records s ON s.id=e.source_record_id \
+         WHERE s.source_type='computer_history'",
+    )
+    .fetch_one(database.pool())
+    .await
+    .unwrap();
+    assert_eq!(imported_graph_node_count, 0);
+
+    let (status, raw_search) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({
+            "query": "原始记录",
+            "sourceTypes": ["computer_history"],
+            "from": "2030-01-01T07:59:00.000Z",
+            "to": "2030-01-01T08:01:00.000Z",
+            "limit": 20
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{raw_search}");
+    assert_eq!(raw_search["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        raw_search["items"][0]["source"]["sourceType"],
+        "computer_history"
+    );
+    assert_eq!(
+        raw_search["items"][0]["source"]["modelAccess"],
+        "external_allowed"
+    );
+    assert_eq!(raw_search["coverage"]["sensitivityFiltered"], false);
+    assert!(raw_search["items"][0]["evidenceRef"]["excerpt"]
+        .as_str()
+        .unwrap()
+        .contains("原始记录也要可查询"));
+    assert!(raw_search["items"][0]["linkedNodes"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    // Full source survives retrieval, and exact-id Unicode continuation is lossless.
+    let (_, full) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/read",
+        Some(json!({ "evidenceRefId": text_evidence_ref })),
+        None,
+    )
+    .await;
+    let full_text = full["evidenceRef"]["excerpt"].as_str().unwrap();
+    assert!(full_text.contains("TAIL_MARKER"));
+    assert_eq!(full["range"]["contentTruncated"], false);
+    let (_, head) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/read",
+        Some(json!({ "evidenceRefId": text_evidence_ref, "length": 711 })),
+        None,
+    )
+    .await;
+    assert_eq!(head["range"]["nextOffset"], 711);
+    let (_, tail) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/read",
+        Some(json!({ "evidenceRefId": text_evidence_ref, "offset": 711 })),
+        None,
+    )
+    .await;
+    assert_eq!(tail["range"]["nextOffset"], Value::Null);
+    assert_eq!(
+        format!(
+            "{}{}",
+            head["evidenceRef"]["excerpt"].as_str().unwrap(),
+            tail["evidenceRef"]["excerpt"].as_str().unwrap()
+        ),
+        full_text
+    );
+
+    let (_, page_one) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({ "sourceTypes": ["computer_history"], "limit": 1 })),
+        None,
+    )
+    .await;
+    assert_eq!(page_one["coverage"]["nextOffset"], 1);
+    let (_, page_two) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({ "sourceTypes": ["computer_history"], "limit": 1, "offset": 1 })),
+        None,
+    )
+    .await;
+    assert_eq!(page_two["coverage"]["nextOffset"], Value::Null);
+    assert_eq!(page_two["coverage"]["possiblyTruncated"], false);
+    assert_ne!(
+        page_one["items"][0]["evidenceRef"]["id"],
+        page_two["items"][0]["evidenceRef"]["id"]
+    );
+
+    let (status, derived) = request_json(
+        &app,
+        "POST",
+        "/v1/changes",
+        Some(json!({
+            "operation": "remember",
+            "clientRequestId": "derive-from-computer-history",
+            "label": "原始证据保留原则",
+            "statement": "提炼结果进入知识图谱，原始记录仍可查询",
+            "kind": "method",
+            "scope": { "domain": "product" },
+            "sensitivity": "highest",
+            "evidenceRefs": [text_evidence_ref],
+            "audit": {
+                "actor": "model",
+                "sessionId": "session-1",
+                "authorizationMode": "preauthorized"
+            }
+        })),
+        Some("derive-from-computer-history"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{derived}");
+    let derived_node_id = derived["value"]["id"].as_str().unwrap();
+
+    let (status, lineage_search) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({ "nodeIds": [derived_node_id], "limit": 20 })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{lineage_search}");
+    assert_eq!(lineage_search["items"].as_array().unwrap().len(), 1);
+    assert!(lineage_search["items"][0]["linkedNodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|node| node["id"] == derived_node_id));
+
+    let (status, replayed) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/computer-history",
+        Some(import_body),
+        Some("computer-history-segment-1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replayed}");
+    assert_eq!(replayed["changeSetId"], imported["changeSetId"]);
+    let source_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM source_records WHERE source_type='computer_history'",
+    )
+    .fetch_one(database.pool())
+    .await
+    .unwrap();
+    assert_eq!(source_count, 1);
+}
+
+#[tokio::test]
+async fn broad_evidence_sampling_spreads_results_across_source_segments() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database));
+    for hour in 8..=10 {
+        let request_key = format!("balanced-{hour}");
+        let segment_id = format!("2030-01-01T{hour:02}-00-00Z");
+        let started_at = format!("2030-01-01T{hour:02}:00:00.000Z");
+        let ended_at = format!("2030-01-01T{hour:02}:00:02.000Z");
+        let body = json!({
+            "clientRequestId": request_key.clone(),
+            "segmentId": segment_id,
+            "startedAt": started_at,
+            "endedAt": ended_at,
+            "storageUri": format!("file:///segments/{hour}/events.jsonl"),
+            "contentHash": format!("sha256:balanced-{hour}"),
+            "coverageStatus": "complete",
+            "collectorVersion": "test-skysight",
+            "events": [
+                {
+                    "id": hour * 10,
+                    "kind": "mouse.click",
+                    "timestamp": format!("2030-01-01T{hour:02}:00:01.000Z"),
+                    "window": { "title": "短事件" }
+                },
+                {
+                    "id": hour * 10 + 1,
+                    "kind": "window.changed",
+                    "timestamp": format!("2030-01-01T{hour:02}:00:02.000Z"),
+                    "app": { "name": format!("项目-{hour}") },
+                    "window": { "title": format!("信息更完整的活动片段-{hour}") }
+                }
+            ],
+            "audit": {
+                "actor": "importer",
+                "sessionId": "computer-history-sync",
+                "authorizationMode": "preauthorized"
+            }
+        });
+        let (status, response) = request_json(
+            &app,
+            "POST",
+            "/v1/evidence/computer-history",
+            Some(body),
+            Some(&request_key),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+    }
+
+    let (status, balanced) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({
+            "sourceTypes": ["computer_history"],
+            "samplingMode": "source_balanced",
+            "eventsPerSource": 1,
+            "limit": 10
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{balanced}");
+    let items = balanced["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    let mut source_ids = items
+        .iter()
+        .map(|item| item["source"]["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    source_ids.sort_unstable();
+    source_ids.dedup();
+    assert_eq!(source_ids.len(), 3);
+    assert!(items.iter().all(|item| item["evidenceRef"]["excerpt"]
+        .as_str()
+        .unwrap()
+        .contains("信息更完整的活动片段")));
+    assert_eq!(balanced["coverage"]["samplingMode"], "source_balanced");
+    assert_eq!(balanced["coverage"]["eventsPerSource"], 1);
+
+    let (status, recent) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({
+            "sourceTypes": ["computer_history"],
+            "samplingMode": "recent",
+            "limit": 2
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{recent}");
+    assert_eq!(recent["items"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        recent["items"][0]["source"]["id"],
+        recent["items"][1]["source"]["id"]
+    );
+}
+
+#[tokio::test]
+async fn context_evidence_type_filter_keeps_semantic_nodes_and_only_requested_events() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database));
+    create_evidenced_claim(
+        &app,
+        "context-evidence-type",
+        "保留语义节点",
+        "low",
+        json!({ "domain": "product" }),
+    )
+    .await;
+    let (status, activity) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/message",
+        Some(json!({
+            "clientRequestId": "context-activity",
+            "messageId": "context-activity-message",
+            "content": "今天完成了一次验证",
+            "occurredAt": "2030-01-01T08:00:00.000Z",
+            "evidenceType": "activity",
+            "sensitivity": "low",
+            "audit": {
+                "actor": "user",
+                "sessionId": "latitude-browser-context-filter",
+                "authorizationMode": "automatic"
+            }
+        })),
+        Some("context-activity"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{activity}");
+
+    let (status, context) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({
+            "kinds": ["evidence_event", "claim"],
+            "evidenceTypes": ["activity"],
+            "sensitivityCeiling": "highest",
+            "limit": 20
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{context}");
+    let nodes = context["nodes"].as_array().unwrap();
+    assert_eq!(nodes.len(), 2, "{context}");
+    assert!(nodes.iter().any(|node| node["kind"] == "claim"));
+    assert!(nodes.iter().any(|node| {
+        node["kind"] == "evidence_event" && node["payload"]["evidenceType"] == "activity"
+    }));
+    assert!(!nodes.iter().any(|node| {
+        node["kind"] == "evidence_event" && node["payload"]["evidenceType"] == "message"
+    }));
+    assert_eq!(context["coverage"]["evidenceTypes"], json!(["activity"]));
+}
+
+#[tokio::test]
+async fn chat_evidence_labels_the_conversation_surface() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database));
+    for (key, session_id, content) in [
+        (
+            "codex-source",
+            "codex-recent-cognition-20300101",
+            "来自 Codex 的原话",
+        ),
+        (
+            "latitude-source",
+            "latitude-browser-source-test",
+            "来自维度的原话",
+        ),
+    ] {
+        let (status, response) = request_json(
+            &app,
+            "POST",
+            "/v1/evidence/message",
+            Some(json!({
+                "clientRequestId": key,
+                "messageId": key,
+                "content": content,
+                "sensitivity": "low",
+                "audit": {
+                    "actor": "user",
+                    "sessionId": session_id,
+                    "authorizationMode": "automatic"
+                }
+            })),
+            Some(key),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+    }
+
+    let (status, codex) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({ "query": "Codex", "sourceTypes": ["chat"], "limit": 10 })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{codex}");
+    assert_eq!(
+        codex["items"][0]["source"]["metadata"]["conversationContext"],
+        "codex_coding_agent"
+    );
+    assert_eq!(
+        codex["items"][0]["source"]["metadata"]["sourceLabel"],
+        "Codex 编程助手对话"
+    );
+
+    let (status, latitude) = request_json(
+        &app,
+        "POST",
+        "/v1/evidence/query",
+        Some(json!({ "query": "维度", "sourceTypes": ["chat"], "limit": 10 })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{latitude}");
+    assert_eq!(
+        latitude["items"][0]["source"]["metadata"]["conversationContext"],
+        "latitude_ai"
+    );
+    assert_eq!(
+        latitude["items"][0]["source"]["metadata"]["sourceLabel"],
+        "维度 AI 对话"
+    );
+}
+
+#[tokio::test]
+async fn context_uses_any_whitespace_term_and_reports_exact_coverage() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database));
+    create_evidenced_claim(
+        &app,
+        "context-terms",
+        "上午适合安排深度工作",
+        "medium",
+        json!({ "project": "latitude" }),
+    )
+    .await;
+
+    let (status, context) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({
+            "query": "不会命中 深度工作 用户目标",
+            "kinds": ["claim"],
+            "sensitivityCeiling": "medium",
+            "limit": 20
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{context}");
+    assert_eq!(context["nodes"].as_array().unwrap().len(), 1, "{context}");
+    assert_eq!(context["coverage"]["queryMode"], "any_whitespace_term");
+    assert_eq!(context["coverage"]["kinds"], json!(["claim"]));
+    assert_eq!(
+        context["coverage"]["queryTerms"],
+        json!(["不会命中", "深度工作", "用户目标"])
+    );
+    assert_eq!(context["coverage"]["returnedNodeCount"], 1);
+
+    let (_, exact_page) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({ "kinds": ["claim"], "limit": 1 })),
+        None,
+    )
+    .await;
+    assert_eq!(exact_page["coverage"]["possiblyTruncated"], false);
+    assert_eq!(exact_page["coverage"]["nextOffset"], Value::Null);
+    create_evidenced_claim(&app, "context-page-two", "第二条记录", "highest", json!({})).await;
+    let (_, first_page) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({ "kinds": ["claim"], "limit": 1 })),
+        None,
+    )
+    .await;
+    assert_eq!(first_page["coverage"]["nextOffset"], 1);
+    let (_, second_page) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({ "kinds": ["claim"], "limit": 1, "offset": 1 })),
+        None,
+    )
+    .await;
+    assert_eq!(second_page["coverage"]["nextOffset"], Value::Null);
+    assert_ne!(first_page["nodes"][0]["id"], second_page["nodes"][0]["id"]);
+
+    let (status, invalid_kind) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({ "kinds": ["goals"], "limit": 20 })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid_kind}");
+    assert!(invalid_kind["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("goal, project, method, interest, value, boundary"));
 }
 
 #[tokio::test]
@@ -3441,4 +4159,383 @@ async fn restore_prepare_accepts_large_profile_while_ordinary_writes_keep_two_mi
     assert_eq!(digest.len(), 64);
     assert!(digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
     database.close().await;
+}
+
+#[tokio::test]
+async fn relationship_write_is_explainable_idempotent_and_reversible_without_orbits() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database.clone()));
+    let scope = json!({ "profile": "personal-real", "domain": "self_knowledge" });
+    let (source, source_message) = create_evidenced_claim(
+        &app,
+        "relationship-source",
+        "关系易理解性比视觉隐喻更重要",
+        "medium",
+        scope.clone(),
+    )
+    .await;
+    let (target, target_message) = create_evidenced_claim(
+        &app,
+        "relationship-target",
+        "底层个人知识库采用图结构",
+        "medium",
+        scope.clone(),
+    )
+    .await;
+    let source_id = source["value"]["id"].as_str().unwrap().to_string();
+    let target_id = target["value"]["id"].as_str().unwrap().to_string();
+    let rationale = "图结构服务于关系的可理解表达，而不是要求用户理解星座术语";
+    let body = json!({
+        "clientRequestId": "relationship-write",
+        "fromNodeId": target_id,
+        "toNodeId": source_id,
+        "relationType": "serves",
+        "evidenceRefs": [
+            source_message["value"]["evidenceRefId"],
+            target_message["value"]["evidenceRefId"]
+        ],
+        "basis": "explicit_statement",
+        "proximity": "direct",
+        "strength": "strong",
+        "rationale": rationale,
+        "scope": scope,
+        "audit": {
+            "actor": "user",
+            "sessionId": "relationship-session",
+            "turnId": "relationship-turn",
+            "authorizationMode": "preauthorized"
+        }
+    });
+    let (status, created) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(body.clone()),
+        Some("idem-relationship-write"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["value"]["relationship"]["relationType"], "serves");
+    assert_eq!(created["value"]["relationship"]["family"], "semantic");
+    assert_eq!(created["value"]["relationship"]["authority"], "user_stated");
+    assert_eq!(created["value"]["relationship"]["status"], "active");
+    assert_eq!(
+        created["value"]["evidenceRefs"].as_array().unwrap().len(),
+        2
+    );
+    let change_set_id = created["changeSetId"].as_str().unwrap().to_string();
+
+    let (status, changes) = request_json(&app, "GET", "/v1/changes?limit=20", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{changes}");
+    let audited_change = changes["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|change| change["id"] == change_set_id)
+        .expect("relationship ChangeSet remains inspectable");
+    assert_eq!(audited_change["evidenceRefs"].as_array().unwrap().len(), 2);
+
+    let orbit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM edges WHERE from_node_id=? AND to_node_id=? AND relation_type='orbits'",
+    )
+    .bind(&target_id)
+    .bind(&source_id)
+    .fetch_one(database.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        orbit_count, 0,
+        "knowledge relationships must not fabricate orbits"
+    );
+
+    let (status, replayed) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(body.clone()),
+        Some("idem-relationship-write"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replayed}");
+    assert_eq!(replayed["changeSetId"], change_set_id);
+    let relation_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM edges WHERE from_node_id=? AND to_node_id=? AND relation_type='serves'",
+    )
+    .bind(&target_id)
+    .bind(&source_id)
+    .fetch_one(database.pool())
+    .await
+    .unwrap();
+    assert_eq!(relation_count, 1);
+
+    let (status, duplicate) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "relationship-duplicate",
+            "fromNodeId": target_id,
+            "toNodeId": source_id,
+            "relationType": "serves",
+            "evidenceRefs": [source_message["value"]["evidenceRefId"]],
+            "basis": "explicit_statement",
+            "rationale": rationale,
+            "scope": { "profile": "personal-real", "domain": "self_knowledge" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-duplicate"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{duplicate}");
+
+    let (status, compiled) = request_json(
+        &app,
+        "POST",
+        "/v1/star-map/compile-context",
+        Some(json!({
+            "seedNodeIds": [target_id],
+            "needs": ["relationship rationale"],
+            "timeScope": {},
+            "epistemicPolicy": { "canonicalOnly": true, "includeObservations": false },
+            "sensitivityPolicy": { "ceiling": "medium" },
+            "budget": { "maxNodes": 10, "maxEdges": 10, "maxDepth": 2 },
+            "audit": { "actor": "model", "authorizationMode": "automatic" }
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{compiled}");
+    assert!(compiled["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| { path["nodeId"] == source_id && path["whyIncluded"] == rationale }));
+
+    let (status, rolled_back) = request_json(
+        &app,
+        "POST",
+        &format!("/v1/changes/{change_set_id}/rollback"),
+        Some(json!({
+            "clientRequestId": "relationship-rollback",
+            "reason": "relationship rollback acceptance",
+            "audit": { "actor": "model", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-rollback"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rolled_back}");
+    let edge_status: String = sqlx::query_scalar(
+        "SELECT status FROM edges WHERE from_node_id=? AND to_node_id=? AND relation_type='serves'",
+    )
+    .bind(&target_id)
+    .bind(&source_id)
+    .fetch_one(database.pool())
+    .await
+    .unwrap();
+    assert_eq!(edge_status, "deleted");
+
+    let (status, symmetric) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "relationship-symmetric",
+            "fromNodeId": source_id,
+            "toNodeId": target_id,
+            "relationType": "conflicts_with",
+            "evidenceRefs": [
+                source_message["value"]["evidenceRefId"],
+                target_message["value"]["evidenceRefId"]
+            ],
+            "basis": "explicit_statement",
+            "rationale": "symmetric duplicate acceptance fixture",
+            "scope": { "profile": "personal-real", "domain": "self_knowledge" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-symmetric"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{symmetric}");
+    assert_eq!(symmetric["value"]["relationship"]["direction"], "symmetric");
+    let (status, reverse_duplicate) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "relationship-symmetric-reverse",
+            "fromNodeId": target_id,
+            "toNodeId": source_id,
+            "relationType": "conflicts_with",
+            "evidenceRefs": [source_message["value"]["evidenceRefId"]],
+            "basis": "explicit_statement",
+            "rationale": "must match the existing symmetric relationship",
+            "scope": { "profile": "personal-real", "domain": "self_knowledge" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-symmetric-reverse"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{reverse_duplicate}");
+
+    let (status, inferred) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "relationship-user-inference",
+            "fromNodeId": source_id,
+            "toNodeId": target_id,
+            "relationType": "influences",
+            "evidenceRefs": [source_message["value"]["evidenceRefId"]],
+            "basis": "behavioral_inference",
+            "rationale": "a user-triggered inference is still an inference",
+            "scope": { "test": "authority-matrix" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-user-inference"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{inferred}");
+    assert_eq!(
+        inferred["value"]["relationship"]["authority"],
+        "system_inferred"
+    );
+    assert_eq!(inferred["value"]["relationship"]["status"], "proposed");
+
+    let (status, confirmed) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "relationship-user-confirmed",
+            "fromNodeId": source_id,
+            "toNodeId": target_id,
+            "relationType": "about",
+            "evidenceRefs": [source_message["value"]["evidenceRefId"]],
+            "basis": "user_confirmation",
+            "rationale": "verified user confirmation has distinct authority",
+            "scope": { "test": "confirmation-authority" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-user-confirmed"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{confirmed}");
+    assert_eq!(
+        confirmed["value"]["relationship"]["authority"],
+        "user_confirmed"
+    );
+    assert_eq!(confirmed["value"]["relationship"]["status"], "active");
+
+    let (status, invalid_kinds) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "relationship-invalid-kinds",
+            "fromNodeId": source_id,
+            "toNodeId": target_id,
+            "relationType": "resulted_in",
+            "evidenceRefs": [source_message["value"]["evidenceRefId"]],
+            "basis": "explicit_statement",
+            "rationale": "claims cannot directly result in another claim",
+            "scope": { "test": "kind-guard" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-relationship-invalid-kinds"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid_kinds}");
+
+    let (status, invalid) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "fromNodeId": source_id,
+            "toNodeId": source_id,
+            "relationType": "orbits",
+            "evidenceRefs": [source_message["value"]["evidenceRefId"]],
+            "basis": "explicit_statement",
+            "rationale": "invalid self edge",
+            "audit": { "actor": "user", "authorizationMode": "automatic" }
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}");
+}
+
+#[tokio::test]
+async fn context_does_not_leak_relationships_to_filtered_sensitive_nodes() {
+    let (_directory, database) = open_test_database().await;
+    let app = build_router(AppState::new(database));
+    let (low, low_message) = create_evidenced_claim(
+        &app,
+        "privacy-low",
+        "低敏感认知",
+        "low",
+        json!({ "test": "privacy" }),
+    )
+    .await;
+    let (highest, highest_message) = create_evidenced_claim(
+        &app,
+        "privacy-highest",
+        "最高敏感认知",
+        "highest",
+        json!({ "test": "privacy" }),
+    )
+    .await;
+    let low_id = low["value"]["id"].as_str().unwrap();
+    let highest_id = highest["value"]["id"].as_str().unwrap();
+    let (status, relationship) = request_json(
+        &app,
+        "POST",
+        "/v1/relationships",
+        Some(json!({
+            "clientRequestId": "privacy-cross-sensitivity",
+            "fromNodeId": low_id,
+            "toNodeId": highest_id,
+            "relationType": "about",
+            "evidenceRefs": [
+                low_message["value"]["evidenceRefId"],
+                highest_message["value"]["evidenceRefId"]
+            ],
+            "basis": "explicit_statement",
+            "rationale": "highest-sensitive relationship rationale must not leak",
+            "scope": { "test": "privacy" },
+            "audit": { "actor": "user", "authorizationMode": "preauthorized" }
+        })),
+        Some("idem-privacy-cross-sensitivity"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{relationship}");
+
+    let (status, low_context) = request_json(
+        &app,
+        "POST",
+        "/v1/context",
+        Some(json!({
+            "kinds": ["claim"],
+            "limit": 20,
+            "sensitivityCeiling": "low"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{low_context}");
+    assert!(low_context["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|node| node["id"] == low_id));
+    assert!(!low_context["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|node| node["id"] == highest_id));
+    assert!(low_context["edges"].as_array().unwrap().is_empty());
+    assert!(!serde_json::to_string(&low_context)
+        .unwrap()
+        .contains("highest-sensitive relationship rationale must not leak"));
 }

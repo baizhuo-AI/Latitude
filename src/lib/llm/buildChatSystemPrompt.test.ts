@@ -26,6 +26,7 @@ const { setEngine } = installFakeEngine();
 vi.mock("../db", () => ({
   dbInsertUsage: async () => undefined,
   dbGetRecentDigests: async () => [],
+  dbListMemoryFacts: async () => [],
 }));
 
 vi.mock("../chatTools", () => ({
@@ -136,4 +137,16 @@ describe("buildChatSystemPrompt — 跨窗口新鲜度(直读 localStorage 真�
       expect(systemMsg.content).not.toContain("机灵");
     }
   );
+
+  it("uses transient context only in this request's system message and leaves history unchanged", async () => {
+    const history = [{ role: "user" as const, content: "帮我看看这里" }];
+    const transientContext = "<latitude_ui_context>{\"area\":\"delivery\"}</latitude_ui_context>";
+    await chatAgentCall(history, { transientContext });
+    expect(engine.received[0].messages[0].content).toContain(transientContext);
+    expect(engine.received[0].messages[1]).toEqual(history[0]);
+    expect(history).toEqual([{ role: "user", content: "帮我看看这里" }]);
+    engine.script = [{ content: "后续回复" }];
+    await chatAgentCall([{ role: "user", content: "普通会话" }]);
+    expect(engine.received[1].messages[0].content).not.toContain("latitude_ui_context");
+  });
 });

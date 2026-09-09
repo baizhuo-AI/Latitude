@@ -11,7 +11,6 @@ export interface AgentHostConfig {
   allowedOrigins: ReadonlySet<string>;
   domainTimeoutMs: number;
   schedulerPollMs: number;
-  compactionEventThreshold: number;
 }
 
 function parsePort(
@@ -40,17 +39,6 @@ function parsePollMs(raw: string | undefined): number {
   const value = parsePositiveMs(raw, 60_000, "LATITUDE_SCHEDULER_POLL_MS");
   if (value < 5_000 || value > 300_000) {
     throw new TypeError("LATITUDE_SCHEDULER_POLL_MS must be from 5000 to 300000");
-  }
-  return value;
-}
-
-function parseCompactionThreshold(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") return 800;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 100 || value > 20_000) {
-    throw new TypeError(
-      "LATITUDE_COMPACTION_EVENT_THRESHOLD must be from 100 to 20000",
-    );
   }
   return value;
 }
@@ -115,9 +103,6 @@ export function loadAgentHostConfig(
       "LATITUDE_DOMAIN_TIMEOUT_MS",
     ),
     schedulerPollMs: parsePollMs(env.LATITUDE_SCHEDULER_POLL_MS),
-    compactionEventThreshold: parseCompactionThreshold(
-      env.LATITUDE_COMPACTION_EVENT_THRESHOLD,
-    ),
   };
 }
 

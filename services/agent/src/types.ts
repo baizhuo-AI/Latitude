@@ -2,28 +2,16 @@ import type { SessionEvent } from "@deepseek-ai/dsh-session";
 
 export const AGENT_HOST_API_VERSION = "v1" as const;
 
-export const DEFAULT_RUN_BUDGETS = Object.freeze({
-  maxSteps: 8,
-  maxToolCalls: 12,
-  wallClockMs: 90_000,
-  maxOutputTokens: 8_192,
-});
-
-export const MAX_RUN_BUDGETS = Object.freeze({
-  maxSteps: 32,
-  maxToolCalls: 64,
-  wallClockMs: 300_000,
-  maxOutputTokens: 65_536,
-});
-
+/** No implicit product limits. Only a caller's explicit budget may stop a run. */
 export interface AgentRunBudgets {
-  maxSteps: number;
-  maxToolCalls: number;
-  wallClockMs: number;
-  maxOutputTokens: number;
+  maxSteps?: number;
+  maxToolCalls?: number;
+  wallClockMs?: number;
+  maxOutputTokens?: number;
 }
 
 export interface AgentRunRequest {
+  useHistory?: boolean;
   /** Stable conversation identity. Runs for the same session are serialized. */
   sessionId: string;
   /** User-authored content for the next ordinary turn. */
@@ -227,6 +215,7 @@ export interface AgentSessionMessage {
   content: string;
   createdAt: string;
   seq: number;
+  explanation?: AgentResponseExplanation;
 }
 
 export interface AgentDailyCurationResult {
@@ -234,6 +223,16 @@ export interface AgentDailyCurationResult {
   itemCount: number;
   resourceChangeId?: string;
   resourceNodeId?: string;
+}
+
+/**
+ * User-facing explanation of one answer. This is an auditable summary of
+ * evidence and completed actions, never a model chain-of-thought transcript.
+ */
+export interface AgentResponseExplanation {
+  summary: string;
+  steps: string[];
+  uncertainty?: string;
 }
 
 export interface AgentRunResult {
@@ -247,6 +246,8 @@ export interface AgentRunResult {
   startedAt: string;
   finishedAt: string;
   usage: RunUsage;
+  /** Safe, human-readable rationale for progressive disclosure in the Browser. */
+  explanation?: AgentResponseExplanation;
   /** Present only after a successful, persisted ui_customize tool execution. */
   uiChangeSet?: AgentUiChangeSetDraft;
   /** Present only when the restricted daily curation tool persisted its resource. */
@@ -259,6 +260,7 @@ export type RunJobStatus =
   | "queued"
   | "running"
   | "completed"
+  | "budget_exhausted"
   | "failed"
   | "cancelled";
 
@@ -282,51 +284,20 @@ export interface PublicRunJob {
   requestFingerprint?: string;
 }
 
-function boundedPositiveInteger(
-  value: unknown,
-  fallback: number,
-  maximum: number,
-  field: string,
-): number {
-  const candidate = value === undefined ? fallback : value;
-  if (!Number.isInteger(candidate) || Number(candidate) <= 0) {
-    throw new TypeError(`${field} must be a positive integer`);
-  }
-  if (Number(candidate) > maximum) {
-    throw new TypeError(`${field} must not exceed ${maximum}`);
-  }
-  return Number(candidate);
-}
-
 export function normalizeRunBudgets(
   input: Partial<AgentRunBudgets> | undefined,
 ): AgentRunBudgets {
-  return {
-    maxSteps: boundedPositiveInteger(
-      input?.maxSteps,
-      DEFAULT_RUN_BUDGETS.maxSteps,
-      MAX_RUN_BUDGETS.maxSteps,
-      "budgets.maxSteps",
-    ),
-    maxToolCalls: boundedPositiveInteger(
-      input?.maxToolCalls,
-      DEFAULT_RUN_BUDGETS.maxToolCalls,
-      MAX_RUN_BUDGETS.maxToolCalls,
-      "budgets.maxToolCalls",
-    ),
-    wallClockMs: boundedPositiveInteger(
-      input?.wallClockMs,
-      DEFAULT_RUN_BUDGETS.wallClockMs,
-      MAX_RUN_BUDGETS.wallClockMs,
-      "budgets.wallClockMs",
-    ),
-    maxOutputTokens: boundedPositiveInteger(
-      input?.maxOutputTokens,
-      DEFAULT_RUN_BUDGETS.maxOutputTokens,
-      MAX_RUN_BUDGETS.maxOutputTokens,
-      "budgets.maxOutputTokens",
-    ),
-  };
+  const budgets: AgentRunBudgets = {};
+  for (const key of ["maxSteps", "maxToolCalls", "wallClockMs", "maxOutputTokens"] as const) {
+    const value = input?.[key];
+    // Omission, null and zero all mean "use the framework/provider default".
+    if (value == null || value === 0) continue;
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new TypeError(`budgets.${key} must be a non-negative safe integer`);
+    }
+    budgets[key] = value;
+  }
+  return budgets;
 }
 
 export function normalizeRunRequest(input: unknown): AgentRunRequest & {
@@ -364,6 +335,7 @@ export function normalizeRunRequest(input: unknown): AgentRunRequest & {
   if (record.systemPrompt !== undefined && typeof record.systemPrompt !== "string") {
     throw new TypeError("systemPrompt must be a string when provided");
   }
+  if (record.useHistory !== undefined && typeof record.useHistory !== "boolean") throw new TypeError("useHistory must be a boolean");
   if (typeof record.systemPrompt === "string" && record.systemPrompt.length > 100_000) {
     throw new TypeError("systemPrompt must not exceed 100000 characters");
   }
@@ -376,6 +348,7 @@ export function normalizeRunRequest(input: unknown): AgentRunRequest & {
   return {
     sessionId,
     text,
+    ...(typeof record.useHistory === "boolean" ? {useHistory:record.useHistory} : {}),
     ...(typeof record.clientRequestId === "string"
       ? { clientRequestId: record.clientRequestId.trim() }
       : {}),

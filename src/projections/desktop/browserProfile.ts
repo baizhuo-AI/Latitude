@@ -15,6 +15,11 @@ import {
   type BrowserUiCompositionBackup,
   validateBrowserUiCompositionBackup,
 } from "./browserUiComposition";
+import { CUSTOM_DESKTOP_CARDS_PREFIX, validateCustomDesktopCardsDocument } from "../../dimension/custom-cards/model";
+import { isLegacyDesktopLayout } from "../../dimension/custom-cards/legacyDesktopMigration";
+import { DESKTOP_FRAMES_PREFIX, MAX_DESKTOP_FRAME_BYTES, validateDesktopFrameDocument } from "../../runtime/layout/desktopFrameStorage";
+import { DESKTOP_CAMERA_PREFIX, validateDesktopCameraSnapshot } from "../../dimension/desktopCamera";
+import { DESKTOP_WORKSPACE_PREFIX, validateDesktopWorkspaceDocument } from "../../dimension/desktopWorkspace";
 
 export const BROWSER_PROFILE_FORMAT = "latitude.browser-profile@1" as const;
 export const BROWSER_SESSION_STORAGE_KEY = "latitude.browser-agent.session.v1";
@@ -607,11 +612,17 @@ function assertSessionId(value: unknown): string {
 
 const EXACT_BROWSER_STORAGE_KEYS = new Set([
   "latitude.secretary-companion.v1",
+  "latitude.pet-placement.v1",
+  "latitude.pet-inbox.v1",
+  "latitude.pet-notice-preferences.v1",
   "dim-rail-collapsed",
   "dim-clue-positions-v1",
   "dim-clue-connections-v1",
 ]);
-const BROWSER_STORAGE_PREFIXES = ["dim-card-edits-", "dim-desk-offsets-"] as const;
+const BROWSER_STORAGE_PREFIXES = ["dim-card-edits-", "dim-desk-offsets-", "dim-desk-sizes-", "dim-desk-locks-", "dim-desk-arranged-", "dim-desk-zoom-", DESKTOP_FRAMES_PREFIX, DESKTOP_CAMERA_PREFIX, DESKTOP_WORKSPACE_PREFIX, CUSTOM_DESKTOP_CARDS_PREFIX, "latitude.composer.v1:"] as const;
+// Undo belongs to the current workspace session. Never export an old layout
+// snapshot or leave it available to overwrite a newly restored profile.
+const TRANSIENT_DESKTOP_UNDO_PREFIX = "dim-desk-arrangement-undo-";
 const MAX_BROWSER_STORAGE_ITEM_BYTES = 2 * 1_048_576;
 const MAX_BROWSER_STORAGE_TOTAL_BYTES = 8 * 1_048_576;
 
@@ -663,7 +674,7 @@ export function clearAllowlistedBrowserStorage(): void {
   const keys: string[] = [];
   for (let index = 0; index < window.localStorage.length; index += 1) {
     const key = window.localStorage.key(index);
-    if (key && isAllowlistedBrowserStorageKey(key)) keys.push(key);
+    if (key && (isAllowlistedBrowserStorageKey(key) || key.startsWith(TRANSIENT_DESKTOP_UNDO_PREFIX))) keys.push(key);
   }
   keys.forEach((key) => window.localStorage.removeItem(key));
 }
@@ -678,6 +689,21 @@ function isAllowlistedBrowserStorageKey(key: string): boolean {
 }
 
 function validateBrowserStorageItem(key: string, raw: string): void {
+  if (key.startsWith(DESKTOP_FRAMES_PREFIX) && (raw.length > MAX_DESKTOP_FRAME_BYTES || new TextEncoder().encode(raw).byteLength > MAX_DESKTOP_FRAME_BYTES)) {
+    throw new TypeError("Desktop card frame document exceeds the storage limit");
+  }
+  if (key.startsWith("dim-desk-zoom-")) {
+    let scale: unknown;
+    try { scale = JSON.parse(raw); } catch { /* The same range error covers malformed stored values. */ }
+    if (typeof scale !== "number" || !Number.isFinite(scale) || scale < 0.25 || scale > 2) {
+      throw new TypeError("Browser desktop zoom must be a finite number between 0.25 and 2");
+    }
+    return;
+  }
+  if (key.startsWith("dim-desk-arranged-")) {
+    if (raw !== "true" && raw !== "false") throw new TypeError("Browser desktop arrangement must be true or false");
+    return;
+  }
   if (key === "dim-rail-collapsed") {
     if (raw !== "0" && raw !== "1") throw new TypeError("dim-rail-collapsed must be 0 or 1");
     return;
@@ -688,7 +714,34 @@ function validateBrowserStorageItem(key: string, raw: string): void {
   } catch {
     throw new TypeError(`Browser storage ${key} is not valid JSON`);
   }
+  if (key.startsWith("dim-desk-locks-")) {
+    if (!Array.isArray(parsed) || parsed.length > 1024 || new Set(parsed).size !== parsed.length ||
+      parsed.some(id => typeof id !== "string" || !id.trim() || id.length >= 1000)) {
+      throw new TypeError("Browser card locks must contain distinct card ids");
+    }
+    return;
+  }
   if (!isRecord(parsed)) throw new TypeError(`Browser storage ${key} must contain an object`);
+  if (key.startsWith(DESKTOP_CAMERA_PREFIX)) {
+    validateDesktopCameraSnapshot(parsed);
+    return;
+  }
+  if (key.startsWith(DESKTOP_WORKSPACE_PREFIX)) {
+    validateDesktopWorkspaceDocument(parsed);
+    return;
+  }
+  if (key.startsWith(DESKTOP_FRAMES_PREFIX)) {
+    validateDesktopFrameDocument(parsed);
+    return;
+  }
+  if (key.startsWith(CUSTOM_DESKTOP_CARDS_PREFIX)) {
+    const document = validateCustomDesktopCardsDocument(parsed);
+    const rootId = key.slice(CUSTOM_DESKTOP_CARDS_PREFIX.length);
+    if (document.cards.some((card) => card.legacyOrigin && !isLegacyDesktopLayout(rootId, card.legacyOrigin.layoutId))) {
+      throw new TypeError("Legacy desktop card source does not belong to this desktop");
+    }
+    return;
+  }
   if (key === "latitude.secretary-companion.v1") {
     if (
       typeof parsed.x !== "number" || !Number.isFinite(parsed.x) ||
@@ -719,6 +772,16 @@ function validateBrowserStorageItem(key: string, raw: string): void {
       )
     ) {
       throw new TypeError(`Browser position state is invalid: ${key}`);
+    }
+  }
+  if (key.startsWith("dim-desk-sizes-")) {
+    // Match the resize hook's persisted dimensions, including narrower compact desktops.
+    if (Object.values(parsed).some((size) =>
+      !isRecord(size) ||
+      typeof size.width !== "number" || !Number.isFinite(size.width) || size.width <= 0 ||
+      typeof size.height !== "number" || !Number.isFinite(size.height) || size.height < 140
+    )) {
+      throw new TypeError(`Browser card size state is invalid: ${key}`);
     }
   }
   // dim-card-edits-* deliberately accepts nested product payloads, but only as

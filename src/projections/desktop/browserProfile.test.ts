@@ -4,8 +4,10 @@ import type {
   DesktopRuntimePort,
   DomainExportDocument,
 } from "../../runtime/host";
-import { layoutV1ToUiSurfaceV2 } from "../../runtime/composition/browserProduction";
-import { SEED_LAYOUT_DOCUMENT } from "../../runtime/layout/seedLayout";
+import {
+  BROWSER_PRODUCT_LAYOUT_DOCUMENT as SEED_LAYOUT_DOCUMENT,
+  layoutV1ToUiSurfaceV2,
+} from "../../runtime/composition/browserProduction";
 import {
   BROWSER_PROFILE_FORMAT,
   BROWSER_SESSION_STORAGE_KEY,
@@ -74,6 +76,7 @@ function fakeRuntime() {
     health: vi.fn(),
     getContext: vi.fn(),
     applyChange: vi.fn(),
+    recordActivity: vi.fn(),
     listChangeSets: vi.fn(),
     createAction: vi.fn(),
     createCandidate: vi.fn(),
@@ -104,7 +107,10 @@ function fakeRuntime() {
     runAgentTurn: vi.fn(),
     searchWeb: vi.fn(),
     agent: {
+      getLatestRun: vi.fn(), getProgress: vi.fn(), getPersona: vi.fn(), updatePersona: vi.fn(),
       health: vi.fn(),
+      getProviderSettings: vi.fn(),
+      updateProviderSettings: vi.fn(),
       startTurn: vi.fn(),
       getRun: vi.fn(),
       waitForRun: vi.fn(),
@@ -202,17 +208,41 @@ describe("完整 browser profile", () => {
       "dim-desk-offsets-dimension-seed-desktop": JSON.stringify({
         "seed-feed": { x: 8, y: -4 },
       }),
+      "dim-desk-sizes-latitude-browser-live": JSON.stringify({
+        "browser-feed": { width: 766, height: 181 },
+        "compact-note": { width: 180, height: 140 },
+      }),
+      "dim-desk-locks-latitude-browser-live": JSON.stringify(["seed-feed", "area-reference:delivery"]),
+      "dim-desk-arranged-latitude-browser-live": "true",
+      "dim-desk-zoom-latitude-browser-live": "0.75",
+      "dim-desk-camera-latitude-browser-live": JSON.stringify({ version: 1,
+        camera: { x: 1800, y: -240, zoom: 0.75 }, home: { x: 0, y: 0, zoom: 1 },
+        previous: { x: 600, y: 280, zoom: 0.5 } }),
+      "dim-desk-workspace-latitude-browser-live": JSON.stringify({ version: 1, areas: {
+        delivery: { id: "delivery", title: "客户交付", x: 1800, y: 40, legacyLayoutIds: ["latitude-browser-live--clue-abc"] },
+      }, activeAreaId: "delivery", cardAreaIds: { "custom-card-profile-test": "delivery" } }),
+      "dim-desk-frames-latitude-browser-live": JSON.stringify({ version: 1, frames: {
+        "browser-feed": { x: -40, y: 22, width: 420, height: 440 },
+        "compact-note": { x: 470, y: 0, width: 300, height: 210 },
+      } }),
+      "dim-custom-cards-latitude-browser-live": JSON.stringify({ version: 1, cards: [{
+        id: "custom-card-profile-test", title: "离线便签", body: "需要随备份保留的文字", template: "note", hidden: false,
+        createdAt: "2026-09-05T00:00:00.000Z", updatedAt: "2026-09-05T00:00:00.000Z", revision: 1,
+        syncedRevision: 0, syncState: "local",
+      }] }),
     };
     for (const [key, value] of Object.entries(allowlisted)) {
       window.localStorage.setItem(key, value);
     }
     window.localStorage.setItem("third-party-unknown-key", "leave-me-alone");
+    window.localStorage.setItem("dim-desk-arrangement-undo-latitude-browser-live", "old-layout-snapshot");
     const runtime = fakeRuntime();
     const coordinator = profileCoordinator(runtime);
     const profile = await coordinator.exportAll();
 
     expect(profile.browserState.localStorage).toEqual(allowlisted);
     expect(profile.browserState.localStorage).not.toHaveProperty("third-party-unknown-key");
+    expect(profile.browserState.localStorage).not.toHaveProperty("dim-desk-arrangement-undo-latitude-browser-live");
     for (const key of Object.keys(allowlisted)) window.localStorage.removeItem(key);
     window.localStorage.setItem("dim-rail-collapsed", "0");
 
@@ -229,6 +259,74 @@ describe("完整 browser profile", () => {
       expect(window.localStorage.getItem(key)).toBe(value);
     }
     expect(window.localStorage.getItem("third-party-unknown-key")).toBe("leave-me-alone");
+    expect(window.localStorage.getItem("dim-desk-arrangement-undo-latitude-browser-live")).toBeNull();
+  });
+
+  it.each([
+    '{"feed":{"width":0,"height":240}}',
+    '{"feed":{"width":320,"height":139}}',
+    '{"feed":{"width":"320","height":240}}',
+    '{"feed":{"width":1e309,"height":240}}',
+    '{"feed":{"width":320,"height":1e309}}',
+  ])("无效尺寸不进入完整 profile：%s", async (raw) => {
+    window.localStorage.setItem("dim-desk-sizes-latitude-browser-live", raw);
+    await expect(profileCoordinator(fakeRuntime()).exportAll())
+      .rejects.toThrow("Browser card size state is invalid");
+  });
+
+  it.each(['{}', 'null', '["a","a"]', '[""]', '["a",2]'])("无效卡片锁定状态不进入完整 profile：%s", async (raw) => {
+    window.localStorage.setItem("dim-desk-locks-latitude-browser-live", raw);
+    await expect(profileCoordinator(fakeRuntime()).exportAll()).rejects.toThrow("card locks");
+  });
+
+  it.each(["1", "{}", "null", "false "])("无效桌面整理状态不进入完整 profile：%s", async (raw) => {
+    window.localStorage.setItem("dim-desk-arranged-latitude-browser-live", raw);
+    await expect(profileCoordinator(fakeRuntime()).exportAll()).rejects.toThrow("arrangement");
+  });
+
+  it.each([
+    '{"version":2,"frames":{}}',
+    '{"version":1,"frames":{"feed":{"x":0,"y":0,"width":420,"height":139}}}',
+    '{"version":1,"frames":{"feed":{"x":"0","y":0,"width":420,"height":440}}}',
+    '{"version":1,"frames":{"feed":{"x":0,"y":1e309,"width":420,"height":440}}}',
+    '{"version":1,"frames":{}}' + " ".repeat(128_000),
+  ])("无效独立卡片坐标不进入完整 profile", async (raw) => {
+    window.localStorage.setItem("dim-desk-frames-latitude-browser-live", raw);
+    await expect(profileCoordinator(fakeRuntime()).exportAll()).rejects.toThrow(/frame/);
+  });
+
+  it.each(["0", "0.249", "2.001", "-1", "1e309", "NaN", '"1"', "{}", "null", ""])("无效桌面缩放不进入完整 profile：%s", async (raw) => {
+    window.localStorage.setItem("dim-desk-zoom-latitude-browser-live", raw);
+    await expect(profileCoordinator(fakeRuntime()).exportAll()).rejects.toThrow("desktop zoom");
+  });
+
+  it.each(["0.25", "1", "2"])("完整 profile 保留有效桌面缩放边界：%s", async (raw) => {
+    window.localStorage.setItem("dim-desk-zoom-latitude-browser-live", raw);
+    const profile = await profileCoordinator(fakeRuntime()).exportAll();
+    expect(profile.browserState.localStorage["dim-desk-zoom-latitude-browser-live"]).toBe(raw);
+  });
+
+  it.each([
+    { version: 2, camera: { x: 0, y: 0, zoom: 1 }, home: { x: 0, y: 0, zoom: 1 } },
+    { version: 1, camera: { x: "0", y: 0, zoom: 1 }, home: { x: 0, y: 0, zoom: 1 } },
+    { version: 1, camera: { x: 0, y: 0, zoom: 2.1 }, home: { x: 0, y: 0, zoom: 1 } },
+    { version: 1, camera: { x: 0, y: 0, zoom: 1 }, home: { x: 0, y: 0, zoom: 0 } },
+    { version: 1, camera: { x: 0, y: 0, zoom: 1 }, home: { x: 0, y: 0, zoom: 1 }, previous: { x: 10 } },
+  ])("无效桌面相机不进入完整 profile", async (value) => {
+    window.localStorage.setItem("dim-desk-camera-latitude-browser-live", JSON.stringify(value));
+    await expect(profileCoordinator(fakeRuntime()).exportAll()).rejects.toThrow(/camera/i);
+  });
+
+  it.each([
+    { version: 2, areas: {}, activeAreaId: null },
+    { version: 1, areas: { a: { id: "b", title: "标题", x: 0, y: 0 } }, activeAreaId: null },
+    { version: 1, areas: { a: { id: "a", title: "标题", x: "0", y: 0 } }, activeAreaId: null },
+    { version: 1, areas: { a: { id: "a", title: "标题", x: 0, y: 0, legacyLayoutIds: [10] } }, activeAreaId: null },
+    { version: 1, areas: { a: { id: "a", title: "标题", x: 0, y: 0 } }, activeAreaId: null, cardAreaIds: [] },
+    { version: 1, areas: { a: { id: "a", title: "标题", x: 0, y: 0 } }, activeAreaId: null, cardAreaIds: { card: "missing-area" } },
+  ])("无效桌面板块不进入完整 profile", async (value) => {
+    window.localStorage.setItem("dim-desk-workspace-latitude-browser-live", JSON.stringify(value));
+    await expect(profileCoordinator(fakeRuntime()).exportAll()).rejects.toThrow(/workspace|area/i);
   });
 
   it("恢复准备把各自 snapshot 同时交给两个服务，并只暴露组合 token", async () => {
@@ -308,6 +406,14 @@ describe("完整 browser profile", () => {
 
   it("可恢复清空把完整 profile 留在持久 store，新 Coordinator 可在重启后两阶段恢复", async () => {
     const recoveryStore = new MemoryRecoveryStore();
+    const sizesKey = "dim-desk-sizes-latitude-browser-live";
+    const sizes = JSON.stringify({ "browser-feed": { width: 766, height: 181 } });
+    const zoomKey = "dim-desk-zoom-latitude-browser-live";
+    const framesKey = "dim-desk-frames-latitude-browser-live";
+    const frames = JSON.stringify({ version: 1, frames: { "browser-feed": { x: 20, y: 40, width: 420, height: 440 } } });
+    window.localStorage.setItem(sizesKey, sizes);
+    window.localStorage.setItem(zoomKey, "0.65");
+    window.localStorage.setItem(framesKey, frames);
     window.localStorage.setItem(
       "latitude.secretary-companion.v1",
       JSON.stringify({ x: 84, y: 126, hidden: false }),
@@ -322,6 +428,9 @@ describe("完整 browser profile", () => {
       browserState: {
         agentSessionId: SESSION_ID,
         localStorage: {
+          [sizesKey]: sizes,
+          [zoomKey]: "0.65",
+          [framesKey]: frames,
           "latitude.secretary-companion.v1": JSON.stringify({
             x: 84,
             y: 126,
@@ -336,6 +445,9 @@ describe("完整 browser profile", () => {
     });
     expect(window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem("latitude.secretary-companion.v1")).toBeNull();
+    expect(window.localStorage.getItem(sizesKey)).toBeNull();
+    expect(window.localStorage.getItem(zoomKey)).toBeNull();
+    expect(window.localStorage.getItem(framesKey)).toBeNull();
     expect(recoveryStore.backup).not.toBeNull();
 
     // A new coordinator models a full page/service restart: no in-memory
@@ -360,6 +472,9 @@ describe("完整 browser profile", () => {
     expect(JSON.parse(window.localStorage.getItem(
       "latitude.secretary-companion.v1",
     )!)).toEqual({ x: 84, y: 126, hidden: false });
+    expect(window.localStorage.getItem(sizesKey)).toBe(sizes);
+    expect(window.localStorage.getItem(zoomKey)).toBe("0.65");
+    expect(window.localStorage.getItem(framesKey)).toBe(frames);
   });
 
   it("Agent 第二段失败时保留 Domain 已完成进度；同一组合 token 重试不重放 Domain", async () => {
@@ -574,7 +689,7 @@ describe("完整 browser profile", () => {
       throw new Error("expected V2 browser composition");
     }
     expect(profile.uiComposition.documents["latitude-browser-live"].document.components)
-      .toHaveLength(15);
+      .toHaveLength(16);
   });
 
   it("伪造 companion move 的 owned history 让导出和 integrity 失败", async () => {

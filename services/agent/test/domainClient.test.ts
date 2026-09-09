@@ -24,7 +24,9 @@ afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
 });
 
-async function domainServer() {
+async function domainServer(options: {
+  contextError?: { status: number; code: string; message: string };
+} = {}) {
   const captured: CapturedRequest[] = [];
   const server = createServer(async (request, response) => {
     const body = await jsonBody(request);
@@ -40,6 +42,17 @@ async function domainServer() {
     response.setHeader("content-type", "application/json");
     const url = new URL(path, "http://127.0.0.1");
     if (url.pathname === "/v1/context") {
+      if (options.contextError) {
+        response.statusCode = options.contextError.status;
+        response.end(JSON.stringify({
+          ok: false,
+          error: {
+            code: options.contextError.code,
+            message: options.contextError.message,
+          },
+        }));
+        return;
+      }
       response.end(JSON.stringify({
         ok: true,
         nodes: [],
@@ -223,6 +236,160 @@ describe("DomainClient flat contract", () => {
       path: "/v1/context",
       body: { kinds: ["claim"], query: "focus", sensitivityCeiling: "low" },
     });
+    expect(tool.description).toContain(
+      "does not prove the whole graph or user profile is empty",
+    );
+    expect(tool.description).toContain("Omit query for a complete bounded inventory");
+    expect(JSON.stringify(tool.parameters)).toContain('"enum":["evidence_event"');
+    const rendered = tool.output.render(
+      { kinds: ["claim"] },
+      { nodes: [], edges: [] },
+    );
+    expect(rendered.map((block) => block.type === "text" ? block.text : "").join(" "))
+      .toContain("this page covers only the requested query and kinds");
+
+    const oversized = tool.output.render(
+      { kinds: ["claim"] },
+      {
+        nodes: Array.from({ length: 100 }, (_, index) => ({
+          id: `node-${index}`,
+          kind: "claim",
+          label: `认识 ${index}`,
+          statement: `${"很长的内容".repeat(800)}-${index}`,
+          status: "active",
+          authority: "system_inferred",
+        })),
+        edges: [],
+        starStates: [],
+        coverage: { returnedNodeCount: 100 },
+      },
+    );
+    const oversizedText = oversized
+      .map((block) => block.type === "text" ? block.text : "")
+      .join("");
+    expect(oversizedText).toContain(`${"很长的内容".repeat(800)}-99`);
+    expect(oversizedText).not.toContain('"presentationTruncated"');
+  });
+
+  it("exposes raw evidence search without a sensitivity gate and supports node lineage", async () => {
+    const { client, captured } = await domainServer();
+    const tool = client
+      .createToolDefinitions(() => ({ runId: "run-evidence", sessionId: "session-evidence" }))
+      .find((candidate) => candidate.name === "evidence_search")!;
+    expect(tool).toBeDefined();
+    expect(tool.description).toContain("original evidence layer");
+    expect(tool.description).toContain("No sensitivity filter");
+    expect(JSON.stringify(tool.parameters)).not.toContain("sensitivityCeiling");
+
+    await tool.execute({
+      query: "原始记录",
+      sourceTypes: ["computer_history"],
+      nodeIds: ["node-derived-1"],
+      limit: 200,
+    }, runContext("tool-evidence"));
+    expect(captured.at(-1)).toMatchObject({
+      method: "POST",
+      path: "/v1/evidence/query",
+      body: {
+        query: "原始记录",
+        sourceTypes: ["computer_history"],
+        nodeIds: ["node-derived-1"],
+        limit: 200,
+      },
+    });
+
+    await tool.execute({
+      sourceTypes: ["computer_history", "chat"],
+      from: "2026-09-01T00:00:00Z",
+      limit: 40,
+    }, runContext("tool-evidence-broad"));
+    expect(captured.at(-1)?.body.samplingMode).toBeUndefined();
+    expect(captured.at(-1)?.body.eventsPerSource).toBeUndefined();
+
+    const before = captured.length;
+    await expect(tool.execute({
+      sourceTypes: ["private_guess"],
+    }, runContext("tool-evidence-invalid"))).rejects.toThrow(
+      /evidence_search\.sourceTypes must use/,
+    );
+    expect(captured).toHaveLength(before);
+    const rendered = tool.output.render(
+      { sourceTypes: ["chat"] },
+      { items: [], coverage: { possiblyTruncated: false } },
+    );
+    expect(rendered.map((block) => block.type === "text" ? block.text : "").join(" "))
+      .toContain("other AI conversations are not the current Latitude conversation");
+    expect(tool.description).toContain("distinguish conversations with different AI assistants");
+
+    const oversized = tool.output.render(
+      { sourceTypes: ["computer_history"] },
+      {
+        items: Array.from({ length: 80 }, (_, index) => ({
+          evidenceRef: {
+            id: `evidence-${index}`,
+            sourceRecordId: `source-${index}`,
+            excerpt: `${"原始屏幕内容".repeat(1_000)}-${index}`,
+            rawEventIds: Array.from({ length: 100 }, (__, eventIndex) =>
+              `event-${index}-${eventIndex}`
+            ),
+          },
+          source: {
+            id: `source-${index}`,
+            sourceType: "computer_history",
+            metadata: {
+              sourceLabel: "Computer History",
+              conversationContext: "unknown",
+            },
+          },
+          linkedNodes: [],
+        })),
+        coverage: { returnedEvidenceCount: 80, possiblyTruncated: true },
+      },
+    );
+    const oversizedText = oversized
+      .map((block) => block.type === "text" ? block.text : "")
+      .join("");
+    expect(oversizedText).toContain(`${"原始屏幕内容".repeat(1_000)}-79`);
+    expect(oversizedText).toContain("event-79-99");
+    expect(oversizedText).not.toContain("[excerpt truncated]");
+    expect(oversizedText).not.toContain('"fullDataStillQueryable"');
+  });
+
+  it("normalizes common plural context kinds and rejects unknown kinds before Domain", async () => {
+    const { client, captured } = await domainServer();
+    const tool = client
+      .createToolDefinitions(() => ({ runId: "run-context-kinds", sessionId: "session-context" }))
+      .find((candidate) => candidate.name === "knowledge_context")!;
+    await tool.execute({
+      kinds: ["goals", "projects", "values", "goals"],
+      sensitivityCeiling: "medium",
+    }, runContext("tool-context-alias"));
+    expect(captured.at(-1)?.body.kinds).toEqual(["goal", "project", "value"]);
+
+    const before = captured.length;
+    await expect(tool.execute({
+      kinds: ["personality"],
+    }, runContext("tool-context-invalid"))).rejects.toThrow(
+      /knowledge_context\.kinds must use:.*goal.*project.*value/,
+    );
+    expect(captured).toHaveLength(before);
+  });
+
+  it("surfaces Domain's public 400 detail so the Agent can repair a context call", async () => {
+    const { client } = await domainServer({
+      contextError: {
+        status: 400,
+        code: "invalid_request",
+        message: "invalid request: kind must be one of: goal, project, value",
+      },
+    });
+    const tool = client
+      .createToolDefinitions(() => ({ runId: "run-context-error", sessionId: "session-context" }))
+      .find((candidate) => candidate.name === "knowledge_context")!;
+    await expect(tool.execute({ kinds: ["goal"] }, runContext("tool-context-error")))
+      .rejects.toThrow(
+        "Latitude domain request failed (400): invalid_request: invalid request: kind must be one of: goal, project, value",
+      );
   });
 
   it("persists ui_customize provenance and CAS base revision in a reversible resource", async () => {
@@ -485,6 +652,23 @@ describe("DomainClient flat contract", () => {
     });
     expect(request.body).not.toHaveProperty("meta");
     expect(request.body).not.toHaveProperty("input");
+  });
+
+  it("refuses to turn runtime debugging conclusions into user knowledge", async () => {
+    const { client, captured } = await domainServer();
+    const tool = client
+      .createToolDefinitions(() => ({ runId: "run-debug-memory", sessionId: "session-debug" }))
+      .find((candidate) => candidate.name === "knowledge_remember")!;
+    await expect(tool.execute({
+      label: "knowledge_context contract",
+      statement: "The tool returned 400",
+      kind: "observation",
+      sensitivity: "medium",
+      scope: { domain: "system", topic: "tool-contract" },
+    }, runContext("tool-debug-memory"))).rejects.toThrow(
+      /cannot persist tool, runtime, API, or debugging contracts/,
+    );
+    expect(captured.some((request) => request.path === "/v1/changes")).toBe(false);
   });
 
   it("persists a user-authored message idempotently before model execution", async () => {
@@ -791,7 +975,7 @@ describe("DomainClient flat contract", () => {
     expect(captured.at(-1)!.body).not.toHaveProperty("publishedAt");
   });
 
-  it("persists at most three ranked curation items as one idempotent resource", async () => {
+  it("persists ranked curation items using a content-specific idempotency key", async () => {
     const { client, captured } = await domainServer();
     const [source] = enrichWebSources("agent evidence", [{
       url: "https://example.com/agent",
@@ -833,16 +1017,16 @@ describe("DomainClient flat contract", () => {
       authorizationMode: "preauthorized",
     });
     expect(receipt).toMatchObject({
-      clientRequestId: "daily-curation:2026-08-24",
+      clientRequestId: expect.stringMatching(/^daily-curation:2026-08-24:[a-f0-9]{16}$/),
       changeId: "change-1",
       nodeId: "node-1",
     });
     expect(captured.at(-1)).toMatchObject({
       path: "/v1/changes",
-      idempotencyKey: "daily-curation:2026-08-24",
+      idempotencyKey: receipt.clientRequestId,
       body: {
         operation: "remember",
-        clientRequestId: "daily-curation:2026-08-24",
+        clientRequestId: receipt.clientRequestId,
         kind: "resource",
         evidenceRefs: ["evidence-1"],
         payload: {
@@ -937,9 +1121,9 @@ describe("DomainClient flat contract", () => {
     ]));
     expect(due.filter((item) => item.kind === "weekly_review")).toHaveLength(1);
     expect(captured.map((request) => request.path)).toEqual(expect.arrayContaining([
-      "/v1/actions/due?at=2026-08-24T12%3A00%3A00.000Z&limit=100&sensitivityCeiling=low",
-      "/v1/reviews?status=due&dueBefore=2026-08-24T12%3A00%3A00.000Z&limit=20&sensitivityCeiling=low",
-      "/v1/revisions?status=pending&limit=100&sensitivityCeiling=low",
+      "/v1/actions/due?at=2026-08-24T12%3A00%3A00.000Z&limit=100&sensitivityCeiling=highest",
+      "/v1/reviews?status=due&dueBefore=2026-08-24T12%3A00%3A00.000Z&limit=20&sensitivityCeiling=highest",
+      "/v1/revisions?status=pending&limit=100&sensitivityCeiling=highest",
     ]));
   });
 });

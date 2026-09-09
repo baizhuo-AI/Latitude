@@ -11,8 +11,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
+latitude-domain-service = { path = "domain-service" }
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 # 防双开:第二次启动时把焦点切回已有窗口,避免两个进程同时写 SQLite 触发 BUSY
@@ -59,3 +61,11 @@ url = "2.5"
 chrono-tz = "0.10"
 # OAuth 时从 Rust 侧拉起系统浏览器（绕开 Tauri opener 插件与 capability 配置）
 open = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Read native mouse state and position the pet in AppKit screen points. A drag
+# remains native after it leaves the source WKWebView.
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "NSScreen", "NSWindow", "NSView", "block2"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSGeometry", "NSArray"] }
+block2 = "0.6.2"

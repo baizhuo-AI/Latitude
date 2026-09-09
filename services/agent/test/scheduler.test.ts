@@ -218,7 +218,7 @@ describe("DurableScheduler", () => {
       clientRequestId: "scheduler:revision:revision-1",
     });
     expect(revisionJob?.request.text).toMatch(/compile_context.*revision_queue_resolve/s);
-    expect(revisionJob?.request.text).toMatch(/sensitivityPolicy.*low/s);
+    expect(revisionJob?.request.text).toMatch(/sensitivityPolicy.*highest/s);
     const curationJob = [...jobs.jobs.values()].find((job) =>
       job.request.sessionId === "latitude:scheduler:daily-curation"
     );
@@ -226,19 +226,20 @@ describe("DurableScheduler", () => {
       initiator: "scheduler",
       clientRequestId: "scheduler:curation:2026-08-24",
     });
-    expect(curationJob?.request.text).toMatch(/goal.*tension.*curator_preference.*at most three/s);
-    expect(curationJob?.request.text).toMatch(/sensitivityCeiling="low"/);
+    expect(curationJob?.request.text).toMatch(/goals.*tensions.*Search again/s);
+    expect(curationJob?.request.text).toMatch(/sensitivityCeiling="highest"/);
+    expect(curationJob?.request.budgets).toEqual({});
     const outcomeJob = [...jobs.jobs.values()].find((job) =>
       job.request.sessionId === "latitude:scheduler:outcomes"
     );
-    expect(outcomeJob?.request.text).toMatch(/sensitivityCeiling "low"/);
+    expect(outcomeJob?.request.text).toMatch(/sensitivityCeiling "highest"/);
     expect(outcomeJob?.request.text).toMatch(/related evidence event/);
     expect(outcomeJob?.request.text).not.toContain("event-1");
     expect(outcomeJob?.request.text).toMatch(/never call outcome_record/);
     const weeklyJob = [...jobs.jobs.values()].find((job) =>
       job.request.sessionId === "latitude:scheduler:weekly-review"
     );
-    expect(weeklyJob?.request.text).toMatch(/sensitivityCeiling "low"/);
+    expect(weeklyJob?.request.text).toMatch(/sensitivityCeiling "highest"/);
 
     domain.emitMutation();
     domain.emitMutation();
@@ -322,6 +323,11 @@ describe("DurableScheduler", () => {
     });
     await first.close();
 
+    const legacy = first.listReceipts()[0]!;
+    await ledger.appendSchedulerReceipt({ ...legacy, request: {
+      ...legacy.request!, text: 'Old policy: read sensitivityCeiling "low" only; finish within 45 seconds.',
+      budgets: { maxSteps: 3, maxToolCalls: 5, wallClockMs: 45_000, maxOutputTokens: 2_048 },
+    } });
     const restored = new DurableScheduler(domain, jobs, new AuditLedger(root), 300_000, {
       retryBackoffMs: [20, 20],
       jobStatusPollMs: 2,
@@ -329,6 +335,9 @@ describe("DurableScheduler", () => {
     await restored.start();
     await waitUntil(() => restored.listReceipts()[0]?.attempt === 2);
     expect(jobs.createCalls).toBe(2);
+    expect(restored.listReceipts()[0]?.request?.budgets).toEqual({});
+    expect(restored.listReceipts()[0]?.request?.text).toContain('sensitivityCeiling "highest"');
+    expect(restored.listReceipts()[0]?.request?.text).not.toContain("45 seconds");
     expect(jobs.keys).toEqual([
       "scheduler:outcome:retry-action:2026-08-24T09:00:00.000Z:attempt:1",
       "scheduler:outcome:retry-action:2026-08-24T09:00:00.000Z:attempt:2",

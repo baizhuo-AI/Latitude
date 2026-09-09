@@ -23,8 +23,20 @@ fn default_limit() -> u32 {
     100
 }
 
+fn default_evidence_sampling_mode() -> String {
+    "recent".to_string()
+}
+
+fn default_events_per_source() -> u32 {
+    1
+}
+
 fn default_max_candidates() -> u32 {
     8
+}
+
+fn default_complete_coverage() -> String {
+    "complete".to_string()
 }
 
 fn default_true() -> bool {
@@ -93,9 +105,18 @@ impl AuditContext {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextRequest {
+    #[serde(default)]
+    pub exclude_history: bool,
     pub query: Option<String>,
     #[serde(default)]
+    pub offset: u32,
+    #[serde(default)]
     pub kinds: Vec<String>,
+    /// Exact subtypes allowed for evidence_event nodes. Other node kinds are
+    /// unaffected, so a projection can request semantic nodes plus activities
+    /// without admitting raw Computer History events.
+    #[serde(default)]
+    pub evidence_types: Vec<String>,
     #[serde(default)]
     pub include_retracted: bool,
     #[serde(default = "default_limit")]
@@ -275,10 +296,77 @@ pub struct MessageEvidenceRequest {
     pub message_id: Option<String>,
     pub content: String,
     pub occurred_at: Option<String>,
+    /// Defaults to `message`. `activity` marks a user-authored record of
+    /// something that already happened, so projections can keep it separate
+    /// from ordinary chat without inventing semantics from the text.
+    pub evidence_type: Option<String>,
     #[serde(default = "default_sensitivity")]
     pub sensitivity: String,
     #[serde(default)]
     pub audit: AuditContext,
+}
+
+/// One local Computer History segment. Raw events remain in the evidence layer;
+/// semantic knowledge is created separately and cites the returned EvidenceRefs.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerHistoryEvidenceRequest {
+    pub client_request_id: Option<String>,
+    pub segment_id: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub storage_uri: String,
+    pub content_hash: String,
+    #[serde(default = "default_complete_coverage")]
+    pub coverage_status: String,
+    pub collector_version: Option<String>,
+    #[serde(default = "default_json_object")]
+    pub metadata: Value,
+    pub events: Vec<Value>,
+    #[serde(default)]
+    pub audit: AuditContext,
+}
+
+/// Query the raw evidence layer independently from the derived knowledge graph.
+/// `nodeIds` provides the reverse path from a distilled node to its source text.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceQueryRequest {
+    #[serde(default)]
+    pub exclude_history: bool,
+    pub query: Option<String>,
+    #[serde(default)]
+    pub offset: u32,
+    #[serde(default)]
+    pub evidence_ref_ids: Vec<String>,
+    #[serde(default)]
+    pub source_types: Vec<String>,
+    #[serde(default)]
+    pub node_ids: Vec<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    #[serde(default)]
+    pub include_retracted: bool,
+    /// `recent` returns event-level recency. `source_balanced` samples the most
+    /// informative events across source records so broad activity questions do
+    /// not spend their whole budget on one ten-minute Computer History segment.
+    #[serde(default = "default_evidence_sampling_mode")]
+    pub sampling_mode: String,
+    #[serde(default = "default_events_per_source")]
+    pub events_per_source: u32,
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceReadRequest {
+    #[serde(default)]
+    pub exclude_history: bool,
+    pub evidence_ref_id: String,
+    #[serde(default)]
+    pub offset: usize,
+    pub length: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -328,6 +416,25 @@ pub struct ApplyLocationRequest {
     pub proximity: Option<String>,
     pub strength: Option<String>,
     pub rationale: String,
+    #[serde(default)]
+    pub audit: AuditContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipRequest {
+    pub client_request_id: Option<String>,
+    pub from_node_id: String,
+    pub to_node_id: String,
+    pub relation_type: String,
+    #[serde(default, alias = "evidenceRefIds")]
+    pub evidence_refs: Vec<String>,
+    pub basis: String,
+    pub proximity: Option<String>,
+    pub strength: Option<String>,
+    pub rationale: String,
+    #[serde(default = "default_json_object")]
+    pub scope: Value,
     #[serde(default)]
     pub audit: AuditContext,
 }

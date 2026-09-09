@@ -1,6 +1,9 @@
-import { useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { Tape } from "../types";
+import "./cardShell.css";
+
+export const CardReadingContext = createContext(false);
 
 /**
  * 纸片外壳 —— 九种卡片共用的容器。
@@ -26,6 +29,8 @@ export function CardShell({
   onOpen,
   hint,
   headerExtra,
+  headerContent,
+  footer,
   children
 }: {
   eyebrow: string;
@@ -45,8 +50,14 @@ export function CardShell({
   hint?: string;
   /** 标题行右侧的附加内容(如密度信号) */
   headerExtra?: ReactNode;
+  /** 输入等需随标题保持可见的操作；长列表留在 children 中。 */
+  headerContent?: ReactNode;
+  /** 主要操作留在纸片底部，不随长正文滚走。 */
+  footer?: ReactNode;
   children?: ReactNode;
 }) {
+  const reading = useContext(CardReadingContext);
+  openable = openable && !reading;
   const openTimer = useRef<number | undefined>(undefined);
 
   useEffect(
@@ -58,6 +69,7 @@ export function CardShell({
 
   const cls = [
     "dim-paper",
+    "dim-card-shell",
     paper === "sticky" && "dim-paper--sticky",
     paper === "grid" && "dim-paper--grid",
     paper === "newsprint" && "dim-paper--newsprint",
@@ -88,6 +100,7 @@ export function CardShell({
           }
         },
         onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.target !== e.currentTarget) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             window.clearTimeout(openTimer.current);
@@ -102,32 +115,19 @@ export function CardShell({
       {tape && <TapeStrip tape={tape} />}
       {clip && <PaperClip />}
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: 12
-        }}
-      >
-        <p className="dim-eyebrow">{eyebrow}</p>
-        {hint && (
-          <span
-            className="dim-hint dim-hand"
-            style={{ fontSize: 15, whiteSpace: "nowrap" }}
-          >
-            {hint}
-          </span>
-        )}
+      <header className="dim-card-header">
+        <div className="dim-card-heading-meta">
+          <p className="dim-eyebrow">{eyebrow}</p>
+          {hint && <span className="dim-hint dim-hand">{hint}</span>}
+        </div>
+        <h3 className={lead ? "dim-title dim-title--lead" : "dim-title"}>{title}</h3>
+        {headerExtra}
+        {headerContent && <div className="dim-card-header-content" data-no-drag>{headerContent}</div>}
+      </header>
+      <div className="dim-card-body" data-no-drag data-deck-scroll="contain" tabIndex={0} role="region" aria-label={`${title}正文`}>
+        {children}
       </div>
-
-      <h3 className={lead ? "dim-title dim-title--lead" : "dim-title"}>
-        {title}
-      </h3>
-
-      {children}
-
-      {headerExtra}
+      {!reading && footer && <footer className="dim-card-footer" data-no-drag>{footer}</footer>}
     </section>
   );
 }

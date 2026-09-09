@@ -1,0 +1,90 @@
+{
+  "title": "关心地看向你",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "duration": 8000,
+  "frames": [
+    "低头写字",
+    "写下一笔",
+    "收笔",
+    "抬眼",
+    "温和地看向你",
+    "视线回到纸上",
+    "准备落笔",
+    "继续写字"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 700
+    },
+    {
+      "frame": 1,
+      "ms": 220
+    },
+    {
+      "frame": 0,
+      "ms": 220
+    },
+    {
+      "frame": 1,
+      "ms": 220
+    },
+    {
+      "frame": 0,
+      "ms": 220
+    },
+    {
+      "frame": 1,
+      "ms": 220
+    },
+    {
+      "frame": 2,
+      "ms": 380
+    },
+    {
+      "frame": 3,
+      "ms": 220
+    },
+    {
+      "frame": 4,
+      "ms": 2200
+    },
+    {
+      "frame": 5,
+      "ms": 220
+    },
+    {
+      "frame": 6,
+      "ms": 380
+    },
+    {
+      "frame": 7,
+      "ms": 700
+    },
+    {
+      "frame": 1,
+      "ms": 220
+    },
+    {
+      "frame": 7,
+      "ms": 220
+    },
+    {
+      "frame": 1,
+      "ms": 220
+    },
+    {
+      "frame": 7,
+      "ms": 700
+    },
+    {
+      "frame": 0,
+      "ms": 740
+    }
+  ],
+  "id": "care",
+  "displayWidth": 192,
+  "displayHeight": 208
+}

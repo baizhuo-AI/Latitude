@@ -1,0 +1,87 @@
+.dim-custom-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 170px;
+  box-sizing: border-box;
+}
+
+.dim-custom-card--note {
+  background-color: var(--dim-sticky, #fff3bd);
+}
+
+.dim-custom-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+}
+
+.dim-custom-card-body .dim-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.dim-custom-card-placeholder {
+  color: var(--dim-ink-soft);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.dim-custom-card-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--dim-olive-deep);
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+
+.dim-custom-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 12px;
+}
+
+.dim-custom-card-footer small {
+  flex: 1;
+  color: var(--dim-ink-soft);
+  font-size: 10px;
+}
+
+.dim-custom-card-footer .dim-btn {
+  min-height: 30px;
+}
+
+.dim-custom-card-form .dim-editor-actions small {
+  color: var(--dim-ink-soft);
+  font-size: 11px;
+}
+
+.dim-custom-card-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--dim-line);
+}
+
+.dim-custom-card-types legend,
+.dim-custom-card-types label {
+  color: var(--dim-ink-soft);
+  font-size: 12px;
+}
+
+.dim-custom-card-types input {
+  accent-color: var(--dim-olive);
+  margin-right: 6px;
+}
+
+.dim-custom-card-error {
+  margin: 0;
+  color: var(--dim-danger, #a14438);
+  font-size: 12px;
+  line-height: 1.6;
+}

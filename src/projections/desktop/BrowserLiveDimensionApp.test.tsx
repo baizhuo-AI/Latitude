@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -8,9 +8,9 @@ import type {
 } from "../../runtime/host";
 import {
   BROWSER_LAYOUT_COMPONENT_IDS,
+  BROWSER_PRODUCT_LAYOUT_DOCUMENT as SEED_LAYOUT_DOCUMENT,
   layoutV1ToUiSurfaceV2,
 } from "../../runtime/composition/browserProduction";
-import { SEED_LAYOUT_DOCUMENT } from "../../runtime/layout/seedLayout";
 import { BrowserLiveDimensionApp } from "./BrowserLiveDimensionApp";
 import {
   BROWSER_SESSION_STORAGE_KEY,
@@ -18,6 +18,7 @@ import {
   type BrowserRecoveryStore,
   createBrowserProfile,
 } from "./browserProfile";
+import { readDraft, updateDraft } from "../../dimension/composer/draftStore";
 
 const RAW_SCHEDULER_BADCASE = [
   "该 action 已到日历触底 reviewAt（2026-08-27T17:00:00Z），但这是无人值守提醒，没有新的用户证据，所以我不会写入 outcome。",
@@ -108,12 +109,64 @@ function closureRuntime() {
       value: { node: context.nodes[context.nodes.length - 1] },
     };
   });
+  const recordActivity = vi.fn(async (
+    request: Parameters<DesktopRuntimePort["recordActivity"]>[0],
+  ) => {
+    const id = `activity-${context.nodes.filter((node) => node.kind === "evidence_event").length}`;
+    const node = {
+      id,
+      kind: "evidence_event",
+      label: "用户记录的行动",
+      statement: request.content,
+      authority: "source_verified",
+      payload: {
+        evidenceType: "activity",
+        occurredAt: request.occurredAt,
+        authorship: "user",
+      },
+    };
+    context = { ...context, nodes: [...context.nodes, node] };
+    return {
+      ok: true,
+      changeSetId: `cs-${id}`,
+      value: {
+        sourceRecordId: `source-${id}`,
+        evidenceRefId: `evidence-${id}`,
+        nodeId: id,
+        node,
+      },
+    };
+  });
 
+  const providerOptions = [
+    {
+      id: "deepseek-official",
+      label: "DeepSeek",
+      configured: true,
+      credentialName: "DEEPSEEK_API_KEY",
+      models: [{ id: "deepseek-v4-flash", label: "DeepSeek V4 Flash" }],
+    },
+    {
+      id: "openai",
+      label: "OpenAI",
+      configured: false,
+      credentialName: "OPENAI_API_KEY",
+      models: [{ id: "gpt-5.4-mini", label: "GPT-5.4 mini" }],
+    },
+    {
+      id: "anthropic",
+      label: "Anthropic",
+      configured: true,
+      credentialName: "ANTHROPIC_API_KEY",
+      models: [{ id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }],
+    },
+  ];
   const runtime: DesktopRuntimePort = {
     kind: "http",
     health: vi.fn(async () => readyHealth()),
     getContext,
     applyChange: vi.fn(async () => ({ ok: true, changeSetId: "cs-change", value: null })),
+    recordActivity,
     listChangeSets: vi.fn(async () => []),
     createAction: vi.fn(),
     createCandidate: vi.fn(),
@@ -134,7 +187,21 @@ function closureRuntime() {
     runAgentTurn: vi.fn(),
     searchWeb: vi.fn(async (request) => ({ query: request.query, results: [] })),
     agent: {
+      getLatestRun: vi.fn(async () => ({ run: null })),
+      getProgress: vi.fn(async (runId) => ({ runId, after: -1, next: -1, hasMore: false, phase: "finished" as const, items: [] })),
+      getPersona: vi.fn(async () => ({ current: { version: 0, persona: "测试人设", preferences: "", reason: "默认", actor: "system" as const, createdAt: "2026-09-04" }, history: [] })),
+      updatePersona: vi.fn(),
       health: vi.fn(async () => ({ ok: true })),
+      getProviderSettings: vi.fn(async () => ({
+        active: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+        options: providerOptions,
+        appliesTo: "next_turn" as const,
+      })),
+      updateProviderSettings: vi.fn(async (request) => ({
+        active: request,
+        options: providerOptions,
+        appliesTo: "next_turn" as const,
+      })),
       startTurn: vi.fn(async () => ({ runId: "run-1", status: "queued" as const })),
       getRun: vi.fn(),
       waitForRun: vi.fn(async () => {
@@ -165,6 +232,13 @@ function closureRuntime() {
             sessionId: "session-test",
             status: "completed" as const,
             assistantText: "我已基于证据建立一个带回看时间的行动。",
+            explanation: {
+              summary: "这次回答依据你刚才说的话和已完成的保存操作。",
+              steps: [
+                "把你这次说的话作为本轮依据",
+                "建立了一个带回看时间的小行动",
+              ],
+            },
             stepsUsed: 2,
             toolCallsUsed: 1,
             startedAt: "2026-08-24T12:00:00Z",
@@ -183,24 +257,155 @@ function closureRuntime() {
       search: vi.fn(async (request) => ({ query: request.query, results: [] })),
     },
   };
-  return { runtime, getContext, recordOutcome, createWeeklyReview };
+  return { runtime, getContext, recordActivity, recordOutcome, createWeeklyReview };
+}
+
+async function openCardContent(user: ReturnType<typeof userEvent.setup>, title: string) {
+  const card = await screen.findByRole("group", { name: `卡片：${title}` });
+  fireEvent.contextMenu(card, { clientX: 280, clientY: 220 });
+  await user.click(screen.getByRole("menuitem", { name: /编辑内容|查看内容/ }));
+  return screen.getByRole("dialog", { name: new RegExp(`(?:编辑|查看)内容：${title}`) });
+}
+
+async function openGoalSettings(user: ReturnType<typeof userEvent.setup>, title: string, action: "编辑内容" | "删除") {
+  const goal = await screen.findByRole("button", { name: new RegExp(`中期目标 \\d+：${title}.*右键打开卡片设置`) });
+  fireEvent.contextMenu(goal, { clientX: 280, clientY: 220 });
+  await user.click(screen.getByRole("menuitem", { name: action }));
 }
 
 describe("BrowserLiveDimensionApp 产品闭环", () => {
+  it("从已落库内容显示便签，完成待办只写业务库，不伪造认知结果", async () => {
+    const { runtime, recordOutcome } = closureRuntime();
+    let content: import("../../shared/desktopContent").DesktopContent = {
+      date: "2026-09-07", events: [],
+      todos: [{ id: "business-todo", title: "已保存的真实待办", status: "todo", scheduledDate: null, scheduledTime: null, sourceNodeIds: [], updatedAt: "v1" }],
+      digests: [{ date: "2026-06-16", summary: "历史整理的完整内容，不冒充今天", sourceNodeIds: [] }],
+    };
+    const updateTodo = vi.fn(async () => { content = { ...content, todos: [] }; return { saved: true, updatedAt: "v2" }; });
+    runtime.agent.desktop = { read: vi.fn(async () => structuredClone(content)), updateTodo };
+    const user = userEvent.setup();
+    render(<BrowserLiveDimensionApp runtime={runtime} />);
+    await screen.findByText("已保存的真实待办");
+    expect(screen.getByRole("heading", { name: "2026-06-16 · 每日整理", level: 4 })).toBeInTheDocument();
+    const disclosure = screen.getByText(/^阅读全文/);
+    await user.click(disclosure);
+    expect(within(disclosure.parentElement!).getByText("历史整理的完整内容，不冒充今天")).toBeVisible();
+    const contentDialog = await openCardContent(user, "今天的锚点");
+    await user.click(within(contentDialog).getByRole("button", { name: "完成：已保存的真实待办" }));
+    await waitFor(() => expect(updateTodo).toHaveBeenCalledWith({ id: "business-todo", expectedUpdatedAt: "v1", status: "done" }));
+    expect(recordOutcome).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "回收行动结果" })).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     window.history.replaceState({}, "", "/");
   });
 
+  it("opens a star discussion with context while preserving the unfinished draft and waiting for Send", async () => {
+    const user = userEvent.setup();
+    const { runtime } = closureRuntime();
+    window.localStorage.setItem(BROWSER_SESSION_STORAGE_KEY, "star-discussion-test");
+    updateDraft("star-discussion-test", draft => ({ ...draft, text: "先别忘了我刚才想问的事。" }));
+    vi.mocked(runtime.getContext).mockResolvedValue({ nodes: [{
+      id: "north-goal", kind: "goal", label: "做值得长期投入的事", statement: "留一点时间给真正想做的事。",
+      status: "active", authority: "user_stated", payload: { horizon: "north-star", surfaceRole: "constellation.north-star" },
+    }], edges: [] });
+    render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} profileRecoveryStore={memoryRecoveryStore()} />);
+    await user.click(await screen.findByRole("button", { name: "星图桌面" }));
+    await user.click(await screen.findByRole("button", { name: "和维度聊聊" }));
+    const composer = await screen.findByRole("textbox", { name: "给秘书发消息" });
+    expect((composer as HTMLTextAreaElement).value).toContain("先别忘了我刚才想问的事。");
+    expect(readDraft("star-discussion-test").text).toContain("做值得长期投入的事");
+    expect(readDraft("star-discussion-test").text).toContain("留一点时间给真正想做的事。");
+    expect(runtime.agent.startTurn).not.toHaveBeenCalled();
+    expect(runtime.runAgentTurn).not.toHaveBeenCalled();
+  });
+
+  // Three real form/save cycles need their own suite-load budget; individual
+  // UI waits and every domain/audit assertion retain their original limits.
+  it("creates, edits and retracts real medium goals while preserving linked actions", async () => {
+    Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute("open", ""); } });
+    const user = userEvent.setup();
+    const { runtime } = closureRuntime();
+    let nodes: KnowledgeContext["nodes"] = [
+      { id: "linked-action", kind: "action", label: "保留的行动", payload: { mediumGoalId: "new-goal" } },
+    ];
+    vi.mocked(runtime.getContext).mockImplementation(async () => ({ nodes: structuredClone(nodes), edges: [] }));
+    vi.mocked(runtime.applyChange).mockImplementation(async (change) => {
+      if (change.operation === "remember") nodes.push({ id: "new-goal", kind: change.kind!, label: change.label,
+        statement: change.statement, payload: change.payload, authority: "user_stated" });
+      if (change.operation === "update") nodes = nodes.map(n => n.id === change.id ? { ...n, label: change.label, statement: change.statement } : n);
+      if (change.operation === "retract") nodes = nodes.filter(n => n.id !== change.id);
+      return { ok: true, changeSetId: "goal-change", value: null };
+    });
+    render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
+    await user.click(await screen.findByRole("button", { name: "线索板桌面" }));
+    await user.click(await screen.findByRole("button", { name: "＋ 新增目标" }));
+    await user.type(screen.getByRole("textbox", { name: "目标名称" }), "交付新版本");
+    await user.type(screen.getByRole("textbox", { name: "目标说明" }), "完成验收");
+    await user.click(screen.getByRole("button", { name: "保存目标" }));
+    await openGoalSettings(user, "交付新版本", "编辑内容");
+    expect(runtime.applyChange).toHaveBeenCalledWith(expect.objectContaining({ operation: "remember", kind: "goal",
+      payload: { horizon: "medium-term", surfaceRole: "clue.theme" }, audit: expect.objectContaining({ actor: "user" }) }));
+    await user.clear(screen.getByRole("textbox", { name: "目标名称" }));
+    await user.type(screen.getByRole("textbox", { name: "目标名称" }), "交付正式版本");
+    await user.click(screen.getByRole("button", { name: "保存目标" }));
+    await openGoalSettings(user, "交付正式版本", "删除");
+    expect(runtime.applyChange).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/关联的行动和记录会保留/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /中期目标 \d+：交付正式版本/ })).not.toBeInTheDocument());
+    expect(nodes.map(n => n.id)).toEqual(["linked-action"]);
+    expect(runtime.applyChange).toHaveBeenLastCalledWith(expect.objectContaining({ operation: "retract", id: "new-goal" }));
+  }, 15_000);
+
+  it("uses the selected desktop area at each send while keeping attachment display text free of UI context", async () => {
+    const user = userEvent.setup();
+    const { runtime } = closureRuntime();
+    vi.mocked(runtime.getContext).mockResolvedValue({ nodes: [
+      { id: "goal-delivery", kind: "goal", label: "客户交付", authority: "user_stated",
+        payload: { horizon: "medium-term", surfaceRole: "clue.theme" } },
+    ], edges: [] });
+    render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
+    await user.click(await screen.findByRole("button", { name: "线索板桌面" }));
+    await user.dblClick(await screen.findByRole("button", { name: /客户交付.*双击进入主页板块/ }));
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    const dialog = screen.getByRole("dialog", { name: "与秘书的对话" });
+    await user.upload(within(dialog).getByLabelText("选择附件"), new File(["附件原文只用于本轮"], "材料.md", { type: "text/markdown" }));
+    await within(dialog).findByText("材料.md");
+    await user.type(within(dialog).getByRole("textbox", { name: "给秘书发消息" }), "先处理这里");
+    await user.click(within(dialog).getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(runtime.agent.startTurn).toHaveBeenCalledOnce());
+    const first = vi.mocked(runtime.agent.startTurn).mock.calls[0][0];
+    const firstContext = JSON.parse(first.systemPrompt!.match(/<latitude_ui_context>(.*?)<\/latitude_ui_context>/s)![1]);
+    expect(firstContext).toMatchObject({ view: "paper", area: { id: "goal-theme-goal-delivery", title: "客户交付" }, visibleCardIds: expect.any(Array) });
+    expect(first.systemPrompt).toContain("this turn only");
+    expect(first.text).toContain("附件原文只用于本轮");
+    expect(first.text).not.toContain("latitude_ui_context");
+    expect(first.text).not.toContain("goal-theme-goal-delivery");
+    expect(dialog.querySelector('[data-role="user"]')?.textContent).toBe("先处理这里\n\n附件：材料.md");
+    await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "给秘书发消息" })).toHaveValue(""));
+    await user.click(screen.getAllByRole("button", { name: "回常用区" }).find(button => button.classList.contains("dim-deck-home"))!);
+    await user.type(within(dialog).getByRole("textbox", { name: "给秘书发消息" }), "再看看常用区");
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "发送" })).toBeEnabled());
+    await user.click(within(dialog).getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(runtime.agent.startTurn).toHaveBeenCalledTimes(2));
+    const second = vi.mocked(runtime.agent.startTurn).mock.calls[1][0];
+    expect(JSON.parse(second.systemPrompt!.match(/<latitude_ui_context>(.*?)<\/latitude_ui_context>/s)![1])).toMatchObject({ view: "paper", area: null });
+    expect(second.text).toBe("再看看常用区");
+    expect(runtime.applyChange).not.toHaveBeenCalled();
+  });
+
   async function openDataSafety(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole("button", { name: "设置" }));
-    const diagnostics = screen.getByRole("dialog", { name: "本地服务诊断" });
+    const diagnostics = screen.getByRole("dialog", { name: "设置" });
     expect(diagnostics).toHaveClass("dimension-root");
     await user.click(within(diagnostics).getByRole("button", { name: "数据与安全…" }));
     expect(screen.getByRole("dialog", { name: "数据与安全" })).toBeInTheDocument();
   }
 
-  it("把 evidence → Agent action → outcome → weekly review 接成真实 UI 写回", async () => {
+  it("把 evidence → Agent action → outcome 接成真实 UI 写回，周回顾不再作为卡片菜单动作", async () => {
     const user = userEvent.setup();
     const { runtime, recordOutcome, createWeeklyReview } = closureRuntime();
     render(
@@ -212,18 +417,36 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     );
 
     await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
-    expect(screen.getAllByText("现在没有未闭环的行动").length).toBeGreaterThan(0);
+    const contextQuery = vi.mocked(runtime.getContext).mock.calls.find(([query]) => query?.evidenceTypes?.includes("activity"))?.[0];
+    expect(contextQuery).toMatchObject({
+      evidenceTypes: ["activity"],
+      sensitivityCeiling: "highest",
+      limit: 500,
+    });
+    expect(contextQuery?.kinds).toEqual(expect.arrayContaining([
+      "evidence_event",
+      "goal",
+      "action",
+      "resource",
+      "insight",
+    ]));
+    expect(screen.getAllByText("现在没有未闭环的行动。").length).toBeGreaterThan(0);
 
+    expect(screen.queryByRole("textbox", { name: "跟秘书说话" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    const conversation = screen.getByRole("dialog", { name: "与秘书的对话" });
     await user.type(
-      screen.getByRole("textbox", { name: "跟秘书说话" }),
+      within(conversation).getByRole("textbox", { name: "给秘书发消息" }),
       "根据现有证据创建一个能回收结果的小行动",
     );
-    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.click(within(conversation).getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
       expect(screen.getAllByText("验证上午写作").length).toBeGreaterThan(0);
     });
-    await user.click(screen.getByRole("button", { name: "查看来源：来自你的行动" }));
+    expect(screen.getByText("为什么这样回答")).toBeInTheDocument();
+    const contentDialog = await openCardContent(user, "今天的锚点");
+    await user.click(within(contentDialog).getByRole("button", { name: "查看来源：来自你的行动" }));
     const sourceDialog = screen.getByRole("dialog", { name: "图谱来源详情" });
     expect(sourceDialog).toHaveClass("dimension-root");
     await user.click(within(sourceDialog).getByRole("button", { name: "合上" }));
@@ -232,17 +455,17 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         text: "根据现有证据创建一个能回收结果的小行动",
         sessionId: expect.stringMatching(/^latitude-browser-/),
       }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(runtime.agent.waitForRun).toHaveBeenCalledWith(
       "run-1",
-      expect.objectContaining({ pollIntervalMs: 350 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
 
-    await user.click(screen.getByRole("button", { name: "完成：验证上午写作" }));
+    const actionContent = await openCardContent(user, "今天的锚点");
+    await user.click(within(actionContent).getByRole("button", { name: "完成：验证上午写作" }));
     const outcomeDialog = screen.getByRole("dialog", { name: "回收行动结果" });
     expect(outcomeDialog).toHaveClass("dimension-root");
-    expect(outcomeDialog).toHaveStyle({ zIndex: "100" });
+    expect(outcomeDialog).toHaveStyle({ zIndex: "230" });
     expect(outcomeDialog).toHaveTextContent("原本预期：至少两天完成 500 字");
     expect(outcomeDialog).toHaveTextContent("触发情境：工作日早上九点坐到书桌前");
     expect(outcomeDialog).toHaveTextContent("观察窗口：连续 3 天");
@@ -264,10 +487,118 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         .not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "周回顾" }));
-    await waitFor(() => expect(createWeeklyReview).toHaveBeenCalledOnce());
+    const remainingContent = screen.queryByRole("dialog", { name: /(?:编辑|查看)内容：今天的锚点/ });
+    if (remainingContent) await user.click(within(remainingContent).getByRole("button", { name: "关闭卡片内容" }));
+    await user.click(screen.getByRole("button", { name: "更多桌面操作" }));
+    expect(screen.queryByRole("button", { name: "周回顾" })).not.toBeInTheDocument();
+    expect(createWeeklyReview).not.toHaveBeenCalled();
+  });
+
+  it("把预算耗尽显示为未完成，不再伪装成一句完成了", async () => {
+    const user = userEvent.setup();
+    const { runtime } = closureRuntime();
+    vi.mocked(runtime.agent.waitForRun).mockResolvedValueOnce({
+      runId: "run-1",
+      status: "budget_exhausted",
+      result: {
+        runId: "run-1",
+        sessionId: "session-test",
+        status: "budget_exhausted",
+        assistantText: "",
+        budgetStopReason: "wall_clock",
+        stepsUsed: 3,
+        toolCallsUsed: 4,
+        startedAt: "2026-09-03T17:36:22Z",
+        finishedAt: "2026-09-03T17:38:29Z",
+      },
+    });
+    render(
+      <BrowserLiveDimensionApp
+        runtime={runtime}
+        healthPollMs={0}
+        profileRecoveryStore={memoryRecoveryStore()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    const conversation = screen.getByRole("dialog", { name: "与秘书的对话" });
+    const input = within(conversation).getByRole("textbox", { name: "给秘书发消息" });
+    await user.type(input, "你知道我最近都在做什么吗");
+    await user.click(within(conversation).getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText(/超过了等待时间，因此没有生成最终回答/))
+      .toBeInTheDocument();
+    expect(screen.queryByText("完成了。")).not.toBeInTheDocument();
+  });
+
+  it("在设置里切换真实 Agent Provider，并阻止未配置的选项保存", async () => {
+    const user = userEvent.setup();
+    const { runtime } = closureRuntime();
+    render(
+      <BrowserLiveDimensionApp
+        runtime={runtime}
+        healthPollMs={0}
+        profileRecoveryStore={memoryRecoveryStore()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    const dialog = screen.getByRole("dialog", { name: "设置" });
+    const provider = await within(dialog).findByRole("combobox", { name: "Provider" });
+    const save = within(dialog).getByRole("button", { name: "保存模型设置" });
+
+    await user.selectOptions(provider, "openai");
+    expect(within(dialog).getByText(/OPENAI_API_KEY/)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    await user.selectOptions(provider, "anthropic");
+    expect(within(dialog).getByRole("combobox", { name: "模型" })).toHaveValue(
+      "claude-sonnet-4-6",
+    );
+    expect(save).toBeEnabled();
+    await user.click(save);
+
+    await waitFor(() => expect(runtime.agent.updateProviderSettings).toHaveBeenCalledWith({
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    }));
+    expect(await within(dialog).findByText(/下一次对话会使用/)).toBeInTheDocument();
+  });
+
+  it("从卡片右键内容页记下今天做过并从两条真实记录发起待确认回看", async () => {
+    const user = userEvent.setup();
+    const { runtime, recordActivity } = closureRuntime();
+    render(
+      <BrowserLiveDimensionApp
+        runtime={runtime}
+        healthPollMs={0}
+        profileRecoveryStore={memoryRecoveryStore()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("今天做过")).toBeInTheDocument());
+    const contentDialog = await openCardContent(user, "今天做过");
+    const input = within(contentDialog).getByRole("textbox", { name: "记下一件已经做过的事" });
+    await waitFor(() => expect(input).toBeEnabled());
+    await user.type(input, "把服务接回原来的纸面");
+    const submit = screen.getByRole("button", { name: "记下" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await waitFor(() => expect(recordActivity).toHaveBeenCalledTimes(1));
     await waitFor(() => {
-      expect(screen.getByText("证据形成行动，行动留下了一个真实结果。")).toBeInTheDocument();
+      expect(screen.getAllByText("把服务接回原来的纸面").length).toBeGreaterThan(0);
+    });
+
+    await user.type(input, "确认第一步只记录真实发生的事");
+    await user.click(screen.getByRole("button", { name: "记下" }));
+    await waitFor(() => expect(recordActivity).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: "帮我看看今天" }));
+    await waitFor(() => {
+      expect(runtime.agent.startTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("只基于我今天标记为“做过”的真实记录"),
+        }),
+      );
     });
   });
 
@@ -286,24 +617,18 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         proposedSilenceDueAt: "2026-08-20T12:00:00Z",
       },
     };
-    vi.mocked(runtime.getContext)
-      .mockResolvedValueOnce({ nodes: [candidate], edges: [] })
-      .mockResolvedValueOnce({
-        nodes: [{
-          ...candidate,
-          status: "active",
-          payload: { ...candidate.payload, candidateState: "touched" },
-        }],
-        edges: [],
-      })
-      .mockResolvedValueOnce({
-        nodes: [{
-          ...candidate,
-          status: "parked",
-          payload: { ...candidate.payload, candidateState: "parked" },
-        }],
-        edges: [],
-      });
+    const candidateContexts: KnowledgeContext[] = [
+      { nodes: [candidate], edges: [] },
+      { nodes: [{ ...candidate, status: "active", payload: { ...candidate.payload, candidateState: "touched" } }], edges: [] },
+      { nodes: [{ ...candidate, status: "parked", payload: { ...candidate.payload, candidateState: "parked" } }], edges: [] },
+      { nodes: [{ ...candidate, status: "active", payload: { ...candidate.payload, candidateState: "touched" } }], edges: [] },
+    ];
+    let candidateContextIndex = 0;
+    vi.mocked(runtime.getContext).mockImplementation(async (query) => {
+      // The independent note inventory does not advance this candidate scenario.
+      if (query?.kinds?.length === 1 && query.kinds[0] === "resource") return { nodes: [], edges: [] };
+      return candidateContexts[Math.min(candidateContextIndex++, candidateContexts.length - 1)];
+    });
     vi.mocked(runtime.listDueCandidates).mockResolvedValue({
       ok: true,
       dueBefore: "2026-08-24T12:00:00Z",
@@ -341,9 +666,9 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
       />,
     );
 
-    expect(await screen.findByRole("region", { name: "候选共创" })).toHaveTextContent(
-      "把上午写作变成可持续节律",
-    );
+    const invitation = await screen.findByRole("button", { name: "秘书找你共创" });
+    expect(invitation).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: "候选共创" })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(runtime.commandCandidate).toHaveBeenCalledWith({
         candidateId: "candidate-browser-1",
@@ -351,6 +676,21 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         audit: expect.objectContaining({ actor: "system" }),
       }, { idempotencyKey: "candidate-due:candidate:browser:proposed" });
     });
+    await user.click(invitation);
+    const paper = screen.getByRole("dialog", { name: "一起想想" });
+    expect(paper).toHaveFocus();
+    expect(within(paper).getByRole("region", { name: "候选共创" })).toHaveTextContent(
+      "把上午写作变成可持续节律",
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "一起想想" })).not.toBeInTheDocument();
+    expect(invitation).toHaveFocus();
+    await user.click(invitation);
+    await user.click(document.body);
+    expect(screen.queryByRole("region", { name: "候选共创" })).not.toBeInTheDocument();
+    await user.click(invitation);
+    // Merely opening, dismissing, and reopening her invitation never advances a candidate.
+    expect(runtime.commandCandidate).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("region", { name: "候选共创" })).toHaveTextContent("候选 ·");
     expect(screen.getByRole("region", { name: "候选共创" })).not.toHaveTextContent("已搁置");
     await user.click(screen.getByRole("button", {
@@ -378,9 +718,17 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
     expect(await screen.findByText(/已搁置 · 先观察哪一种启动方式值得继续共创/))
       .toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "继续共创：把上午写作变成可持续节律" }));
+    await waitFor(() => expect(runtime.commandCandidate).toHaveBeenLastCalledWith({
+      candidateId: "candidate-browser-1", command: "touch",
+      audit: expect.objectContaining({ actor: "user" }),
+    }));
+    expect(await screen.findByRole("button", { name: "继续整理：把上午写作变成可持续节律" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "确认结论：把上午写作变成可持续节律" })).toBeEnabled();
   });
 
   it("塑形 7 天的轻提醒展示后只写 delivery receipt，不伪造结论", async () => {
+    const user = userEvent.setup();
     const runtime = closureRuntime().runtime;
     const candidate = {
       id: "candidate-shaping-due",
@@ -436,6 +784,8 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         audit: expect.objectContaining({ actor: "system" }),
       }, { idempotencyKey: "candidate-due:candidate:shaping:followup" });
     });
+    expect(screen.queryByRole("region", { name: "候选共创" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "秘书找你共创" }));
     expect(screen.getByRole("region", { name: "候选共创" })).toHaveTextContent("整理中");
     expect(screen.getByRole("region", { name: "候选共创" })).not.toHaveTextContent("已形成结论");
   });
@@ -463,7 +813,9 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
-    await user.click(await screen.findByRole("button", { name: "完成：验证时间回收" }));
+    await screen.findByText("验证时间回收");
+    const contentDialog = await openCardContent(user, "今天的锚点");
+    await user.click(within(contentDialog).getByRole("button", { name: "完成：验证时间回收" }));
     const dialog = screen.getByRole("dialog", { name: "回收行动结果" });
     expect(dialog).toHaveTextContent(/观察窗口：.+至.+/);
     expect(dialog).not.toHaveTextContent(/\{"endsAt"/);
@@ -475,13 +827,16 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
 
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    const conversation = screen.getByRole("dialog", { name: "与秘书的对话" });
     await user.type(
-      screen.getByRole("textbox", { name: "跟秘书说话" }),
+      within(conversation).getByRole("textbox", { name: "给秘书发消息" }),
       "建立行动并回收结果",
     );
-    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.click(within(conversation).getByRole("button", { name: "发送" }));
     await waitFor(() => expect(screen.getAllByText("验证上午写作").length).toBeGreaterThan(0));
-    await user.click(screen.getByRole("button", { name: "完成：验证上午写作" }));
+    const contentDialog = await openCardContent(user, "今天的锚点");
+    await user.click(within(contentDialog).getByRole("button", { name: "完成：验证上午写作" }));
 
     expect(screen.getByRole("option", { name: "现实反驳了原判断" })).toHaveValue("refutes");
     await user.type(screen.getByRole("textbox", { name: "实际结果" }), "只有一天完成");
@@ -536,6 +891,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
     expect((await screen.findAllByText("有来源的新研究")).length).toBeGreaterThan(0);
+    await openCardContent(user, "今日早报");
     expect(screen.getAllByRole("button", { name: "有新角度" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "已知道" }).length).toBeGreaterThan(0);
     await user.click(screen.getAllByRole("button", { name: "没用" })[0]);
@@ -581,8 +937,60 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
         expect.objectContaining({ retries: 1 }),
       );
     });
+    expect(screen.getByRole("complementary", { name: "秘书栏" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "了解你的进度" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    expect(screen.getByRole("dialog", { name: "与秘书的对话" }))
+      .toHaveClass("dim-thread--floating");
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "给秘书发消息" })).toHaveFocus();
+    });
+    expect(screen.queryByRole("textbox", { name: "跟秘书说话" })).not.toBeInTheDocument();
     expect(screen.getByText("这是刷新前已经完成并持久化的回复。")).toBeInTheDocument();
+  });
+
+  it("从常驻秘书旁新开独立对话，并把下一轮送到新的 Agent session", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(BROWSER_SESSION_STORAGE_KEY, "latitude-browser-old");
+    const runtime = closureRuntime().runtime;
+    vi.mocked(runtime.agent.listMessages).mockImplementation(async (requestedSessionId) => ({
+      sessionId: requestedSessionId,
+      messages: requestedSessionId === "latitude-browser-old"
+        ? [{
+            id: "old-message",
+            role: "assistant",
+            content: "上一段对话",
+            createdAt: "2026-08-24T12:00:00Z",
+          }]
+        : [],
+    }));
+    render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
+
+    await user.click(await screen.findByRole("button", { name: "打开对话" }));
+    expect(await screen.findByText("上一段对话")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "新开对话" }));
+
+    const nextSessionId = window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY);
+    expect(nextSessionId).toMatch(/^latitude-browser-/);
+    expect(nextSessionId).not.toBe("latitude-browser-old");
+    await waitFor(() => {
+      expect(runtime.agent.listMessages).toHaveBeenCalledWith(
+        nextSessionId,
+        expect.objectContaining({ retries: 1 }),
+      );
+    });
+    expect(screen.queryByText("上一段对话")).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "给秘书发消息" }), "从这里重新开始");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => {
+      expect(runtime.agent.startTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: nextSessionId,
+          text: "从这里重新开始",
+        }),
+      );
+    });
   });
 
   it("Browser Live ignores legacy whole-card semantic payload overrides", async () => {
@@ -648,7 +1056,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     expect(screen.getByText("AI 调整后的行动")).toBeInTheDocument();
   });
 
-  it("AI resource 通过同一 surface 隐藏秘书栏/解绑 chat，用户可从左侧安全唤回", async () => {
+  it("AI resource 通过同一 surface 隐藏左侧秘书栏/解绑 chat，用户可安全唤回", async () => {
     const user = userEvent.setup();
     const runtime = closureRuntime().runtime;
     vi.mocked(runtime.getContext).mockResolvedValue({
@@ -697,11 +1105,11 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
 
     await user.click(restore);
-    expect(await screen.findByRole("button", { name: "查看" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "查看待处理" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "聊聊" })).not.toBeInTheDocument();
   });
 
-  it("AI resource 对系统模块的显隐和解绑落进同一 surface，并让不可用动作明确禁用", async () => {
+  it("AI resource 的模块显隐与解绑仍保存到同一 surface，已移除的底栏不会重新出现", async () => {
     const runtime = closureRuntime().runtime;
     vi.mocked(runtime.getContext).mockResolvedValue({
       nodes: [
@@ -738,8 +1146,14 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     await waitFor(() => {
       expect(screen.queryByRole("region", { name: "本地产品闭环控制" }))
         .not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+      expect(screen.queryByRole("textbox", { name: "跟秘书说话" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
+      const saved = JSON.parse(window.localStorage.getItem("latitude.browser-ui-composition.v2:latitude-browser-live") ?? "{}");
+      const commandBar = saved.document?.components.find((component: { id: string }) => component.id === "command-bar");
+      expect(commandBar).toBeDefined();
+      expect(commandBar.actions).not.toHaveProperty("send");
     });
+    expect(runtime.agent.startTurn).not.toHaveBeenCalled();
     const persisted = JSON.parse(window.localStorage.getItem(
       "latitude.browser-ui-composition.v2:latitude-browser-live",
     )!);
@@ -761,22 +1175,24 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
 
+    await user.click(screen.getByRole("button", { name: "更多桌面操作" }));
     await user.click(screen.getByRole("button", { name: "调整桌面" }));
-    const title = screen.getByRole("textbox", { name: "schedule 标题" });
+    const title = screen.getByRole("textbox", { name: "今天的锚点 标题" });
     const originalTitle = (title as HTMLInputElement).value;
     await user.clear(title);
     await user.type(title, "临时验收标题");
     await user.click(screen.getByRole("button", { name: "保存" }));
 
+    await user.click(screen.getByRole("button", { name: "更多桌面操作" }));
     await user.click(screen.getByRole("button", { name: "调整桌面" }));
-    expect(screen.getByRole("textbox", { name: "schedule 标题" })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "今天的锚点 标题" })).toHaveValue(
       "临时验收标题",
     );
-    await user.click(screen.getByText("变更记录"));
+    await user.click(within(screen.getByRole("dialog", { name: "桌面设置" })).getByText("变更记录"));
     await user.click(screen.getByRole("button", { name: "反转这条操作" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "schedule 标题" })).toHaveValue(
+      expect(screen.getByRole("textbox", { name: "今天的锚点 标题" })).toHaveValue(
         originalTitle,
       );
     });
@@ -788,15 +1204,16 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
 
-    await user.click(screen.getByRole("button", { name: "从桌面移除：当前认知张力" }));
+    fireEvent.contextMenu(await screen.findByRole("group", { name: "卡片：最近值得想一想" }), { clientX: 280, clientY: 220 });
+    await user.click(screen.getByRole("menuitem", { name: /移除卡片/ }));
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "当前认知张力" }))
+      expect(screen.queryByRole("heading", { name: "最近值得想一想" }))
         .not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "＋ 添加卡片" }));
-    await user.click(screen.getByRole("button", { name: "+ 当前认知张力" }));
-    expect(await screen.findByRole("heading", { name: "当前认知张力" }))
+    await user.click(screen.getByRole("button", { name: /卡片总览/ }));
+    await user.click(screen.getByRole("button", { name: "放回桌面：最近值得想一想" }));
+    expect(await screen.findByRole("heading", { name: "最近值得想一想" }))
       .toBeInTheDocument();
   });
 
@@ -853,7 +1270,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
 
     await user.click(screen.getByRole("button", { name: "第一步：准备可恢复清空" }));
     expect(await screen.findByText("DELETE ALL LOCAL DATA")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("完整可恢复备份已写入并读回");
+    expect(within(screen.getByRole("dialog", { name: "数据与安全" })).getByRole("status")).toHaveTextContent("完整可恢复备份已写入并读回");
     const confirmation = screen.getByRole("textbox", { name: "危险操作确认短语" });
     const commit = screen.getByRole("button", { name: "第二步：确认执行" });
     expect(commit).toBeDisabled();
@@ -896,7 +1313,7 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     legacyFiveSurface.components = legacyFiveSurface.components.filter((item) =>
       BROWSER_LAYOUT_COMPONENT_IDS.includes(
         item.id as (typeof BROWSER_LAYOUT_COMPONENT_IDS)[number],
-      ));
+      ) && item.id !== "seed-activity");
     const profile = await createBrowserProfile({
       domain,
       agent,
@@ -996,10 +1413,11 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     expect(await screen.findByRole("button", { name: "唤回秘书" })).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem(
       "latitude.browser-ui-composition.v2:latitude-browser-live",
-    )!).document.components).toHaveLength(15);
+    )!).document.components).toHaveLength(16);
   });
 
-  it("对新增 Web curated outbox 前向兼容：侧边秘书栏显示并回执", async () => {
+  it("资讯通过秘书主动送达并回执，移除搜索栏后不误导到行动结果回收", async () => {
+    const user = userEvent.setup();
     const runtime = closureRuntime().runtime;
     vi.mocked(runtime.agent.listSchedulerOutbox).mockResolvedValue({
       items: [
@@ -1029,17 +1447,26 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
-    expect(await within(screen.getByLabelText("秘书栏"))
+    expect(await within(screen.getByRole("complementary", { name: "秘书栏" }))
       .findByText("今天的新资讯准备好了。"))
       .toBeInTheDocument();
     expect(screen.queryByText("为你带回一条有真实链接的写作研究。"))
       .not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "搜索资讯" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "本地产品闭环控制" })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(runtime.agent.acknowledgeSchedulerOutbox).toHaveBeenCalledWith(
         "web-digest:2026-08-24",
         { idempotencyKey: "browser-delivery:web-digest:2026-08-24" },
       );
     });
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    expect(screen.getByLabelText("秘书主动发起的话题"))
+      .toHaveTextContent("今天的新资讯准备好了。");
+    expect(screen.queryByRole("button", { name: "处理这件事" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "回收行动结果" })).not.toBeInTheDocument();
+    expect(runtime.searchWeb).not.toHaveBeenCalled();
+    expect(runtime.recordOutcome).not.toHaveBeenCalled();
   });
 
   it("事件时钟 outcome_collection 用 domainId 打开真实行动，不退化成 reviewAt 猜测", async () => {
@@ -1087,9 +1514,23 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
       .toBeInTheDocument();
     expect(screen.queryByText(/reviewAt|node_|sensitivity|demo profile|typed|receipt/i))
       .not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "查看" }));
-    expect(screen.getByRole("dialog", { name: "回收行动结果" }))
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    expect(screen.getByLabelText("秘书主动发起的话题"))
       .toHaveTextContent("事件已经触发的观察行动");
+    await user.click(screen.getByRole("button", { name: "处理这件事" }));
+    const threadWindow = screen.getByRole("dialog", { name: "与秘书的对话" });
+    const outcomeWindow = screen.getByRole("dialog", { name: "回收行动结果" });
+    expect(outcomeWindow).toHaveTextContent("事件已经触发的观察行动");
+    expect(outcomeWindow).toHaveStyle({ zIndex: "230" });
+    expect(threadWindow).toHaveStyle({ zIndex: "170" });
+
+    await user.click(threadWindow);
+    expect(threadWindow).toHaveStyle({ zIndex: "230" });
+    expect(outcomeWindow).toHaveStyle({ zIndex: "170" });
+
+    await user.click(within(outcomeWindow).getByRole("textbox", { name: "实际结果" }));
+    expect(outcomeWindow).toHaveStyle({ zIndex: "230" });
+    expect(threadWindow).toHaveStyle({ zIndex: "170" });
   });
 
   it("重启后从已送达 receipt 恢复未回收的事件行动，而不把送达当成完成", async () => {
@@ -1122,56 +1563,42 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.agent.listSchedulerOutbox).toHaveBeenCalled());
-    expect(screen.getByText("“重启后仍待回收”到回看时间了，实际结果怎么样？"))
+    expect(await screen.findByText("“重启后仍待回收”到回看时间了，实际结果怎么样？"))
       .toBeInTheDocument();
     expect(screen.queryByText(/reviewAt|node_|sensitivity|demo profile|typed|receipt/i))
       .not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "查看" }));
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    expect(screen.getByLabelText("秘书主动发起的话题"))
+      .toHaveTextContent("重启后仍待回收");
+    await user.click(screen.getByRole("button", { name: "处理这件事" }));
     expect(screen.getByRole("dialog", { name: "回收行动结果" }))
       .toHaveTextContent("重启后仍待回收");
     expect(runtime.agent.acknowledgeSchedulerOutbox).not.toHaveBeenCalled();
   });
 
-  it("真实 Web Search 明示 publishedAt 后过滤、无日期排除与非穷尽覆盖", async () => {
+  it("服务状态和手动刷新收进设置，刷新仍重新读取真实服务与记录", async () => {
     const user = userEvent.setup();
     const runtime = closureRuntime().runtime;
-    vi.mocked(runtime.searchWeb).mockResolvedValue({
-      query: "写作与深度工作",
-      results: [],
-      retrievedAt: "2026-08-24T12:00:00.000Z",
-      coverage: {
-        mode: "published_at_post_filter",
-        providerSupportsFreshness: false,
-        requestedFreshnessDays: 30,
-        cutoff: "2026-07-25T12:00:00.000Z",
-        providerResultCount: 10,
-        datedResultCount: 7,
-        excludedUndatedCount: 3,
-        excludedStaleCount: 7,
-        returnedResultCount: 0,
-        exhaustive: false,
-      },
-    });
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
     await waitFor(() => expect(runtime.getContext).toHaveBeenCalled());
-
-    await user.type(screen.getByRole("textbox", { name: "搜索资讯" }), "写作与深度工作");
-    await user.click(screen.getByRole("button", { name: "搜索" }));
-
-    expect(await screen.findByText(/时间过滤后没有可展示的 dated 结果/)).toHaveTextContent(
-      "排除无日期 3 条、过期 7 条",
-    );
-    expect(screen.getByText(/时间过滤后没有可展示的 dated 结果/)).toHaveTextContent(
-      "不是该时间段的穷尽结果",
-    );
-    expect(runtime.searchWeb).toHaveBeenCalledWith({
-      query: "写作与深度工作",
-      maxResults: 3,
-      freshnessDays: 30,
+    expect(screen.queryByLabelText("本地服务状态")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    const settings = screen.getByRole("dialog", { name: "设置" });
+    expect(within(settings).getByLabelText("本地服务状态"))
+      .toHaveTextContent("数据 已连接 · 助手 已连接");
+    const priorHealthCalls = vi.mocked(runtime.health).mock.calls.length;
+    const priorContextCalls = vi.mocked(runtime.getContext).mock.calls.length;
+    await user.click(within(settings).getByRole("button", { name: "刷新" }));
+    await waitFor(() => {
+      expect(runtime.health).toHaveBeenCalledTimes(priorHealthCalls + 1);
+      expect(runtime.getContext).toHaveBeenCalledTimes(priorContextCalls + 1);
     });
+    expect(await screen.findByText("已刷新。")).toBeInTheDocument();
   });
 
-  it("服务断开时诚实显示未连接，不回退演示数据", async () => {
+  it("服务断开时在设置诚实显示未连接，不回退演示数据", async () => {
+    const user = userEvent.setup();
     const checkedAt = new Date().toISOString();
     const runtime = closureRuntime().runtime;
     vi.mocked(runtime.health).mockResolvedValue({
@@ -1182,12 +1609,17 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
 
-    await waitFor(() => expect(screen.getAllByText("本地服务 · 未连接").length).toBeGreaterThan(0));
+    await waitFor(() => expect(runtime.health).toHaveBeenCalled());
+    expect(screen.queryByLabelText("本地服务状态")).not.toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: /秘书状态：未连接/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    const settings = screen.getByRole("dialog", { name: "设置" });
+    expect(await within(settings).findByLabelText("本地服务状态")).toHaveTextContent("数据 未连接 · 助手 未连接");
     expect(screen.queryByText("演示模式")).not.toBeInTheDocument();
-    expect(screen.getByText("稍等…")).toBeInTheDocument();
   });
 
   it("Provider 拒绝凭证时显示 DeepSeek 鉴权失败，不把它含糊写成 API 异常", async () => {
+    const user = userEvent.setup();
     const checkedAt = new Date().toISOString();
     const runtime = closureRuntime().runtime;
     vi.mocked(runtime.health).mockResolvedValue({
@@ -1209,8 +1641,9 @@ describe("BrowserLiveDimensionApp 产品闭环", () => {
     });
 
     render(<BrowserLiveDimensionApp runtime={runtime} healthPollMs={0} />);
-
-    expect(await screen.findByLabelText("本地服务状态"))
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    expect(await within(screen.getByRole("dialog", { name: "设置" }))
+      .findByLabelText("本地服务状态"))
       .toHaveTextContent("数据 已连接 · 助手 DeepSeek 鉴权失败");
   });
 });

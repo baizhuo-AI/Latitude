@@ -57,6 +57,7 @@ const RENDERERS = new Set<LayoutRendererKind>([
   "html"
 ]);
 const REGIONS = new Set<LayoutRegion>([
+  "activity",
   "feed",
   "schedule",
   "review-plan",
@@ -72,6 +73,11 @@ const SEED_REGION_ORDER: readonly LayoutRegion[] = [
   "flex"
 ];
 const SEED_SPAN_ORDER: readonly LayoutSpan[] = [5, 7, 4, 4, 4];
+const BROWSER_PRODUCT_REGION_ORDER: readonly LayoutRegion[] = [
+  "activity",
+  ...SEED_REGION_ORDER,
+];
+const BROWSER_PRODUCT_SPAN_ORDER: readonly LayoutSpan[] = [12, ...SEED_SPAN_ORDER];
 const FORBIDDEN_COORDINATE_KEYS = new Set(["x", "y", "row", "column"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -210,7 +216,7 @@ function validateCards(
       issue(
         issues,
         "invalid_region",
-        "card.region 必须属于五个稳定区",
+        "card.region 必须属于已注册的稳定区",
         cardId
       );
     }
@@ -344,11 +350,21 @@ function validateArrangement(
     }
   }
 
-  if (orderedCardIds.length !== SEED_REGION_ORDER.length) {
+  const hasActivityPaper = cardsById.has("seed-activity");
+  const expectedRegions = hasActivityPaper
+    ? BROWSER_PRODUCT_REGION_ORDER
+    : SEED_REGION_ORDER;
+  const expectedSpans = hasActivityPaper
+    ? BROWSER_PRODUCT_SPAN_ORDER
+    : SEED_SPAN_ORDER;
+
+  if (orderedCardIds.length !== expectedRegions.length) {
     issue(
       issues,
       "invalid_seed_card_count",
-      "frequency-weighted 种子布局必须恰好包含五个卡位"
+      hasActivityPaper
+        ? "Browser 产品布局必须包含活动记录纸和原来的五个卡位"
+        : "frequency-weighted 种子布局必须恰好包含五个卡位"
     );
   }
 
@@ -360,25 +376,29 @@ function validateArrangement(
   if (strictSeedGeometry) {
     const actualRegions = resolvedCards.map((card) => card.region);
     if (
-      actualRegions.length !== SEED_REGION_ORDER.length ||
-      actualRegions.some((region, index) => region !== SEED_REGION_ORDER[index])
+      actualRegions.length !== expectedRegions.length ||
+      actualRegions.some((region, index) => region !== expectedRegions[index])
     ) {
       issue(
         issues,
         "invalid_seed_region_order",
-        "种子布局区域顺序必须是 feed、schedule、review-plan、rhythm、flex"
+        hasActivityPaper
+          ? "Browser 产品布局区域顺序必须从 activity 开始，再沿用原来的五区"
+          : "种子布局区域顺序必须是 feed、schedule、review-plan、rhythm、flex"
       );
     }
 
     const actualSpans = resolvedCards.map((card) => card.span);
     if (
-      actualSpans.length !== SEED_SPAN_ORDER.length ||
-      actualSpans.some((span, index) => span !== SEED_SPAN_ORDER[index])
+      actualSpans.length !== expectedSpans.length ||
+      actualSpans.some((span, index) => span !== expectedSpans[index])
     ) {
       issue(
         issues,
         "invalid_seed_span_order",
-        "种子布局 span 顺序必须是 5、7、4、4、4"
+        hasActivityPaper
+          ? "Browser 产品布局 span 顺序必须是 12、5、7、4、4、4"
+          : "种子布局 span 顺序必须是 5、7、4、4、4"
       );
     }
   }

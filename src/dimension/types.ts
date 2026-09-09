@@ -62,6 +62,8 @@ export interface RelationMetric {
 }
 
 export interface Secretary {
+  /** 连接状态独立于任务状态，断线时不能显示仍在执行任务。 */
+  connectionState?: "ready" | "starting" | "unavailable";
   /** 立绘上方的小标签,如 YOUR SECRETARY */
   eyebrow: string;
   state: SecretaryState;
@@ -84,10 +86,11 @@ export interface Secretary {
 /** 行内强调色。用于 meta 标签这类小面积着色,不再用于卡片边框。 */
 export type CardAccent = "olive" | "rust" | "amber" | "teal";
 
-/** 原生卡片的九种闭集。增加 kind 时必须同步注册表与渲染测试。 */
+/** 原生卡片的十种闭集。增加 kind 时必须同步注册表与渲染测试。 */
 export type NativeCardKind =
   | "cognition"
   | "feed"
+  | "activity"
   | "anchors"
   | "count"
   | "note"
@@ -186,6 +189,10 @@ export interface CognitionCardPayload {
 /** 资讯卡的单条内容。 */
 export interface FeedItem {
   id: string;
+  /** 上游明确给出的短标题；原始 title 仍用于溯源。 */
+  shortTitle?: string;
+  /** 部分搜索提供方把明确短标题命名为 headline。 */
+  headline?: string;
   title: string;
   /** 为什么此刻给用户看。 */
   why: string;
@@ -264,6 +271,30 @@ export interface AnchorCardPayload {
   arc?: boolean;
 }
 
+/** 用户自己记下的一件已经发生的事。它是记录，不是系统对用户的判断。 */
+export interface ActivityEntry {
+  id: string;
+  text: string;
+  occurredAt: string;
+  timeLabel: string;
+  lineage: LineageRef;
+}
+
+/**
+ * 「今天做过」卡：第一步只收真实记录，再邀请秘书从多条记录中提出待确认观察。
+ * 可用性由 Browser 的 Domain / Agent 健康状态投影，不在卡片里猜测。
+ */
+export interface ActivityCardPayload {
+  kind: "activity";
+  entries: ActivityEntry[];
+  emptyHint: string;
+  capturePlaceholder: string;
+  canCapture: boolean;
+  captureUnavailableReason?: string;
+  canReflect: boolean;
+  reflectUnavailableReason?: string;
+}
+
 /** 大数字卡:一个数 + 单位 + 一句说明 */
 export interface CountCardPayload {
   kind: "count";
@@ -285,6 +316,8 @@ export interface ChartCardPayload {
   kind: "chart";
   /** 每根柱的高度比例 0—1 */
   bars: number[];
+  /** 没有任何可画数据时显示的事实说明；空数组与真实的 0 值不同。 */
+  emptyHint?: string;
   /** 图下方的链接文案,可空 */
   link?: string;
 }
@@ -340,6 +373,7 @@ export interface ProgressCardPayload {
 export type NativeCardPayload =
   | CognitionCardPayload
   | FeedCardPayload
+  | ActivityCardPayload
   | AnchorCardPayload
   | CountCardPayload
   | NoteCardPayload
@@ -353,6 +387,7 @@ type MaterializedCard<P extends NativeCardPayload> = P & NativeCardLayout;
 /** 以下别名保持旧组件和 Story 的 props 兼容。 */
 export type CognitionCard = MaterializedCard<CognitionCardPayload>;
 export type FeedCard = MaterializedCard<FeedCardPayload>;
+export type ActivityCard = MaterializedCard<ActivityCardPayload>;
 export type AnchorCard = MaterializedCard<AnchorCardPayload>;
 export type CountCard = MaterializedCard<CountCardPayload>;
 export type NoteCard = MaterializedCard<NoteCardPayload>;
@@ -385,6 +420,12 @@ export interface CardHandlers {
   onVerdict?: (card: DeskCard, verdict: ProposalVerdict) => void;
   onFeedFeedback?: (itemId: string, feedback: FeedFeedback) => void;
   onLineage?: (lineage: LineageRef) => void;
+  /** 记下一件已经发生的事；返回 Promise 时卡片会保持提交态直到写入完成。 */
+  onActivityCapture?: (text: string) => void | Promise<void>;
+  onActivityEdit?: (entry: ActivityEntry, nextText: string) => void | Promise<void>;
+  onActivityRetract?: (entry: ActivityEntry) => void | Promise<void>;
+  /** 只触发回看，不自动把观察升级成已确认认知。 */
+  onActivityReflect?: () => void;
   /** 行动对象的真实完成动作。只由 actionable 的锚点行触发。 */
   onAnchorComplete?: (row: AnchorRow) => void;
   /**

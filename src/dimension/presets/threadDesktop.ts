@@ -162,6 +162,9 @@ export function deriveThreadDesktop(
   presentationOverrides: Record<string, CardPresentation> = {}
 ): ThreadDesktop {
   const voice = voiceFor(thread.title);
+  const orderedRegions = layout.cards.some((card) => card.region === "activity")
+    ? (["activity", ...voice.order.filter((region) => region !== "activity")] as LayoutRegion[])
+    : voice.order;
   const rows = thread.rows.map((row) => ({ ...row, dimmed: false }));
   const bindings = Object.fromEntries(
     Object.entries(projection.bindings).map(([id, payload]) => [
@@ -217,7 +220,7 @@ export function deriveThreadDesktop(
       }),
       arrangement: {
         ...layout.arrangement,
-        orderedCardIds: voice.order.map((region) => {
+        orderedCardIds: orderedRegions.map((region) => {
           const card = layout.cards.find((candidate) => candidate.region === region);
           if (!card) throw new Error(`线索桌面缺少 ${region} 区域`);
           return card.id;

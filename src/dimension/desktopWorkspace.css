@@ -1,0 +1,55 @@
+.dim-desktop-area-label {
+  position: absolute;
+  width: 640px;
+  pointer-events: none;
+  color: var(--dim-ink);
+}
+
+.dim-desktop-area-label h2 {
+  margin: 0;
+  font-family: var(--dim-font-serif, Georgia, serif);
+  font-size: 25px;
+  font-weight: 500;
+}
+
+.dim-desktop-area-label p {
+  margin: 7px 0 0;
+  font-size: 12px;
+  color: var(--dim-ink-soft);
+}
+
+.dim-desktop-area-label.is-current h2 {
+  color: var(--dim-olive);
+}
+
+.dim-desktop-location-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+  max-width: 100%;
+  margin-right: auto;
+  color: var(--dim-ink-soft);
+  font-size: 12px;
+}
+
+.dim-desktop-toolbar { flex-wrap: wrap; }
+
+.dim-desktop-location-tools button { white-space: nowrap; }
+
+.dim-desktop-location-tools [aria-label="当前桌面板块"] {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dim-desktop-area-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 0 12px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--dim-line);
+}

@@ -2,6 +2,7 @@ import {
   CallId,
   LlmAdapter,
   LlmError,
+  ReasoningEffortId,
   type GenerateOptions,
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
@@ -35,11 +36,11 @@ export function testConfig(stateDir: string): AgentHostConfig {
     ]),
     domainTimeoutMs: 1_000,
     schedulerPollMs: 300_000,
-    compactionEventThreshold: 10_000,
   };
 }
 
 export class FakeDomain implements DomainClientLike {
+  async getPersonalContext() { return { nodes: [], edges: [] }; }
   due: DueWorkItem[] = [];
   ingested: RankedWebSource[] = [];
   messages: UserMessageEvidenceInput[] = [];
@@ -137,6 +138,54 @@ export function textAdapter(text: string) {
     requests,
     install(ctx: Context) {
       ctx.llm.registerAdapter(["fake"], new TextAdapter());
+    },
+  };
+}
+
+export function sequencedTextAdapter(
+  texts: readonly string[],
+  provider = "fake",
+) {
+  const requests: GenerateOptions[] = [];
+  class SequencedTextAdapter extends LlmAdapter {
+    resolveModel(provider: string, model: string) {
+      return Promise.resolve({
+        provider,
+        id: model,
+        name: model,
+        ...(provider === "deepseek-official"
+          ? {
+              reasoning: {
+                defaultEffort: ReasoningEffortId("high"),
+                efforts: [
+                  { id: ReasoningEffortId("off"), name: "Off" },
+                  { id: ReasoningEffortId("high"), name: "High" },
+                ],
+              },
+            }
+          : {}),
+      });
+    }
+
+    async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+      requests.push(options);
+      const text = texts[requests.length - 1] ?? texts.at(-1) ?? "";
+      yield { type: "block-start", index: 0, blockType: "text" };
+      yield { type: "text-delta", index: 0, text };
+      yield { type: "block-end", index: 0, block: { type: "text", text } };
+      yield {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 3 },
+      };
+      yield { type: "finish", reason: { kind: "stop" } };
+    }
+  }
+
+  return {
+    provider,
+    requests,
+    install(ctx: Context) {
+      ctx.llm.registerAdapter([provider], new SequencedTextAdapter());
     },
   };
 }

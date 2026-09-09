@@ -11,8 +11,10 @@ const MASKED_PROVIDER_CREDENTIAL =
  */
 export function redactCredentialText(content: string): string {
   let sanitized = content;
-  const activeSecret = process.env.DEEPSEEK_API_KEY?.trim();
-  if (activeSecret) sanitized = sanitized.split(activeSecret).join("[REDACTED]");
+  for (const name of ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) {
+    const activeSecret = process.env[name]?.trim();
+    if (activeSecret) sanitized = sanitized.split(activeSecret).join("[REDACTED]");
+  }
   sanitized = sanitized.replace(FULL_PROVIDER_KEY, "[REDACTED]");
   // Audit/admin boundaries call this after JSON.stringify. Preserve the JSON
   // key and quotes while removing a structured masked value.

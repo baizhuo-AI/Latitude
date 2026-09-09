@@ -1,0 +1,55 @@
+{
+  "id": "tea",
+  "title": "喝茶休息",
+  "description": "捧起杯子，喝一小口，再放回身前。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "捧着茶杯",
+    "慢慢举杯",
+    "靠近嘴边",
+    "喝一小口",
+    "轻轻放低",
+    "杯子回到身前",
+    "放松一下",
+    "安静捧杯"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1700
+    },
+    {
+      "frame": 1,
+      "ms": 450
+    },
+    {
+      "frame": 2,
+      "ms": 450
+    },
+    {
+      "frame": 3,
+      "ms": 1300
+    },
+    {
+      "frame": 4,
+      "ms": 500
+    },
+    {
+      "frame": 5,
+      "ms": 500
+    },
+    {
+      "frame": 6,
+      "ms": 600
+    },
+    {
+      "frame": 7,
+      "ms": 2500
+    }
+  ],
+  "duration": 8000
+}

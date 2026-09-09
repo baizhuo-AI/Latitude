@@ -1,9 +1,12 @@
 import type {
   AgentClient,
+  PersonaState,
+  AgentProgressPage,
   AgentCommitDangerousRequest,
   AgentDangerousCommitResult,
   AgentHostIntegrityReport,
   AgentHostSnapshot,
+  ModelProviderSettings,
   AgentPreparedDangerousOperation,
   AgentPrepareDangerousRequest,
   AgentRunAccepted,
@@ -11,6 +14,7 @@ import type {
   AgentSessionMessagesResponse,
   SchedulerOutboxItem,
   SchedulerOutboxResponse,
+  UpdateModelProviderRequest,
   AgentTurnRequest,
   AgentWaitOptions,
   WebSearchRequest,
@@ -19,6 +23,7 @@ import type {
 import { isTerminalAgentRun } from "./agentClient";
 import type {
   ActionRecord,
+  ActivityCaptureValue,
   ApplyFeedbackRequest,
   ApplyChangeRequest,
   CandidateMutationValue,
@@ -42,6 +47,7 @@ import type {
   PrepareDangerousDataRequest,
   PreparedDangerousDataOperation,
   RecordOutcomeRequest,
+  RecordActivityRequest,
   MutationReceipt,
   RuntimeJson,
   RuntimeRequestOptions,
@@ -63,6 +69,7 @@ export interface HttpDesktopRuntimeRoutes {
   agentRun: (runId: string) => string;
   agentCancel: (runId: string) => string;
   agentMessages: (sessionId: string) => string;
+  agentProviderSettings: string;
   schedulerOutbox: string;
   schedulerAck: (receiptKey: string) => string;
   agentExportData: string;
@@ -73,6 +80,7 @@ export interface HttpDesktopRuntimeRoutes {
   webSearch: string;
   domainHealth: string;
   context: string;
+  messageEvidence: string;
   change: string;
   action: string;
   candidate: string;
@@ -102,6 +110,7 @@ const DEFAULT_ROUTES: HttpDesktopRuntimeRoutes = {
     `/v1/agent/runs/${encodeURIComponent(runId)}/cancel`,
   agentMessages: (sessionId) =>
     `/v1/agent/sessions/${encodeURIComponent(sessionId)}/messages?limit=100`,
+  agentProviderSettings: "/v1/agent/settings/provider",
   schedulerOutbox: "/v1/scheduler/outbox",
   schedulerAck: (receiptKey) =>
     `/v1/scheduler/outbox/${encodeURIComponent(receiptKey)}/ack`,
@@ -113,6 +122,7 @@ const DEFAULT_ROUTES: HttpDesktopRuntimeRoutes = {
   webSearch: "/v1/web/search",
   domainHealth: "/health",
   context: "/v1/context",
+  messageEvidence: "/v1/evidence/message",
   change: "/v1/changes",
   action: "/v1/actions",
   candidate: "/v1/candidates",
@@ -189,6 +199,18 @@ export class HttpDesktopRuntime implements DesktopRuntimePort {
     options: RuntimeRequestOptions = {}
   ): Promise<ChangeReceipt> {
     return this.domainWrite<ChangeReceipt>(this.routes.change, request, options, "chg");
+  }
+
+  async recordActivity(
+    request: RecordActivityRequest,
+    options: RuntimeRequestOptions = {}
+  ): Promise<MutationReceipt<ActivityCaptureValue>> {
+    return this.domainWrite<MutationReceipt<ActivityCaptureValue>>(
+      this.routes.messageEvidence,
+      { ...request, evidenceType: "activity" },
+      options,
+      "activity"
+    );
   }
 
   async listChangeSets(
@@ -361,10 +383,44 @@ export class HttpDesktopRuntime implements DesktopRuntimePort {
 
   private createAgentClient(): AgentClient {
     return {
+      getPersona: (options = {}) => this.agentHttp.json<PersonaState>("/v1/agent/persona", options),
+      desktop: {
+        read: (date, options = {}) => this.agentHttp.json<import("../../shared/desktopContent").DesktopContent>(
+          `/v1/agent/desktop?date=${encodeURIComponent(date)}`, { ...options, retryable: true }),
+        updateTodo: (request, options = {}) => this.agentHttp.json<{ saved: boolean; updatedAt: string }>(
+          "/v1/agent/desktop/todo", { ...options, method: "POST", retryable: true, body: request as unknown as RuntimeJson }),
+      },
+      getLatestRun: (sessionId, options = {}) => this.agentHttp.json<{ run: AgentRunResult | null }>(
+        `/v1/agent/sessions/${encodeURIComponent(sessionId)}/latest-run`, options,
+      ),
+      updatePersona: (request, options = {}) => this.agentHttp.json<PersonaState>("/v1/agent/persona", {
+        ...options, method: "POST", retryable: false, body: request as unknown as RuntimeJson,
+      }),
+      getProgress: (runId, after = -1, options = {}) => this.agentHttp.json<AgentProgressPage>(
+        `${this.routes.agentRun(runId)}/events?after=${after}`, options,
+      ),
       health: (options = {}) =>
         this.agentHttp.json<Record<string, RuntimeJson>>(
           this.routes.agentHealth,
           options
+        ),
+      getProviderSettings: (options = {}) =>
+        this.agentHttp.json<ModelProviderSettings>(
+          this.routes.agentProviderSettings,
+          { ...options, retryable: true }
+        ),
+      updateProviderSettings: (
+        request: UpdateModelProviderRequest,
+        options = {}
+      ) =>
+        this.agentHttp.json<ModelProviderSettings>(
+          this.routes.agentProviderSettings,
+          {
+            ...options,
+            method: "POST",
+            retryable: false,
+            body: request as unknown as RuntimeJson
+          }
         ),
       startTurn: async (request, options = {}) => {
         const clientRequestId =
@@ -475,12 +531,12 @@ export class HttpDesktopRuntime implements DesktopRuntimePort {
     options: AgentWaitOptions
   ): Promise<AgentRunResult> {
     const startedAt = Date.now();
-    const waitTimeoutMs = positiveInt(options.waitTimeoutMs, 330_000);
+    const waitTimeoutMs = options.waitTimeoutMs;
     const pollIntervalMs = positiveInt(options.pollIntervalMs, this.pollIntervalMs);
 
     while (true) {
       if (options.signal?.aborted) throw new DOMException("操作已取消", "AbortError");
-      if (Date.now() - startedAt >= waitTimeoutMs) {
+      if (waitTimeoutMs !== undefined && waitTimeoutMs > 0 && Date.now() - startedAt >= waitTimeoutMs) {
         // 连接生命周期和任务生命周期分开：这里只停止浏览器等待，不替用户取消 Host 任务。
         throw new Error(`等待 Agent 任务超过 ${waitTimeoutMs}ms；任务可能仍在本机继续`);
       }
@@ -608,6 +664,7 @@ function assertRunStatus(status: unknown): void {
     status !== "running" &&
     status !== "completed" &&
     status !== "succeeded" &&
+    status !== "budget_exhausted" &&
     status !== "failed" &&
     status !== "cancelled"
   ) {

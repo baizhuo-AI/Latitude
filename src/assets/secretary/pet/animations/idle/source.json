@@ -1,0 +1,12 @@
+{
+  "sourceArtwork": "src/assets/secretary/pet/idle_breathe.png",
+  "prompt": "Faithfully edit the EXISTING illustrated secretary in images 1 and 2 into one quiet blink animation. Image 2 is merely a crop of the same original artwork. Preserve the exact source character drawing and its delicate painted detail, not a new design inspired by her. Image 3 is an EMPTY layout measurement guide only.\n\nUse a SQUARE high resolution sheet, ideally 3072 x 3072, four columns and two rows: 8 full-body cels total. Read left to right across the top row, then left to right across the bottom row. Give each character generous empty space to either side. Pure solid cyan #00FFFF background. No visible grid, measurements, text, effects, floor or shadows. Complete hair and shoes in every frame; all cels have identical scale and relative shoe baseline.\n\nCopy the original broad, rounded, softly tilted bob and full gentle cheek shape. Copy the original gray-olive eyes, gentle expression, small chin, cloth texture, thin line work, champagne highlights, warm skin and brown stocking shading. Keep the original head width 30.4% of full standing height and head height 27%; keep the low skirt hem at 66.3% of full height, leaving only 33.7% below the hem. The head is as wide as the cape, exactly like the reference. Her calves have the original rounded volume. Do not make the face narrow, the head small, the legs long or skinny, the hair angular, or the paint flat or blurry. Preserve the exact book and overlapping hands.\n\nOnly the eyelids move; this is a restrained natural blink, with the original entire head outline, face anatomy, hair, body, book and limbs fixed. Top row: 1 eyes open; 2 same open eyes; 3 eyelids lowering a little; 4 half closed. Bottom row: 5 eyes fully gently closed; 6 half open; 7 eyes opening; 8 the exact original open gaze again. All eight belong to a single consistent loop of the same drawing. No whole-body movement. Source fidelity is the priority.",
+  "method": "One coherent generated eight-cel sheet; fixed scale and foot registration; no body warping",
+  "headWidthOverHeight": {
+    "original": 0.3042,
+    "corrected": 0.3036
+  },
+  "scope": "user-approved idle preserved; other twelve clips unified in hatch-actions-v2",
+  "generationSource": "One coherent eight-cel sheet generated during artwork production; the intermediate sheet is not distributed. The exported PNG cels and playback sequence are stored beside this record.",
+  "promptFormat": "text"
+}

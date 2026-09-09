@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Goal } from "../../lib/db";
 import type { Todo } from "../../lib/store";
 import { buildLiveProjection } from "../../projections/desktop/liveProjection";
@@ -39,9 +39,9 @@ describe("真实投影的上层语义边界", () => {
   it("标签分组可调整板面连线，但不会把视觉线冒充认知关系", () => {
     render(<ClueBoardPreset projection={liveProjection()} />);
 
-    expect(screen.getByRole("heading", { name: "今日标签分组" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "线索版" })).toBeInTheDocument();
     expect(screen.getByText("所有纸片可拖动 · 板面连线不会写成认知事实")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /调整「Latitude」连接，当前为支撑/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /编辑「Latitude」连接，当前为支撑/ })).toBeVisible();
   });
 
   it("typed 中期目标成为线索主题，板面连线可调但明确不改 Domain 关系", () => {
@@ -79,24 +79,35 @@ describe("真实投影的上层语义边界", () => {
 
     render(<ClueBoardPreset projection={projection} />);
 
-    expect(screen.getByRole("heading", { name: "中期目标线索板" })).toBeInTheDocument();
-    expect(screen.getByText("纸片可自由拖动 · 连线只整理当前桌面")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "线索版" })).toBeInTheDocument();
+    expect(screen.getByText("拖动纸签 · 点击连线编辑")).toBeVisible();
     expect(screen.getByRole("button", { name: /中期目标 1：完成客户交付/ })).toBeVisible();
     fireEvent.click(
-      screen.getByRole("button", { name: /调整「完成客户交付」连接，当前为支撑/ })
+      screen.getByRole("button", { name: /编辑「完成客户交付」连接，当前为支撑/ })
     );
     expect(screen.getByRole("complementary", { name: "编辑连接：完成客户交付" }))
       .toHaveTextContent("不会改变原始关系");
   });
 
   it("星图只放长期方向与认知，不把今日锚点抬成星", () => {
-    render(<ConstellationPreset projection={liveProjection()} />);
+    const { container } = render(<ConstellationPreset projection={liveProjection()} />);
 
     expect(
       screen.getByRole("region", { name: "夜空：北极星、认知评价与大想法" })
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /今日锚点：验证真实接线/ })).not.toBeInTheDocument();
     expect(screen.getByText("这里只放北极星、认知评价与大想法")).toBeInTheDocument();
+    // 星尘只是氛围层，保持有界，避免数百个常驻动画拖慢三层切换。
+    expect(container.querySelectorAll(".cst-dust-point")).toHaveLength(84);
+    // Restored entry/exit keyframes need actual radial offsets on every star and dust point.
+    for (const star of container.querySelectorAll<HTMLElement>(".cst-star, .cst-dust-point")) {
+      const x = parseFloat(star.style.getPropertyValue("--gx"));
+      const y = parseFloat(star.style.getPropertyValue("--gy"));
+      expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
+      expect(Math.hypot(x, y)).toBeGreaterThan(0);
+    }
+    expect(new Set(Array.from(container.querySelectorAll<HTMLElement>(".cst-dust-point"),
+      dust => dust.style.getPropertyValue("--gather-delay"))).size).toBe(3);
   });
 
   it("只把 Domain active/disputed orbits 画成正式轨道，并展示真实 StarState", () => {
@@ -148,14 +159,23 @@ describe("真实投影的上层语义边界", () => {
       ],
     };
 
-    const { container } = render(<ConstellationPreset projection={projection} />);
+    const onDiscussNode = vi.fn();
+    const { container } = render(<ConstellationPreset projection={projection} onDiscussNode={onDiscussNode} />);
     expect(container.querySelector(".cst-orbit-svg line[data-relation='orbits']"))
       .toBeInTheDocument();
     expect(screen.getByText("1 条已确认的轨道")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /认知星：上午更容易进入写作状态/ }));
-    expect(screen.getByText(/已根据近期记录更新/)).toBeInTheDocument();
+    const star = screen.getByRole("button", { name: /认知星：上午更容易进入写作状态/ });
+    fireEvent.click(star);
+    expect(star).toHaveAttribute("aria-pressed", "true");
+    expect(star.style.getPropertyValue("--cst-size")).toBe("12px");
     expect(screen.queryByText(/组织力 connecting/)).not.toBeInTheDocument();
-    expect(screen.getByText(/与「把维度做成可靠的个人系统」有已确认的关联/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "和维度聊聊" }));
+    expect(onDiscussNode).toHaveBeenCalledWith(expect.objectContaining({
+      domainNodeId: "claim-live", orbitCenterId: "goal-live", orbitRelation: "orbits",
+      lineage: projection.constellation.cognitions[0].lineage,
+      detail: expect.stringContaining("已根据近期记录更新"),
+    }));
+    expect(onDiscussNode.mock.calls[0][0].detail).toContain("与「把维度做成可靠的个人系统」有已确认的关联");
   });
 });

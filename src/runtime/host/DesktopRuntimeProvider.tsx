@@ -95,3 +95,8 @@ export function useDesktopRuntime(): DesktopRuntimeContextValue {
   }
   return value;
 }
+
+/** Local desktop notes also work in seed/native views without an HTTP provider. */
+export function useDesktopRuntimeOptional(): DesktopRuntimeContextValue | null {
+  return useContext(DesktopRuntimeContext);
+}

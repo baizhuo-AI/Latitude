@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
@@ -10,6 +11,8 @@ export default defineConfig({
     port: 4173
   },
   test: {
+    // Local visual drafts can contain historical source snapshots, not runnable suites.
+    exclude: [...configDefaults.exclude, "out/**"],
     environment: "jsdom",
     globals: true,
     setupFiles: "./src/setupTests.ts",

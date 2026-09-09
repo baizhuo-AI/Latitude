@@ -1,18 +1,20 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SEED_DESKTOP_PROJECTION } from "../../projections/desktop/seedProjection";
 import type { DesktopProjection } from "../../projections/desktop/types";
 import {
+  BROWSER_PRODUCT_LAYOUT_DOCUMENT,
   createBrowserCompositionRegistry,
   layoutV1ToUiSurfaceV2,
 } from "../../runtime/composition/browserProduction";
 import { SEED_LAYOUT_DOCUMENT } from "../../runtime/layout/seedLayout";
 import {
   buildClueThreads,
+  ClueBoardPreset,
   CONNECTION_STORAGE_KEY
 } from "./ClueBoardPreset";
 import { DimensionPresetApp } from "./DimensionPresetApp";
-import { deriveThreadDesktop } from "./threadDesktop";
+import { areaReferenceCardId, readDesktopWorkspace, reconcileDesktopWorkspace } from "../desktopWorkspace";
 
 function seedThreads() {
   const anchors = SEED_DESKTOP_PROJECTION.bindings["desktop.schedule"];
@@ -68,354 +70,215 @@ function typedGoalProjection() {
   return projection;
 }
 
-describe("线索节点内置桌面与可编辑连接", () => {
-  afterEach(() => {
-    window.localStorage.removeItem(CONNECTION_STORAGE_KEY);
-    vi.useRealTimers();
-  });
+function paperOf(container: HTMLElement) { return container.querySelector<HTMLElement>("[data-deck-layer='paper']")!; }
+function cardOf(container: HTMLElement, id: string) { return container.querySelector<HTMLElement>(`[data-layout-card-id="${id}"]`)!; }
+function openThread(title: string) { fireEvent.doubleClick(screen.getByRole("button", { name: new RegExp(`线索 \\d+：${title}.*双击进入主页板块`) })); }
+function editThread(title: string) {
+  fireEvent.click(screen.getByRole("button", { name: "线索板桌面" }));
+  fireEvent.contextMenu(screen.getByRole("button", { name: new RegExp(`线索 \\d+：${title}.*右键打开卡片设置`) }), { clientX: 240, clientY: 180 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "编辑内容" }));
+  return screen.getByRole("dialog", { name: "编辑卡片" });
+}
+const EDITS_KEY = "dim-card-edits-dimension-seed-desktop";
 
-  it("工作、个人项目、短期规划派生三份不同桌面，同时保留原 Todo lineage", () => {
-    const desktops = seedThreads().map((thread) =>
-      deriveThreadDesktop(SEED_DESKTOP_PROJECTION, SEED_LAYOUT_DOCUMENT, thread)
-    );
-    expect(desktops.map((desk) => desk.projection.header.title)).toEqual([
-      "工作现状 · 今日交付台",
-      "个人项目进度 · 创作台",
-      "短期规划 · 推演台"
-    ]);
-    expect(new Set(desktops.map((desk) => desk.layout.id)).size).toBe(3);
-    expect(desktops.map((desk) => desk.layout.arrangement.orderedCardIds)).toEqual([
-      ["seed-feed", "seed-schedule", "seed-review-plan", "seed-rhythm", "seed-flex"],
-      ["seed-schedule", "seed-feed", "seed-flex", "seed-review-plan", "seed-rhythm"],
-      ["seed-review-plan", "seed-schedule", "seed-feed", "seed-rhythm", "seed-flex"]
-    ]);
-    const spansByRegion = desktops.map((desk) =>
-      Object.fromEntries(desk.layout.cards.map((card) => [card.region, card.span]))
-    );
-    expect(spansByRegion[0]).toMatchObject({ feed: 5, schedule: 7 });
-    expect(spansByRegion[1]).toMatchObject({ schedule: 5, feed: 7 });
-    expect(spansByRegion[2]).toMatchObject({ "review-plan": 12, schedule: 7, feed: 5 });
+describe("单张桌面的线索板块与可编辑连接", () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => { window.localStorage.clear(); vi.useRealTimers(); });
 
-    const rows = desktops.map((desk) => {
-      const binding = desk.projection.bindings["desktop.schedule"];
-      if (binding?.kind !== "anchors") throw new Error("thread schedule missing");
-      return binding.rows;
-    });
-    expect(rows.map((set) => set.map((row) => row.text))).toEqual([
+  it("三个板块分配不同位置，改名和重进不挪位，保留原 Todo lineage", () => {
+    const threads = seedThreads();
+    const first = reconcileDesktopWorkspace({ version: 1, areas: {}, activeAreaId: null }, threads, SEED_LAYOUT_DOCUMENT.id);
+    expect(new Set(Object.values(first.areas).map(area => `${area.x}:${area.y}`)).size).toBe(3);
+    const renamed = threads.map((thread, index) => index === 0 ? { ...thread, title: "工作改名" } : thread);
+    const second = reconcileDesktopWorkspace(first, renamed, SEED_LAYOUT_DOCUMENT.id);
+    expect(second.areas[threads[0].id]).toMatchObject({ x: first.areas[threads[0].id].x, y: first.areas[threads[0].id].y, title: "工作改名" });
+    expect(reconcileDesktopWorkspace(second, renamed, SEED_LAYOUT_DOCUMENT.id)).toEqual(second);
+    expect(threads.map(thread => thread.rows.map(row => row.text))).toEqual([
       ["给客户 1 准备日报", "修改客户 2 的 agent badcase"],
-      ["newsletter 选题草稿：AI 时代的判断力"],
-      ["周五前定下 Q3 学习计划"]
+      ["newsletter 选题草稿：AI 时代的判断力"], ["周五前定下 Q3 学习计划"]
     ]);
-    expect(rows[0][0].lineage?.entityId).toBe("seed-todo-daily-report");
+    expect(threads[0].rows[0].lineage?.entityId).toBe("seed-todo-daily-report");
   });
 
   it.each([
-    ["工作现状", "工作现状 · 今日交付台", "给客户 1 准备日报", "newsletter 选题草稿：AI 时代的判断力"],
-    ["个人项目进度", "个人项目进度 · 创作台", "newsletter 选题草稿：AI 时代的判断力", "给客户 1 准备日报"],
-    ["短期规划", "短期规划 · 推演台", "周五前定下 Q3 学习计划", "给客户 1 准备日报"]
-  ])("点进%s后首屏是它自己的标题和内容", (thread, deskTitle, included, excluded) => {
-    const { container } = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: new RegExp(`线索 \\d+：${thread}.*进这张桌面`) })
-    );
-
-    expect(container.querySelector(".dim-deck")).toHaveAttribute("data-transition", "corner");
+    ["工作现状", "给客户 1 准备日报", "newsletter 选题草稿：AI 时代的判断力"],
+    ["个人项目进度", "newsletter 选题草稿：AI 时代的判断力", "给客户 1 准备日报"],
+    ["短期规划", "周五前定下 Q3 学习计划", "给客户 1 准备日报"]
+  ])("从%s进入对应板块，根布局和已挂载卡片保持不变", (title, included, otherContent) => {
+    const { container } = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    const paper = paperOf(container);
+    const layout = paper.querySelector("[data-layout-document]");
+    const baseCard = cardOf(paper, "seed-schedule");
+    const workspace = readDesktopWorkspace(SEED_LAYOUT_DOCUMENT.id);
+    openThread(title);
+    expect(container.querySelector(".dim-deck")).toHaveAttribute("data-transition", "passage");
     expect(container.querySelector(".dim-deck")).toHaveAttribute("data-direction", "down");
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    expect(within(paperLayer).getByRole("heading", { name: deskTitle })).toBeInTheDocument();
-    expect(paperLayer).toHaveTextContent(included);
-    expect(paperLayer).not.toHaveTextContent(excluded);
-
-    fireEvent.click(within(paperLayer).getByRole("button", { name: "退出聚焦" }));
-    expect(within(paperLayer).getByRole("heading", { name: "上午先把客户 1 的日报发出去" })).toBeInTheDocument();
+    expect(paper.querySelector("[data-layout-document]")).toBe(layout);
+    expect(layout).toHaveAttribute("data-layout-document", SEED_LAYOUT_DOCUMENT.id);
+    expect(cardOf(paper, "seed-schedule")).toBe(baseCard);
+    expect(paper.querySelector(".dim-desktop-location-tools")).toHaveTextContent(title);
+    expect(paper).toHaveTextContent(included);
+    expect(paper).toHaveTextContent(otherContent);
+    const thread = seedThreads().find(item => item.title === title)!;
+    const area = cardOf(paper, areaReferenceCardId(thread.id));
+    expect(area).toHaveTextContent(included);
+    expect(area).not.toHaveTextContent(otherContent);
+    fireEvent.click(container.querySelector(".dim-deck-home")!);
+    expect(paper.querySelector("[aria-label='当前桌面板块']")).toHaveTextContent("桌面");
+    expect(paper.querySelector("[data-layout-document]")).toBe(layout);
+    expect(readDesktopWorkspace(SEED_LAYOUT_DOCUMENT.id).areas).toEqual(workspace.areas);
+    expect(paper.querySelector(".dim-focus-capsule")).not.toBeInTheDocument();
   });
 
-  it("typed 中期目标会进入真实的目标专属桌面，而不是只切换纸面层", () => {
-    const browserLayout = structuredClone(SEED_LAYOUT_DOCUMENT);
-    browserLayout.id = "latitude-browser-live";
-    browserLayout.revision = 3;
-    const composition = {
-      registry: createBrowserCompositionRegistry(),
-      document: layoutV1ToUiSurfaceV2(browserLayout),
-    };
-    const { container } = render(
-      <DimensionPresetApp
-        projection={typedGoalProjection()}
-        layout={browserLayout}
-        composition={composition}
-        initialPreset="clue-board"
-        syncUrl={false}
-        localCardEditing="disabled"
-      />
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /中期目标 1：完成客户交付.*进这张桌面/ })
-    );
-
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    expect(container.querySelector(".dim-deck")).toHaveAttribute("data-active", "paper");
-    expect(within(paperLayer).getByRole("heading", { name: "完成客户交付 · 专注桌面" }))
-      .toBeInTheDocument();
-    expect(within(paperLayer).queryByText("布局文档有问题")).not.toBeInTheDocument();
-    expect(within(paperLayer).getByRole("status"))
-      .toHaveTextContent("正在看线索 · 完成客户交付");
-    expect(paperLayer).toHaveTextContent("建立产品闭环验收尺");
-    expect(paperLayer).toHaveTextContent("形成一页客户经营 POC 方案");
-    expect(paperLayer).not.toHaveTextContent("newsletter 选题草稿");
+  it("typed 中期目标使用稳定板块身份，保留明确行动来源并通过原业务出口", () => {
+    const browserLayout = structuredClone(BROWSER_PRODUCT_LAYOUT_DOCUMENT);
+    const onLineage = vi.fn();
+    const { container } = render(<DimensionPresetApp projection={typedGoalProjection()} layout={browserLayout}
+      composition={{ registry: createBrowserCompositionRegistry(), document: layoutV1ToUiSurfaceV2(browserLayout) }}
+      initialPreset="clue-board" syncUrl={false} localCardEditing="disabled" layerHandlers={{ onLineage }} />);
+    fireEvent.doubleClick(screen.getByRole("button", { name: /中期目标 1：完成客户交付.*双击进入主页板块/ }));
+    const paper = paperOf(container);
+    expect(paper.querySelector("[data-layout-document]")).toHaveAttribute("data-layout-document", browserLayout.id);
+    expect(paper.querySelector(".dim-desktop-location-tools")).toHaveTextContent("完成客户交付");
+    expect(paper).not.toHaveTextContent("布局文档有问题");
+    const reference = cardOf(paper, areaReferenceCardId("goal-theme-client"));
+    expect(reference).toHaveTextContent("建立产品闭环验收尺");
+    expect(reference).toHaveTextContent("形成一页客户经营 POC 方案");
+    expect(reference.querySelectorAll(".is-dimmed")).toHaveLength(0);
+    fireEvent.contextMenu(reference.querySelector(".dim-drag")!, { clientX: 280, clientY: 240 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "编辑内容" }));
+    const content = screen.getByRole("dialog", { name: "编辑内容：完成客户交付 · 相关记录" });
+    fireEvent.click(within(content).getAllByRole("button", { name: "查看来源：来自统一 Domain 的中期目标行动" })[0]);
+    expect(onLineage).toHaveBeenCalledWith(expect.objectContaining({ entityType: "action", entityId: "action-acceptance" }));
   });
 
   it("连接可从支撑改为待验证，并在重新挂载后读回", () => {
-    const first = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "调整「工作现状」连接，当前为支撑" })
-    );
+    const first = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑「工作现状」连接，当前为支撑" }));
     const editor = screen.getByRole("complementary", { name: "编辑连接：工作现状" });
     fireEvent.click(within(editor).getByRole("button", { name: "待验证" }));
-    expect(JSON.parse(window.localStorage.getItem(CONNECTION_STORAGE_KEY) ?? "{}")).toEqual({
-      "thread-工作现状": "verify"
-    });
+    expect(JSON.parse(window.localStorage.getItem(CONNECTION_STORAGE_KEY) ?? "{}")).toEqual({ "thread-工作现状": "verify" });
     first.unmount();
-
     render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
-    expect(
-      screen.getByRole("button", { name: "调整「工作现状」连接，当前为待验证" })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "编辑「工作现状」连接，当前为待验证" })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑「工作现状」连接，当前为待验证" })).toBeInTheDocument();
+    expect(document.querySelector(".clue-paper-relation")).toBeNull();
   });
 
-  it("线索纸节点编辑只作用当前节点，标题属于该桌面而 Todo 内容按 lineage 合回", () => {
-    vi.useFakeTimers();
-    window.localStorage.removeItem("dim-card-edits-dimension-seed-desktop");
-    const { container } = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "编辑线索内容：工作现状" })
-    );
-    const dialog = screen.getByRole("dialog", { name: "编辑卡片" });
-    const contentInputs = within(dialog).getAllByLabelText("内容");
-    expect(contentInputs).toHaveLength(2);
+  it("线索编辑的标题只改变该板块，业务内容按 lineage 同步到常用区和关联卡", () => {
+    const { container } = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    const dialog = editThread("工作现状");
+    const inputs = within(dialog).getAllByLabelText("内容");
+    expect(inputs).toHaveLength(2);
     expect(within(dialog).queryByDisplayValue(/newsletter 选题草稿/)).not.toBeInTheDocument();
-    expect(within(dialog).queryByDisplayValue(/Q3 学习计划/)).not.toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText("卡片标题"), {
-      target: { value: "工作线索 · 交付桌" }
-    });
-    fireEvent.change(contentInputs[0], {
-      target: { value: "给客户 1 发新版日报" }
-    });
+    fireEvent.change(within(dialog).getByLabelText("卡片标题"), { target: { value: "工作线索 · 交付桌" } });
+    fireEvent.change(inputs[0], { target: { value: "给客户 1 发新版日报" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "保存到桌面" }));
-
-    // 个人项目桌面有自己的标题与内容，不吃工作节点的 presentation。
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：个人项目进度.*进这张桌面/ })
-    );
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    expect(
-      within(paperLayer).getByRole("heading", { name: "个人项目进度 · 行动清单" })
-    ).toBeInTheDocument();
-    expect(paperLayer).toHaveTextContent("newsletter 选题草稿：AI 时代的判断力");
-    expect(paperLayer).not.toHaveTextContent("给客户 1 发新版日报");
-
-    act(() => vi.advanceTimersByTime(950));
-    fireEvent.click(screen.getByRole("button", { name: "线索板桌面" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：工作现状.*进这张桌面/ })
-    );
-    expect(
-      within(paperLayer).getByRole("heading", { name: "工作线索 · 交付桌" })
-    ).toBeInTheDocument();
-    expect(paperLayer).toHaveTextContent("给客户 1 发新版日报");
-
-    // 退出后 Todo 改名仍在总桌面，但总卡标题和其他三行保持原样。
-    fireEvent.click(within(paperLayer).getByRole("button", { name: "退出聚焦" }));
-    expect(within(paperLayer).getByRole("heading", { name: "今天的锚点" })).toBeInTheDocument();
-    expect(paperLayer.querySelectorAll(".dim-anchor-row")).toHaveLength(4);
-    expect(paperLayer).toHaveTextContent("给客户 1 发新版日报");
-    expect(paperLayer).toHaveTextContent("newsletter 选题草稿：AI 时代的判断力");
-    expect(paperLayer).toHaveTextContent("周五前定下 Q3 学习计划");
-    window.localStorage.removeItem("dim-card-edits-dimension-seed-desktop");
+    openThread("个人项目进度");
+    const paper = paperOf(container);
+    const work = cardOf(paper, areaReferenceCardId("thread-工作现状"));
+    const personal = cardOf(paper, areaReferenceCardId("thread-个人项目进度"));
+    expect(within(work).getByRole("heading", { name: "工作线索 · 交付桌" })).toBeInTheDocument();
+    expect(work).toHaveTextContent("给客户 1 发新版日报");
+    expect(personal).toHaveTextContent("newsletter 选题草稿：AI 时代的判断力");
+    expect(personal).not.toHaveTextContent("给客户 1 发新版日报");
+    const base = cardOf(paper, "seed-schedule");
+    expect(within(base).getByRole("heading", { name: "今天的锚点" })).toBeInTheDocument();
+    expect(base.querySelectorAll(".dim-anchor-row")).toHaveLength(4);
+    expect(base).toHaveTextContent("给客户 1 发新版日报");
+    fireEvent.click(container.querySelector(".dim-deck-home")!);
+    expect(within(work).getByRole("heading", { name: "工作线索 · 交付桌" })).toBeInTheDocument();
   });
 
-  it("聚焦桌面整卡编辑按 lineage 合回总桌面，不删除其他线索", () => {
-    const { container } = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：个人项目进度.*进这张桌面/ })
-    );
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    fireEvent.doubleClick(
-      within(paperLayer).getByLabelText(
-        "卡片：个人项目进度 · 行动清单。双击或按 Enter 编辑"
-      )
-    );
-    const dialog = screen.getByRole("dialog", { name: "编辑卡片" });
-    fireEvent.change(within(dialog).getByLabelText("卡片标题"), {
-      target: { value: "我的 newsletter 桌" }
-    });
-    fireEvent.change(within(dialog).getByLabelText("内容"), {
-      target: { value: "newsletter 写完第一段" }
-    });
+  it("板块整卡编辑按 lineage 合回，不删除其他线索，重新挂载仍读回标题与内容", () => {
+    const first = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    const dialog = editThread("个人项目进度");
+    fireEvent.change(within(dialog).getByLabelText("卡片标题"), { target: { value: "我的 newsletter 桌" } });
+    fireEvent.change(within(dialog).getByLabelText("内容"), { target: { value: "newsletter 写完第一段" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "保存到桌面" }));
-    expect(
-      within(paperLayer).getByRole("heading", { name: "我的 newsletter 桌" })
-    ).toBeInTheDocument();
-
-    fireEvent.click(within(paperLayer).getByRole("button", { name: "退出聚焦" }));
-    expect(paperLayer.querySelectorAll(".dim-anchor-row")).toHaveLength(4);
-    expect(paperLayer).toHaveTextContent("newsletter 写完第一段");
-    expect(paperLayer).toHaveTextContent("给客户 1 准备日报");
-    expect(paperLayer).toHaveTextContent("周五前定下 Q3 学习计划");
-    expect(within(paperLayer).queryByRole("heading", { name: "我的 newsletter 桌" })).not.toBeInTheDocument();
-    expect(within(paperLayer).getByRole("heading", { name: "今天的锚点" })).toBeInTheDocument();
-
-    const stored = JSON.parse(
-      window.localStorage.getItem("dim-card-edits-dimension-seed-desktop") ?? "{}"
-    );
+    const stored = JSON.parse(window.localStorage.getItem(EDITS_KEY)!);
     expect(stored.bindings["desktop.schedule"].rows).toHaveLength(4);
-    window.localStorage.removeItem("dim-card-edits-dimension-seed-desktop");
+    expect(stored.bindings["desktop.schedule"].rows.find((row: { text: string }) => row.text === "newsletter 写完第一段").lineage.entityId).toBe("seed-todo-newsletter");
+    first.unmount();
+    const second = render(<DimensionPresetApp initialPreset="paper" syncUrl={false} />);
+    const paper = paperOf(second.container);
+    expect(within(paper).getByRole("heading", { name: "我的 newsletter 桌" })).toBeInTheDocument();
+    const base = cardOf(paper, "seed-schedule");
+    expect(base).toHaveTextContent("newsletter 写完第一段");
+    expect(base).toHaveTextContent("给客户 1 准备日报");
+    expect(base).toHaveTextContent("周五前定下 Q3 学习计划");
+    expect(within(base).getByRole("heading", { name: "今天的锚点" })).toBeInTheDocument();
   });
 
-  it("个人项目的派生摘要只写在线索桌面，返回总桌面不覆盖真实 feed", () => {
-    vi.useFakeTimers();
-    window.localStorage.removeItem("dim-card-edits-dimension-seed-desktop");
-    const { container } = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：个人项目进度.*进这张桌面/ })
-    );
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    fireEvent.doubleClick(
-      within(paperLayer).getByLabelText(
-        "卡片：个人项目进度的相关线索。双击或按 Enter 编辑"
-      )
-    );
-    const dialog = screen.getByRole("dialog", { name: "编辑卡片" });
-    fireEvent.change(within(dialog).getByLabelText("卡片标题"), {
-      target: { value: "个人项目情报角" }
-    });
-    fireEvent.change(within(dialog).getByLabelText("标题"), {
-      target: { value: "newsletter 已经找到开头" }
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存到桌面" }));
-    expect(paperLayer).toHaveTextContent("newsletter 已经找到开头");
-    expect(within(paperLayer).getByRole("heading", { name: "个人项目情报角" })).toBeInTheDocument();
-
-    fireEvent.click(within(paperLayer).getByRole("button", { name: "退出聚焦" }));
-    expect(paperLayer).toHaveTextContent("客户 1 的日报模板昨晚改版了");
-    expect(paperLayer).toHaveTextContent("agent badcase 分类法有一篇新总结");
-    expect(paperLayer).not.toHaveTextContent("newsletter 已经找到开头");
-    expect(within(paperLayer).getByRole("heading", { name: "今日早报" })).toBeInTheDocument();
-
-    act(() => vi.advanceTimersByTime(950));
-    fireEvent.click(screen.getByRole("button", { name: "线索板桌面" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：个人项目进度.*进这张桌面/ })
-    );
-    expect(paperLayer).toHaveTextContent("newsletter 已经找到开头");
-    expect(within(paperLayer).getByRole("heading", { name: "个人项目情报角" })).toBeInTheDocument();
-    window.localStorage.removeItem("dim-card-edits-dimension-seed-desktop");
+  it("旧板块的摘要与标题作为保留卡呈现，不覆盖真实早报，也不因导航消失", () => {
+    const feed = SEED_DESKTOP_PROJECTION.bindings["desktop.feed"];
+    if (feed?.kind !== "feed") throw new Error("seed feed missing");
+    window.localStorage.setItem(EDITS_KEY, JSON.stringify({ bindings: {}, presentations: {},
+      threadBindings: { "个人项目进度": { "desktop.feed": { ...feed, items: [{ ...feed.items[0], title: "newsletter 已经找到开头" }] } } },
+      threadPresentations: { "个人项目进度": { "seed-feed": { ...SEED_LAYOUT_DOCUMENT.cards.find(card => card.id === "seed-feed")!.presentation, title: "个人项目情报角" } } }
+    }));
+    const { container } = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    openThread("个人项目进度");
+    const paper = paperOf(container);
+    const saved = cardOf(paper, "area-edit:thread-个人项目进度:desktop.feed");
+    expect(saved).toHaveTextContent("newsletter 已经找到开头");
+    expect(within(saved).getByRole("heading", { name: "个人项目情报角" })).toBeInTheDocument();
+    const base = cardOf(paper, "seed-feed");
+    expect(base).toHaveTextContent("客户 1 的日报模板昨晚改版了");
+    expect(base).toHaveTextContent("agent badcase 分类法有一篇新总结");
+    expect(base).not.toHaveTextContent("newsletter 已经找到开头");
+    fireEvent.click(container.querySelector(".dim-deck-home")!);
+    expect(cardOf(paper, "area-edit:thread-个人项目进度:desktop.feed")).toBe(saved);
   });
 
-  it("聚焦 anchors 恢复时只回滚本线索，保留其他线索已有编辑", () => {
+  it("恢复来源只回滚当前线索，保留其他线索已有编辑", () => {
     const schedule = SEED_DESKTOP_PROJECTION.bindings["desktop.schedule"];
     if (schedule?.kind !== "anchors") throw new Error("seed schedule missing");
-    window.localStorage.setItem(
-      "dim-card-edits-dimension-seed-desktop",
-      JSON.stringify({
-        bindings: {
-          "desktop.schedule": {
-            ...schedule,
-            rows: schedule.rows.map((row) =>
-              row.tags?.includes("个人项目进度")
-                ? { ...row, text: "个人项目已有自定义名称" }
-                : row
-            )
-          }
-        },
-        presentations: {},
-        threadBindings: {},
-        threadPresentations: {}
-      })
-    );
-    const { container } = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：工作现状.*进这张桌面/ })
-    );
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    const editWorkCard = () =>
-      fireEvent.doubleClick(
-        within(paperLayer).getByLabelText(
-          "卡片：工作现状 · 行动清单。双击或按 Enter 编辑"
-        )
-      );
-    editWorkCard();
-    let dialog = screen.getByRole("dialog", { name: "编辑卡片" });
-    fireEvent.change(within(dialog).getAllByLabelText("内容")[0], {
-      target: { value: "工作日报临时改名" }
-    });
+    window.localStorage.setItem(EDITS_KEY, JSON.stringify({ bindings: { "desktop.schedule": { ...schedule,
+      rows: schedule.rows.map(row => row.tags?.includes("个人项目进度") ? { ...row, text: "个人项目已有自定义名称" } : row)
+    } }, presentations: {}, threadBindings: {}, threadPresentations: {} }));
+    const { container } = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    let dialog = editThread("工作现状");
+    fireEvent.change(within(dialog).getAllByLabelText("内容")[0], { target: { value: "工作日报临时改名" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "保存到桌面" }));
-    expect(paperLayer).toHaveTextContent("工作日报临时改名");
-
-    editWorkCard();
-    dialog = screen.getByRole("dialog", { name: "编辑卡片" });
+    expect(paperOf(container)).toHaveTextContent("工作日报临时改名");
+    dialog = editThread("工作现状");
     fireEvent.click(within(dialog).getByRole("button", { name: "恢复来源内容" }));
-    expect(paperLayer).toHaveTextContent("给客户 1 准备日报");
-    expect(paperLayer).not.toHaveTextContent("工作日报临时改名");
-
-    fireEvent.click(within(paperLayer).getByRole("button", { name: "退出聚焦" }));
-    expect(paperLayer).toHaveTextContent("个人项目已有自定义名称");
-    expect(paperLayer).toHaveTextContent("给客户 1 准备日报");
-    window.localStorage.removeItem("dim-card-edits-dimension-seed-desktop");
+    const paper = paperOf(container);
+    expect(paper).toHaveTextContent("给客户 1 准备日报");
+    expect(paper).not.toHaveTextContent("工作日报临时改名");
+    expect(paper).toHaveTextContent("个人项目已有自定义名称");
   });
 
-  it("总桌面、工作桌面、个人项目桌面的拖拽偏移互不串台", () => {
-    vi.useFakeTimers();
-    window.localStorage.clear();
-    const { container } = render(
-      <DimensionPresetApp initialPreset="clue-board" syncUrl={false} />
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：工作现状.*进这张桌面/ })
-    );
-    const paperLayer = container.querySelector("[data-deck-layer='paper']");
-    if (!(paperLayer instanceof HTMLElement)) throw new Error("paper layer missing");
-    const workCard = paperLayer.querySelector("[data-layout-card-id='seed-flex'] .dim-drag");
-    if (!(workCard instanceof HTMLElement)) throw new Error("work flex card missing");
-    fireEvent.pointerDown(workCard, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(workCard, { pointerId: 1, clientX: 130, clientY: 118 });
-    fireEvent.pointerUp(workCard, { pointerId: 1, clientX: 130, clientY: 118 });
-    expect(workCard).toHaveStyle({ translate: "30px 18px" });
-
-    act(() => vi.advanceTimersByTime(950));
+  it("卡片位置属于共享桌面，跨板块和回常用区保持同一DOM及拖拽偏移", () => {
+    const { container } = render(<DimensionPresetApp initialPreset="clue-board" syncUrl={false} />);
+    openThread("工作现状");
+    const paper = paperOf(container);
+    const card = cardOf(paper, "seed-flex").querySelector<HTMLElement>(".dim-drag")!;
+    fireEvent.pointerDown(card, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(card, { pointerId: 1, clientX: 130, clientY: 118 });
+    fireEvent.pointerUp(card, { pointerId: 1, clientX: 130, clientY: 118 });
+    expect(card).toHaveStyle({ translate: "30px 18px" });
+    const offsets = window.localStorage.getItem(`dim-desk-offsets-${SEED_LAYOUT_DOCUMENT.id}`);
     fireEvent.click(screen.getByRole("button", { name: "线索板桌面" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: /线索 \d+：个人项目进度.*进这张桌面/ })
-    );
-    const personalCard = paperLayer.querySelector("[data-layout-card-id='seed-flex'] .dim-drag");
-    if (!(personalCard instanceof HTMLElement)) throw new Error("personal flex card missing");
-    expect(personalCard).not.toHaveStyle({ translate: "30px 18px" });
-
-    fireEvent.click(within(paperLayer).getByRole("button", { name: "退出聚焦" }));
-    const totalCard = paperLayer.querySelector("[data-layout-card-id='seed-flex'] .dim-drag");
-    if (!(totalCard instanceof HTMLElement)) throw new Error("total flex card missing");
-    expect(totalCard).not.toHaveStyle({ translate: "30px 18px" });
-    window.localStorage.clear();
+    openThread("个人项目进度");
+    expect(cardOf(paper, "seed-flex").querySelector(".dim-drag")).toBe(card);
+    expect(card).toHaveStyle({ translate: "30px 18px" });
+    fireEvent.click(container.querySelector(".dim-deck-home")!);
+    expect(card).toHaveStyle({ translate: "30px 18px" });
+    expect(window.localStorage.getItem(`dim-desk-offsets-${SEED_LAYOUT_DOCUMENT.id}`)).toBe(offsets);
   });
+});
+
+
+it("keeps all goals on the unbounded board without pagination", () => {
+  const projection = typedGoalProjection();
+  const theme = projection.clueBoard!.themes[0];
+  projection.clueBoard!.themes = Array.from({ length: 5 }, (_, i) => ({ ...theme, id: `goal-${i}`, title: `目标 ${i + 1}` }));
+  const { rerender } = render(<ClueBoardPreset projection={projection} />);
+  expect(screen.getByRole("heading", { name: "目标 5" })).toBeVisible();
+  const next = structuredClone(projection);
+  next.clueBoard!.themes.pop();
+  rerender(<ClueBoardPreset projection={next} />);
+  expect(screen.getByRole("heading", { name: "目标 1" })).toBeVisible();
+  expect(screen.queryByRole("navigation", { name: "目标分页" })).not.toBeInTheDocument();
 });

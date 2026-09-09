@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "node scripts/build-native-runtime.mjs && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -14,6 +14,7 @@
     "windows": [
       {
         "label": "main",
+        "backgroundThrottling": "disabled",
         "title": "Latitude",
         "width": 1100,
         "height": 740,
@@ -27,22 +28,25 @@
       {
         "label": "chatbar",
         "title": "Latitude · 对话",
-        "url": "/index.html#/__chatbar__",
-        "width": 560,
-        "height": 72,
-        "resizable": true,
+        "url": "/index.html#/__pet_chat__",
+        "width": 420,
+        "height": 460,
+        "resizable": false,
         "decorations": false,
         "alwaysOnTop": true,
-        "skipTaskbar": false,
+        "skipTaskbar": true,
         "transparent": true,
         "shadow": true,
         "visible": false,
+        "focus": false,
+        "acceptFirstMouse": true,
         "center": false,
         "x": 360,
         "y": 640
       },
       {
         "label": "todo",
+        "create": false,
         "title": "Latitude · 待办",
         "url": "/index.html#/__todo__",
         "width": 280,
@@ -62,6 +66,7 @@
       },
       {
         "label": "launcher",
+        "create": false,
         "title": "Latitude",
         "url": "/index.html#/__launcher__",
         "width": 48,
@@ -72,21 +77,69 @@
         "skipTaskbar": true,
         "transparent": true,
         "shadow": true,
-        "visible": true,
+        "visible": false,
         "center": false,
         "x": 40,
         "y": 700
+      },
+      {
+        "label": "pet",
+        "backgroundThrottling": "disabled",
+        "title": "维度秘书",
+        "url": "/index.html#/__pet__",
+        "width": 220,
+        "height": 260,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "focusable": false,
+        "acceptFirstMouse": true,
+        "visibleOnAllWorkspaces": true,
+        "closable": false
+      },
+      {
+        "label": "pet-notice",
+        "title": "维度秘书提醒",
+        "url": "/index.html#/__pet_notice__",
+        "width": 340,
+        "height": 180,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "focusable": false,
+        "acceptFirstMouse": true,
+        "visibleOnAllWorkspaces": true,
+        "closable": false
       }
     ]
   },
   "bundle": {
     "active": true,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "infoPlist": "Info.plist"
+    },
     "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.png"
-    ]
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/agent/": "agent/"
+    }
   }
 }

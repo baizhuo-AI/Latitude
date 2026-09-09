@@ -35,6 +35,34 @@ afterEach(async () => {
 });
 
 describe("AgentHttpServer browser contract", () => {
+  it("exposes versioned persona edits, latest-run recovery and cursor-based native progress", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "latitude-http-experience-"));
+    roots.push(root);
+    const config = testConfig(root);
+    const ledger = new AuditLedger(root);
+    const domain = new FakeDomain();
+    const runtime = new DshRuntime({ config, ledger, domain, adapter: textAdapter("可读答复"), installOfficialWebSearch: false });
+    const jobs = new RunJobStore(runtime, ledger);
+    const scheduler = new DurableScheduler(domain, jobs, ledger, config.schedulerPollMs);
+    const admin = new AgentAdminService({ stateDir: root, ledger });
+    const server = new AgentHttpServer({ config, runtime, jobs, domain, scheduler, admin });
+    const { url } = await server.start();
+    closers.push(() => runtime.close(), () => scheduler.close(), () => server.close());
+    const persona = await (await fetch(`${url}/v1/agent/persona`)).json();
+    expect(persona.current).toMatchObject({ version: 0, actor: "system" });
+    const edit = (baseVersion: number) => fetch(`${url}/v1/agent/persona`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ baseVersion, preferences: "说大白话", reason: "用户补充" }) });
+    expect((await (await edit(0)).json()).current).toMatchObject({ version: 1, preferences: "说大白话", actor: "user" });
+    expect((await edit(0)).status).toBe(409);
+    expect(await (await fetch(`${url}/v1/agent/sessions/recovery/latest-run`)).json()).toEqual({ run: null });
+    const accepted = await (await fetch(`${url}/v1/agent/turns`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: "recovery", text: "合成验收" }) })).json();
+    await waitForCompleted(`${url}/v1/agent/runs/${accepted.runId}`);
+    expect(await (await fetch(`${url}/v1/agent/sessions/recovery/latest-run`)).json()).toMatchObject({ run: { runId: accepted.runId, status: "completed" } });
+    const page = await (await fetch(`${url}/v1/agent/runs/${accepted.runId}/events?after=-1`)).json();
+    expect(page).toMatchObject({ runId: accepted.runId, phase: "finished", hasMore: false, items: [] });
+    expect(page.next).toBeGreaterThan(-1);
+    expect((await fetch(`${url}/v1/agent/runs/missing/events?after=-1`)).status).toBe(404);
+  });
+
   it("reports a provider authentication failure as unavailable without exposing provider text", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "latitude-http-auth-"));
     roots.push(root);
@@ -270,6 +298,29 @@ describe("AgentHttpServer browser contract", () => {
       state: { restartRequired: false, mutationInProgress: true },
     });
     Reflect.set(admin, "mutationInProgress", false);
+
+    const providerSettings = await fetch(`${address.url}/v1/agent/settings/provider`);
+    expect(providerSettings.status).toBe(200);
+    expect(await providerSettings.json()).toMatchObject({
+      active: { provider: "fake", model: "fake-model" },
+      options: [{
+        id: "fake",
+        configured: true,
+        credentialName: "DEEPSEEK_API_KEY",
+        models: [{ id: "fake-model" }],
+      }],
+      appliesTo: "next_turn",
+    });
+    const savedProvider = await fetch(`${address.url}/v1/agent/settings/provider`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "fake", model: "fake-model" }),
+    });
+    expect(savedProvider.status).toBe(200);
+    expect(await savedProvider.json()).toMatchObject({
+      active: { provider: "fake", model: "fake-model" },
+    });
+
     if (priorKey !== undefined) process.env.DEEPSEEK_API_KEY = priorKey;
     else delete process.env.DEEPSEEK_API_KEY;
 
@@ -302,6 +353,8 @@ describe("AgentHttpServer browser contract", () => {
       status: "completed",
       result: { status: "completed", assistantText: "host answer" },
     });
+    expect(finished.result).not.toHaveProperty("events");
+    expect(finished.request).not.toHaveProperty("systemPrompt");
 
     const history = await fetch(
       `${address.url}/v1/agent/sessions/browser-session/messages?limit=100`,

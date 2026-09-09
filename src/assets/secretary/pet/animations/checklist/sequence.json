@@ -1,0 +1,55 @@
+{
+  "id": "checklist",
+  "title": "核对清单",
+  "description": "逐项看过，勾好后再核对一遍。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "看这一项",
+    "笔尖落下",
+    "画短斜线",
+    "勾完这一项",
+    "核对下一项",
+    "移到下一行",
+    "准备打勾",
+    "接着核对"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1900
+    },
+    {
+      "frame": 1,
+      "ms": 250
+    },
+    {
+      "frame": 2,
+      "ms": 250
+    },
+    {
+      "frame": 3,
+      "ms": 350
+    },
+    {
+      "frame": 4,
+      "ms": 1800
+    },
+    {
+      "frame": 5,
+      "ms": 400
+    },
+    {
+      "frame": 6,
+      "ms": 350
+    },
+    {
+      "frame": 7,
+      "ms": 1700
+    }
+  ],
+  "duration": 7000
+}

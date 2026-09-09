@@ -225,14 +225,18 @@ async function inspectEnvFile(cwd, env, deps, checks) {
     ));
   }
 
-  const credentialPresent = typeof env.DEEPSEEK_API_KEY === "string" &&
-    env.DEEPSEEK_API_KEY.trim().length > 0;
+  const credentialNames = [
+    "DEEPSEEK_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+  ].filter((name) => typeof env[name] === "string" && env[name].trim().length > 0);
+  const credentialPresent = credentialNames.length > 0;
   checks.push(check(
     "credential_presence",
     credentialPresent,
     credentialPresent
-      ? "DEEPSEEK_API_KEY is present; its value was not printed"
-      : "DEEPSEEK_API_KEY is missing or empty",
+      ? `${credentialNames.join(", ")} is present; values were not printed`
+      : "No supported model provider credential is configured",
   ));
 }
 

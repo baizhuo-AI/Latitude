@@ -1,0 +1,75 @@
+{
+  "id": "plan",
+  "title": "坐着写方案",
+  "description": "写几行，停笔想一想，再接着写。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "开始写方案",
+    "写下一笔",
+    "写第二笔",
+    "写完这一行",
+    "停笔想一想",
+    "找到下一行",
+    "笔尖落下",
+    "继续写"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 700
+    },
+    {
+      "frame": 1,
+      "ms": 250
+    },
+    {
+      "frame": 2,
+      "ms": 250
+    },
+    {
+      "frame": 3,
+      "ms": 400
+    },
+    {
+      "frame": 0,
+      "ms": 250
+    },
+    {
+      "frame": 1,
+      "ms": 250
+    },
+    {
+      "frame": 2,
+      "ms": 250
+    },
+    {
+      "frame": 3,
+      "ms": 400
+    },
+    {
+      "frame": 4,
+      "ms": 2300
+    },
+    {
+      "frame": 5,
+      "ms": 700
+    },
+    {
+      "frame": 6,
+      "ms": 450
+    },
+    {
+      "frame": 7,
+      "ms": 800
+    },
+    {
+      "frame": 0,
+      "ms": 1000
+    }
+  ],
+  "duration": 8000
+}

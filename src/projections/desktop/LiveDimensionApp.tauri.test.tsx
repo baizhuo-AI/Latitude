@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import type { DesktopViewContext } from "../../dimension/desktopWorkspace";
 import { describe, expect, it, vi } from "vitest";
 
 const storeMocks = vi.hoisted(() => ({
@@ -103,10 +105,17 @@ vi.mock("../../dimension/presets/DimensionPresetApp", () => ({
   DimensionPresetApp: (props: {
     onOpenReview?: () => void;
     onOpenSettings?: () => void;
+    onDesktopContextChange?: (context: DesktopViewContext) => void;
+    onSendMessage?: (text: string) => void;
+    thread?: ReactNode;
   }) => (
     <div>
       <button type="button" onClick={props.onOpenReview}>打开共同变化</button>
       <button type="button" onClick={props.onOpenSettings}>打开工具</button>
+      <button type="button" onClick={() => props.onDesktopContextChange?.({ view: "paper", area: { id: "goal-1", title: "客户交付" }, visibleCardIds: ["card-1"] })}>选交付板块</button>
+      <button type="button" onClick={() => props.onDesktopContextChange?.({ view: "paper", area: null, visibleCardIds: ["card-home"] })}>回常用区</button>
+      <button type="button" onClick={() => props.onSendMessage?.("桌面原始消息")}>从桌面发送</button>
+      {props.thread}
     </div>
   )
 }));
@@ -117,6 +126,21 @@ vi.mock("../../pages/TelosPage", () => ({ TelosPage: () => <div>长期目标工�
 import { LiveDimensionApp } from "./LiveDimensionApp";
 
 describe("LiveDimensionApp · Tauri 真实接线", () => {
+  it("passes current UI context through both desktop and continuing DeskThread sends", async () => {
+    storeMocks.chat.sendMessage.mockClear();
+    render(<LiveDimensionApp />);
+    fireEvent.click(screen.getByRole("button", { name: "选交付板块" }));
+    fireEvent.click(screen.getByRole("button", { name: "从桌面发送" }));
+    await waitFor(() => expect(storeMocks.chat.sendMessage).toHaveBeenCalledWith("桌面原始消息", {
+      transientContext: expect.stringContaining('"area":{"id":"goal-1","title":"客户交付"}'),
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "回常用区" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "给秘书发消息" }), { target: { value: "对话里接着说" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(storeMocks.chat.sendMessage).toHaveBeenLastCalledWith("对话里接着说", {
+      transientContext: expect.stringContaining('"area":null,"visibleCardIds":["card-home"]'),
+    }));
+  });
   it("共同变化进入来源后，关闭来源回到时间线而不是丢失上下文", async () => {
     render(<LiveDimensionApp />);
     await waitFor(() => expect(storeMocks.todo.hydrate).toHaveBeenCalled());

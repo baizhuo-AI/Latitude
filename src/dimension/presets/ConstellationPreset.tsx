@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import type { DesktopProjection } from "../../projections/desktop/types";
-import { runtimeStatusLabel } from "../../projections/desktop/types";
 import type { LineageRef } from "../types";
 import "./constellation.css";
 
@@ -32,12 +31,14 @@ export interface ConstellationNode {
 export type ConstellationAction =
   | "select"
   | "open"
-  | "lineage";
+  | "lineage"
+  | "discuss";
 
 export interface ConstellationPresetProps {
   projection: DesktopProjection;
   onNodeSelect?: (node: ConstellationNode) => void;
   onNodeOpen?: (node: ConstellationNode) => void;
+  onDiscussNode?: (node: ConstellationNode) => void;
   onLineage?: (lineage: LineageRef) => void;
   onAction?: (action: ConstellationAction, node: ConstellationNode) => void;
 }
@@ -47,32 +48,22 @@ type StarStyle = CSSProperties & {
   "--cst-y": string;
   "--cst-size": string;
   "--cst-color": string;
-  /** 汇聚进场：视线外初始位相对落点的位移（vw / vh），沿向径指向视野外 */
   "--gx": string;
   "--gy": string;
+  "--gather-delay": string;
+  "--star-twinkle-delay": string;
 };
 
 /** 北极星在正北高处；执行记录与阶段目标不进入这片天空。 */
 const NORTH = { x: 50, y: 15 };
 
-/** 汇聚进场的视点中心（天空构图的视觉重心，略高于几何中心）。 */
-const GATHER_CENTER = { x: 50, y: 42 };
-/** 主星位移系数：落点越靠边，起点越在视线外；再叠加 14 的基础外推，连中心星也赶路。 */
-const STAR_GATHER_PUSH = 1.5;
-const STAR_GATHER_BASE = 14;
-/** 星尘更远更快：它们是前景的「流星群」，位移与失焦都比主星大一号。 */
-const DUST_GATHER_PUSH = 1.9;
-const DUST_GATHER_BASE = 22;
-
-/** 沿「视点 → 落点」向径把起点推出视野；正好在重心上的点向正上方退场。 */
-function gatherOffset(x: number, y: number, push: number, base: number): { gx: number; gy: number } {
-  const dx = x - GATHER_CENTER.x;
-  const dy = y - GATHER_CENTER.y;
-  const len = Math.hypot(dx, dy) || 1;
-  return {
-    gx: dx * push + (dx / len) * base,
-    gy: dy * push + (dy / len) * base
-  };
+/** Restore radial star travel while retaining the current star data and dust count. */
+function gatherOffset(x: number, y: number, push: number, base: number) {
+  const dx = x - 50;
+  const dy = y - 42;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return { gx: 0, gy: -base };
+  return { gx: dx * push + dx / length * base, gy: dy * push + dy / length * base };
 }
 
 const COGNITION_SLOTS = [
@@ -176,11 +167,13 @@ function buildNodes(projection: DesktopProjection): ConstellationNode[] {
   return nodes;
 }
 
-const DUST = Array.from({ length: 232 }, (_, index) => {
+const DUST = Array.from({ length: 84 }, (_, index) => {
   const x = (index * 47 + (index % 7) * 11 + 5) % 101;
   const y = (index * 67 + (index % 11) * 7 + 3) % 97;
-  const gather = gatherOffset(x, y, DUST_GATHER_PUSH, DUST_GATHER_BASE);
+  const gather = gatherOffset(x, y, 1.9, 22);
   return {
+    gx: gather.gx,
+    gy: gather.gy,
     id: `dust-${index}`,
     x,
     y,
@@ -188,16 +181,14 @@ const DUST = Array.from({ length: 232 }, (_, index) => {
     opacity: 0.24 + ((index * 17) % 68) / 100,
     delay: (index * 0.43) % 7,
     bright: index % 19 === 0,
-    depth: index % 3,
-    gx: gather.gx,
-    gy: gather.gy
+    depth: index % 3
   };
 });
 
 export function ConstellationPreset({
   projection,
   onNodeSelect,
-  onNodeOpen,
+  onDiscussNode,
   onLineage,
   onAction
 }: ConstellationPresetProps) {
@@ -217,9 +208,6 @@ export function ConstellationPreset({
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0];
 
   const percent = Math.max(0, Math.min(100, progress?.percent ?? 0));
-  // 北极星外圈的进度环：R=34（相对 100x100 视野）的周长 2πr
-  const RING_R = 34;
-  const ringLength = 2 * Math.PI * RING_R;
 
   const selectNode = (node: ConstellationNode) => {
     setSelectedId(node.id);
@@ -242,11 +230,9 @@ export function ConstellationPreset({
                 top: `${dust.y}%`,
                 width: dust.size,
                 height: dust.size,
-                opacity: dust.opacity,
-                // 闪烁与汇聚是两条时间轴：闪烁的相位偏移植进变量，
-                // 汇聚时由 deck.css 按 --gather-delay 错峰，互不覆盖
+                "--dust-opacity": dust.opacity,
                 "--twinkle-delay": `${dust.delay}s`,
-                "--gather-delay": `${0.16 + dust.depth * 0.1}s`,
+                "--gather-delay": `${.16 + dust.depth * .1}s`,
                 "--gx": `${dust.gx}vw`,
                 "--gy": `${dust.gy}vh`
               } as CSSProperties
@@ -257,10 +243,8 @@ export function ConstellationPreset({
 
       <header className="cst-header">
         <div>
-          <p className="cst-kicker">长期方向</p>
           <h1>此刻星图</h1>
         </div>
-        <span className="cst-status">{runtimeStatusLabel(projection.runtimeStatus)}</span>
       </header>
 
       <section
@@ -286,40 +270,18 @@ export function ConstellationPreset({
             ))}
           </svg>
         )}
-        {/* 北极星 + 进度环 */}
-        {progress && (
-          <svg
-            className="cst-ring-svg"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="xMidYMid meet"
-            aria-hidden="true"
-          >
-            <circle
-              className="cst-ring-bg"
-              cx={NORTH.x}
-              cy={NORTH.y}
-              r={RING_R / 4}
-            />
-            <circle
-              className="cst-ring-fg"
-              cx={NORTH.x}
-              cy={NORTH.y}
-              r={RING_R / 4}
-              strokeDasharray={`${(percent / 100) * (ringLength / 4)} ${ringLength / 4}`}
-            />
-          </svg>
-        )}
-
-        {nodes.map((node) => {
+        {nodes.map((node, index) => {
           const active = node.id === selected.id;
-          const gather = gatherOffset(node.x, node.y, STAR_GATHER_PUSH, STAR_GATHER_BASE);
+          const gather = gatherOffset(node.x, node.y, 1.5, 14);
           const style: StarStyle = {
             "--cst-x": `${node.x}%`,
             "--cst-y": `${node.y}%`,
             "--cst-size": `${node.size}px`,
             "--cst-color": node.color,
             "--gx": `${gather.gx}vw`,
-            "--gy": `${gather.gy}vh`
+            "--gy": `${gather.gy}vh`,
+            "--gather-delay": `${Math.min(.66, .34 + Math.max(0, index - 1) * .08)}s`,
+            "--star-twinkle-delay": `${-index * 0.83}s`
           };
           return (
             <button
@@ -341,10 +303,11 @@ export function ConstellationPreset({
                       : `${node.label}（${node.meta}）`
               }
             >
-              {node.kind === "focus" && (
+              {node.kind === "focus" ? (
                 <span className="cst-north-sparkle" aria-hidden="true" />
+              ) : (
+                <span className="cst-star-core" aria-hidden="true" />
               )}
-              <span className="cst-star-core" aria-hidden="true" />
               <span className="cst-star-label">
                 <small>{node.meta}</small>
                 <strong>{node.label}</strong>
@@ -352,9 +315,6 @@ export function ConstellationPreset({
             </button>
           );
         })}
-
-        {/* 地平线 */}
-        <div className="cst-horizon" aria-hidden="true" />
 
         <p className="cst-sky-note">
           {orbitSegments.length > 0
@@ -365,17 +325,20 @@ export function ConstellationPreset({
 
       {/* 观测只留一行 Caption：这层的职责是仰望，不是阅读 */}
       <footer className="cst-caption" aria-live="polite">
-        <span className="cst-caption-kind">
-          {selected.kind === "focus"
-            ? "北极星"
-            : selected.kind === "cognition"
-              ? "认知评价"
-              : selected.kind === "big-idea"
-                ? "大想法"
-                : "认知星"}
-        </span>
-        <strong>{selected.label}</strong>
-        <span className="cst-caption-detail">{selected.detail}</span>
+        {(onDiscussNode || onAction) && (
+          <button
+            type="button"
+            className="cst-caption-discuss"
+            onClick={() => {
+              onDiscussNode?.(selected);
+              onAction?.("discuss", selected);
+            }}
+            title={`聊聊「${selected.label}」`}
+          >
+            和维度聊聊 <span aria-hidden="true">↗</span>
+          </button>
+        )}
+        <span className="cst-caption-spacer" />
         {selected.kind === "focus" && progress && (
           <span className="cst-caption-progress">{progress.label} · {percent}%</span>
         )}
@@ -389,18 +352,6 @@ export function ConstellationPreset({
             }}
           >
             ◇ {selected.lineage.label}
-          </button>
-        )}
-        {selected.kind === "focus" && onNodeOpen && (
-          <button
-            type="button"
-            className="cst-caption-lineage"
-            onClick={() => {
-              onNodeOpen(selected);
-              onAction?.("open", selected);
-            }}
-          >
-            靠近看看 ↗
           </button>
         )}
         <span className="cst-caption-date">{projection.generatedAt.slice(0, 10)}</span>

@@ -1,0 +1,144 @@
+{
+  "mode": "built-in image_gen",
+  "records": [
+    {
+      "id": "sitting-write",
+      "stage": "initial",
+      "prompt": "Use case: identity-preserve. Asset type: desktop pet animation base, isolated character cutout. Use the reference ONLY for exact character face, bob hair, golden hair clip, costume, notebook and rendering material. Change pose to this tiny slender cute secretary sitting on a low wooden stool, three-quarter facing slightly left, feet together touching ground, open notebook resting securely on her knees, RIGHT hand holding a slim black pen poised over page, left hand holding notebook. Calm focused smile, looking down at notebook. Hand and pen clearly visible for later small wrist animation. Preserve original refined anime lineart and soft highlights, do NOT make heavy/chubby, no giant head. Full character and small stool visible, centered on 1024x1536 vertical canvas, character head size like source, grounded feet at y94%. Scene/background MUST be actual transparent RGBA alpha zero outside character/stool. No painted checkerboard, no colored backdrop, no glow, no ground plane or shadow, no text. Exactly one pose, one character. Keep original floating pet rendering quality.",
+      "mode": "RGBA",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ],
+      "reference": "src/assets/secretary/pet/writing.png"
+    },
+    {
+      "id": "notes-sort",
+      "stage": "initial",
+      "prompt": "Use case: identity-preserve. Asset type: production desktop pet cutout for articulated idle animation. Reference image is the approved secretary and seated layout. Preserve EXACT cute slender small character, face, ash/pink blonde bob, geometric gold clip on image right, costume and shoes, stool, rendering, same 1024x1536 framing, same head size and face position, same stool and feet baseline. Do not enlarge head or thicken body. Keep same full seated body, low stool, feet touching ground. Change ONLY the requested prop/action. Actual RGBA transparency exactly like reference, alpha zero outside subject. NO background, shadow, checkerboard, glow, text, watermarks, motion lines. Exactly ONE character ONE pose, no panels. Expose hand movements clearly. She is carefully sorting a few cream and muted olive paper notes on top of the closed notebook resting on her lap. Image-left right hand holds ONE small paper note slightly lifted off the stack, ready to place it. Left hand steadies stack. Head looking down. Free-moving hand and single sheet should be silhouetted away from face.",
+      "mode": "RGB",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "alphaRange": null,
+      "referenceNote": "An earlier generated candidate in the same seated character production sequence."
+    },
+    {
+      "id": "tea",
+      "stage": "initial",
+      "prompt": "Use case: identity-preserve. Asset type: production desktop pet cutout for articulated idle animation. Reference image is the approved secretary and seated layout. Preserve EXACT cute slender small character, face, ash/pink blonde bob, geometric gold clip on image right, costume and shoes, stool, rendering, same 1024x1536 framing, same head size and face position, same stool and feet baseline. Do not enlarge head or thicken body. Keep same full seated body, low stool, feet touching ground. Change ONLY the requested prop/action. Actual RGBA transparency exactly like reference, alpha zero outside subject. NO background, shadow, checkerboard, glow, text, watermarks, motion lines. Exactly ONE character ONE pose, no panels. Expose hand movements clearly. Notebook lies closed horizontally on lap. She holds a small cream ceramic teacup with gold rim in both hands at chest level just BELOW her chin, a clear gap between cup and face. Cup is tilted slightly toward her, ready for a gentle sip. No saucer, no table, no pen. Eyes softly relaxed.",
+      "mode": "RGB",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "alphaRange": null,
+      "referenceNote": "An earlier generated candidate in the same seated character production sequence."
+    },
+    {
+      "id": "tidy",
+      "stage": "initial",
+      "prompt": "Use case: identity-preserve. Asset type: desktop pet isolated transparent PNG. Preserve EXACT approved character from reference: petite SLENDER cute secretary, slightly small head, ash-blonde short bob, gold angular hairclip, brown gold-trimmed costume, notebook and shoes, refined soft anime rendering. Full body centered on 1024x1536 portrait canvas. Change pose ONLY to seated on a low small wooden stool, feet together on ground at y94%, head near y2% with same width as reference; notebook at lap. The empty pixels MUST have REAL RGBA transparency with alpha zero like the original reference, NOT a painted checkerboard. No background, glow, shadow, labels or text. Exactly one isolated character. She sits upright looking down, the closed notebook flat on her knees. Left hand steadies the notebook, right hand tucks a muted olive bookmark into its upper edge; wrist and slender bookmark clearly visible and movable. A couple of cream paper slips are already tucked away. Quiet satisfied smile.",
+      "mode": "RGBA",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ],
+      "reference": "src/assets/secretary/pet/writing.png"
+    },
+    {
+      "id": "notes-sort",
+      "stage": "extract",
+      "prompt": "Use case: background-extraction. Edit target is the supplied character image. Remove ONLY all gray-and-white checkerboard pixels outside the character and stool, including the gap between stool legs. Deliver a true transparent cutout PNG with an alpha channel, alpha exactly 0 in empty space. Do not paint a checkerboard, black backdrop, white backdrop, halo, shadow or any other background. Preserve every pixel of the character face, hair, hands, costume, papers/book/cup/pen, shoes and stool, their positions and the 1024x1536 canvas. The only requested change is real background transparency. The result is a sprite shown on top of arbitrary desktop backgrounds.",
+      "mode": "RGBA",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ],
+      "referenceNote": "An earlier generated candidate in the same seated character production sequence."
+    },
+    {
+      "id": "tea",
+      "stage": "extract",
+      "prompt": "Use case: background-extraction. Edit target is the supplied character image. Remove ONLY all gray-and-white checkerboard pixels outside the character and stool, including the gap between stool legs. Deliver a true transparent cutout PNG with an alpha channel, alpha exactly 0 in empty space. Do not paint a checkerboard, black backdrop, white backdrop, halo, shadow or any other background. Preserve every pixel of the character face, hair, hands, costume, papers/book/cup/pen, shoes and stool, their positions and the 1024x1536 canvas. The only requested change is real background transparency. The result is a sprite shown on top of arbitrary desktop backgrounds.",
+      "mode": "RGBA",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ],
+      "referenceNote": "An earlier generated candidate in the same seated character production sequence."
+    }
+  ],
+  "finalAssets": [
+    {
+      "file": "src/assets/secretary/pet/daily/notes_sort.png",
+      "sha256": "6846563fe3d5b91c6f7377b9299d8f7bee63c8eeef5484ec259b10fb78205bd9",
+      "mode": "RGBA",
+      "size": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ]
+    },
+    {
+      "file": "src/assets/secretary/pet/daily/tidy.png",
+      "sha256": "bd6608c21e529cff394e8266445cdce5ace806d3d880c511c46961eda969bf3c",
+      "mode": "RGBA",
+      "size": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ]
+    },
+    {
+      "file": "src/assets/secretary/pet/daily/sitting_write.png",
+      "sha256": "cca9fee76170964fdda3b27f4ee2a66bf72577e097f61bf2d868f635f9d4ddde",
+      "mode": "RGBA",
+      "size": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ]
+    },
+    {
+      "file": "src/assets/secretary/pet/daily/tea.png",
+      "sha256": "05bcbd1ddf6fc97521f49467ba3eedea8a976bc57e4240c953d537dbd768c702",
+      "mode": "RGBA",
+      "size": [
+        1024,
+        1536
+      ],
+      "alphaRange": [
+        0,
+        254
+      ]
+    }
+  ],
+  "note": "Generation records include rejected transparency attempts. Only finalAssets are used by the product; intermediate images are not distributed."
+}

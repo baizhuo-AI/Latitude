@@ -625,8 +625,8 @@ const TOOL_SYSTEM_HINT = `
  * Codex 后大脑不知道"记录(log_activity)"等工具存在,把"记一下今天做的事"当成纯文字答复。
  * 收成单一入口后,任一路线都不会再漏掉工具引导。
  */
-export async function buildAgentSystemPrompt(): Promise<string> {
-  return (await buildChatSystemPrompt()) + TOOL_SYSTEM_HINT;
+export async function buildAgentSystemPrompt(transientContext?: string): Promise<string> {
+  return (await buildChatSystemPrompt()) + TOOL_SYSTEM_HINT + (transientContext ? `\n\n${transientContext}` : "");
 }
 
 /**
@@ -638,7 +638,7 @@ export async function buildAgentSystemPrompt(): Promise<string> {
  */
 export async function chatAgentCall(
   history: ChatMessage[],
-  opts?: { onStep?: (info: { type: "tool"; name: string }) => void }
+  opts?: { onStep?: (info: { type: "tool"; name: string }) => void; transientContext?: string }
 ): Promise<ChatResult> {
   // model 可配置(不再写死 deepseek-chat);非 deepseek 用 provider 默认
   const model = resolveDeepSeekModel("agent");
@@ -648,7 +648,7 @@ export async function chatAgentCall(
   const caps = getCapabilities(model);
   const tools = caps.supportsTools ? toolsForLLM() : undefined;
   const messages: ChatMessage[] = [
-    { role: "system", content: await buildAgentSystemPrompt() },
+    { role: "system", content: await buildAgentSystemPrompt(opts?.transientContext) },
     ...history,
   ];
   const MAX_ROUNDS = 6;

@@ -18,8 +18,8 @@
   color-scheme: light;
 
   /* 纸张 */
-  --dim-desk: #e9e4d6; /* 桌面底 */
-  --dim-paper: #fdfaf2; /* 纸片 */
+  --dim-desk: #f7f5eb; /* 桌面底 */
+  --dim-paper: #fffdf5; /* 纸片 */
   --dim-sticky: #fbf0c8; /* 便签黄 */
   --dim-page: #faf6e9; /* 本子内页 */
   --dim-inset: rgb(232 227 212 / 50%); /* 卡内嵌入块 */
@@ -29,14 +29,14 @@
   --dim-line-soft: #e8e3d4;
 
   /* 墨 */
-  --dim-ink: #2a2a24;
-  --dim-ink-soft: #6b6656;
-  --dim-ink-faint: #9a9482;
+  --dim-ink: #293d33;
+  --dim-ink-soft: #626e60;
+  --dim-ink-faint: #808674;
   --dim-ink-sticky: #a29656; /* 便签上的次级墨 */
 
   /* 强调 */
   --dim-olive: #7c8a3e;
-  --dim-olive-deep: #46521f;
+  --dim-olive-deep: #25463a;
   --dim-lime: #c6d830;
   --dim-teal: #5aa8ae;
   --dim-rust: #c35e4a;
@@ -76,6 +76,177 @@
   background: var(--dim-desk);
 }
 
+.dim-app-header__left,
+.dim-app-header__brand,
+.dim-app-header__tools {
+  display: flex;
+  align-items: center;
+}
+
+.dim-app-header__left {
+  min-width: 0;
+  gap: 14px;
+}
+
+.dim-app-header__brand {
+  flex-shrink: 0;
+  gap: 9px;
+}
+
+.dim-app-header__tools {
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.dim-header-secretary,
+.dim-header-secretary-return,
+.dim-header-secretary-action {
+  min-width: 0;
+  height: 40px;
+  color: var(--dim-ink);
+  background: color-mix(in srgb, var(--dim-page) 58%, transparent);
+  border: 1px solid var(--dim-line-soft);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dim-header-secretary-group {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.dim-header-secretary-group .dim-header-secretary {
+  border-radius: 4px 0 0 4px;
+}
+
+.dim-header-secretary-action {
+  flex-shrink: 0;
+  padding: 0 10px;
+  color: var(--dim-olive-deep);
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+  font: 600 10px/1 var(--font-sans);
+}
+
+.dim-header-secretary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(320px, 42vw);
+  padding: 3px 10px 3px 3px;
+}
+
+.dim-header-secretary[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--dim-olive) 11%, var(--dim-paper));
+  border-color: color-mix(in srgb, var(--dim-olive) 46%, var(--dim-line));
+}
+
+.dim-header-secretary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dim-header-secretary__portrait {
+  display: block;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 3px;
+}
+
+.dim-header-secretary__portrait .dim-portrait {
+  width: 34px;
+  height: 38px;
+  border: 0;
+}
+
+.dim-header-secretary__copy {
+  display: grid;
+  min-width: 0;
+  text-align: left;
+}
+
+.dim-header-secretary__copy strong {
+  font: 600 11px/1.2 var(--font-sans);
+}
+
+.dim-header-secretary__copy small {
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--dim-ink-soft);
+  font: 10px/1.35 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dim-header-secretary-return {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  font: 600 10px/1 var(--font-sans);
+}
+
+.dim-header-secretary-return span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim-olive);
+}
+
+.dim-header-settings {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--dim-ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.dim-header-secretary:hover,
+.dim-header-secretary-return:hover,
+.dim-header-secretary-action:hover,
+.dim-header-settings:hover {
+  border-color: var(--dim-line);
+  background: var(--dim-page);
+}
+
+.dim-header-secretary:focus-visible,
+.dim-header-secretary-return:focus-visible,
+.dim-header-secretary-action:focus-visible,
+.dim-header-settings:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 2px;
+}
+
+@media (width <= 720px) {
+  .dim-app-header {
+    padding-inline: 8px !important;
+  }
+
+  .dim-app-header__left {
+    gap: 8px;
+  }
+
+  .dim-header-secretary {
+    width: 40px;
+    padding: 3px;
+  }
+
+  .dim-header-secretary__copy,
+  .dim-app-header__tools .dim-eyebrow {
+    display: none;
+  }
+
+  .dim-header-secretary-action {
+    padding-inline: 8px;
+  }
+}
+
 /* ---------- 排版原子 ---------- */
 
 /* 等宽大写英文小标签 */
@@ -112,22 +283,22 @@
 }
 
 .dim-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--dim-ink);
+  letter-spacing: 0.015em;
+  color: var(--dim-olive-deep);
   margin: 9px 0 0;
 }
 
 /* 主位卡的标题:整张桌面唯一的大字 */
 .dim-title--lead {
-  font-size: 17px;
+  font-size: 19px;
   line-height: 1.6;
   text-wrap: pretty;
 }
 
 .dim-body {
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.75;
   color: var(--dim-ink-soft);
   margin: 0;
@@ -145,15 +316,9 @@
   position: relative;
   background: var(--dim-paper);
   border: 1px solid var(--dim-line);
-  border-radius: 2px;
+  border-radius: 0;
   padding: 20px 22px 18px;
   transition: transform 280ms cubic-bezier(0.2, 0.8, 0.3, 1);
-}
-
-/* 鼠标靠近时纸被扶正并抬起 —— rotate(0) 要盖掉逐张卡的内联角度 */
-.dim-paper:hover {
-  transform: rotate(0deg) translateY(-1px) !important;
-  z-index: 5;
 }
 
 .dim-paper--sticky {
@@ -162,7 +327,7 @@
 
 /* 报纸：早报卡的纸质。衬线大题 + 双细线版头，信息排成像样的新闻 */
 .dim-paper--newsprint {
-  background: #f8f4e6;
+  background: #f9f6e9;
   border-color: #cfc8b2;
   padding-top: 16px;
 }
@@ -175,11 +340,13 @@
 
 .dim-paper--newsprint .dim-title {
   text-align: center;
-  font-size: 21px;
-  letter-spacing: 0.04em;
+  font-family: "Songti SC", "Noto Serif CJK SC", STSong, Georgia, serif;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   margin-top: 4px;
   padding-bottom: 9px;
-  border-bottom: 3px double var(--dim-ink);
+  border-bottom: 3px double var(--dim-olive);
 }
 
 .dim-paper--newsprint article {
@@ -393,38 +560,16 @@
   opacity: 1;
   transform: none;
   overflow-x: hidden;
-  background-color: var(--dim-desk);
-  background-image:
-    radial-gradient(900px 420px at 18% -8%, rgb(255 255 244 / 54%), transparent 68%),
-    radial-gradient(640px 360px at 88% 105%, rgb(89 111 77 / 11%), transparent 72%),
-    repeating-linear-gradient(0deg, transparent 0 calc(var(--dim-grid-unit) - 1px), rgb(72 88 61 / 5%) calc(var(--dim-grid-unit) - 1px) var(--dim-grid-unit)),
-    repeating-linear-gradient(90deg, transparent 0 calc(var(--dim-grid-unit) - 1px), rgb(72 88 61 / 5%) calc(var(--dim-grid-unit) - 1px) var(--dim-grid-unit)),
-    linear-gradient(135deg, #e9eadf 0%, #dfe4d7 56%, #d6ddcf 100%);
+  background-color: #f7f5eb;
+  background-image: linear-gradient(rgb(90 133 116 / 5%) 1px, transparent 1px), linear-gradient(90deg, rgb(90 133 116 / 5%) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: var(--desk-wood-x, 0) var(--desk-wood-y, 0);
 }
 
-/* 桌面是浅色制图台，不是线索板的软木底；边角标记只提供空间感，不盖内容。 */
+/* 连续的桌面材质，不画视口边框或制图刻度。 */
 .dim-layer--desk::before,
 .dim-layer--desk::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.dim-layer--desk::before {
-  inset: 12px;
-  background:
-    linear-gradient(90deg, rgb(70 85 60 / 26%) 0 32px, transparent 32px) 18px 18px / 78px 1px no-repeat,
-    linear-gradient(180deg, rgb(70 85 60 / 26%) 0 32px, transparent 32px) 18px 18px / 1px 78px no-repeat,
-    linear-gradient(270deg, rgb(70 85 60 / 20%) 0 24px, transparent 24px) calc(100% - 18px) calc(100% - 18px) / 66px 1px no-repeat,
-    linear-gradient(0deg, rgb(70 85 60 / 20%) 0 24px, transparent 24px) calc(100% - 18px) calc(100% - 18px) / 1px 66px no-repeat;
-}
-
-.dim-layer--desk::after {
-  inset: 0;
-  box-shadow:
-    inset 0 22px 34px -32px rgb(255 255 255 / 82%),
-    inset 0 -24px 36px -34px rgb(50 65 44 / 34%);
+  content: none;
 }
 
 .dim-layer--desk > * {
@@ -442,7 +587,14 @@
 }
 
 .dim-desk-scroll {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
   padding: clamp(16px, 2.2vw, 30px);
 }
 
@@ -755,6 +907,12 @@
   outline-offset: 3px;
 }
 
+.dim-portrait-btn:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+  opacity: 0.64;
+}
+
 .dim-pet-emote {
   position: absolute;
   top: var(--dim-pet-emote-top);
@@ -884,6 +1042,34 @@
   color: var(--dim-ink-soft);
   font-size: 10.5px;
   line-height: 1.55;
+}
+
+.dim-relation-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--dim-line-soft);
+}
+
+.dim-relation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dim-relation-heading h2 {
+  margin: 0;
+  color: var(--dim-ink);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.dim-relation-heading span {
+  color: var(--dim-ink-faint);
+  font-size: 9px;
+  line-height: 1.4;
+  text-align: right;
 }
 
 .dim-relation-list {
@@ -1284,10 +1470,10 @@
   font: 16px/1 var(--font-sans);
   background: var(--dim-paper);
   border: 1px solid var(--dim-line);
-  border-radius: 50%;
-  box-shadow: 0 4px 12px rgb(55 54 45 / 12%);
+  border-radius: 1px;
+  box-shadow: none;
   cursor: pointer;
-  opacity: 0.62;
+  opacity: 0;
   transform: scale(0.92);
   transition: opacity 120ms ease, transform 120ms ease, color 120ms ease;
 }

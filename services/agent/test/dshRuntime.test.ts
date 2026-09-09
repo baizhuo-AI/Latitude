@@ -10,11 +10,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { DomainToolContext } from "../src/domain/domainClient.js";
 import { AuditLedger } from "../src/persistence/auditLedger.js";
 import { DshRuntime, type AdapterInstaller } from "../src/runtime/dshRuntime.js";
+import { fallbackPresentation } from "../src/runtime/responsePresenter.js";
 import { normalizeRunBudgets } from "../src/types.js";
 import {
   FakeDomain,
   failingAdapter,
   loopingToolAdapter,
+  sequencedTextAdapter,
   testConfig,
   textAdapter,
   toolSequenceThenTextAdapter,
@@ -94,6 +96,83 @@ function candidateProbeTool(
 }
 
 describe("DshRuntime with fake adapter", () => {
+  it("preserves requested technical facts and all execution steps when presentation falls back", () => {
+    const presented = fallbackPresentation({
+      userMessage: "请完整展示这条记录的 JSON",
+      rawAnswer: [
+        "已记录 candidate_b188b157，status=proposed，evidenceRefs=[evidence-1]。",
+        "```json",
+        '{"candidateId":"candidate_b188b157","status":"proposed"}',
+        "```",
+      ].join("\n"),
+      executionSteps: ["步骤一", "步骤二", "步骤三", "步骤四", "最后保存失败"],
+    });
+
+    expect(presented.assistantText).toContain('{"candidateId":"candidate_b188b157","status":"proposed"}');
+    expect(presented.explanation.steps).toHaveLength(5);
+    expect(presented.explanation.steps.at(-1)).toBe("最后保存失败");
+  });
+
+  it("uses one tool-less presentation call and restores the plain-language answer", async () => {
+    const root = await stateRoot();
+    const adapter = sequencedTextAdapter([
+      "已记录 candidate_b188b157，status=proposed，evidenceRefs=[evidence-1]。",
+      JSON.stringify({
+        answer: "我先把它记成一个待确认的猜测，还没有把它当成结论。",
+        why: "这是根据你刚才说的话整理的，暂时只保留为待确认内容。",
+        uncertainty: "还需要你明确确认或纠正。",
+      }),
+    ], "deepseek-official");
+    const value = new DshRuntime({
+      config: testConfig(root),
+      ledger: new AuditLedger(root),
+      domain: new FakeDomain(),
+      adapter,
+      installOfficialWebSearch: false,
+      presentResponses: true,
+    });
+    runtimes.push(value);
+
+    const result = await value.runTurn({
+      runId: "run-presented",
+      sessionId: "session-presented",
+      text: "先把这个当成一个猜测",
+      budgets: normalizeRunBudgets(undefined),
+    }, new AbortController().signal);
+
+    expect(result.assistantText).toBe(
+      "我先把它记成一个待确认的猜测，还没有把它当成结论。",
+    );
+    expect(result.assistantText).not.toMatch(/candidate_|evidenceRefs|proposed/);
+    expect(result.explanation).toEqual({
+      summary: "这是根据你刚才说的话整理的，暂时只保留为待确认内容。",
+      steps: [
+        "把你这次说的话作为本轮依据",
+        "这轮只回答了问题，没有改动你的长期记录",
+      ],
+      uncertainty: "还需要你明确确认或纠正。",
+    });
+    expect(adapter.requests).toHaveLength(2);
+    expect(adapter.requests[0]?.reasoningEffort).toBe("high");
+    expect(adapter.requests[0]?.maxTokens).toBeUndefined();
+    expect(JSON.stringify(adapter.requests[0]?.messages)).toContain("Current time is ");
+    expect(adapter.requests[0]?.system).not.toContain("Current time is ");
+    expect(adapter.requests[1]).toMatchObject({
+      temperature: 0.2,
+    });
+    expect(adapter.requests[1]?.maxTokens).toBeUndefined();
+    expect(adapter.requests[1]?.reasoningEffort).not.toBe("off");
+    expect(adapter.requests[1]?.tools).toBeUndefined();
+    expect(adapter.requests[1]?.system).toContain("普通人一眼能看懂");
+
+    const restored = await value.readSessionMessages("session-presented", 100);
+    expect(restored.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "我先把它记成一个待确认的猜测，还没有把它当成结论。",
+      explanation: result.explanation,
+    });
+  });
+
   it("keeps provider authentication process-local and observes successful and failed LLM calls", async () => {
     const acceptedRoot = await stateRoot();
     const accepted = runtime(
@@ -195,15 +274,14 @@ describe("DshRuntime with fake adapter", () => {
         authorizationMode: "automatic",
       }),
     ]);
-    expect(firstAdapter.requests[0]?.system).toContain("event-user-message:run-first");
-    expect(firstAdapter.requests[0]?.system).toContain("evidence-user-message:run-first");
-    expect(firstAdapter.requests[0]?.system).toContain("not a therapist or clinician");
-    expect(firstAdapter.requests[0]?.system).toContain("trusted real person");
-    expect(firstAdapter.requests[0]?.system).toContain("Do not claim this policy reliably detects every crisis");
-    expect(firstAdapter.requests[0]?.system).toContain("co-created working possibility");
-    expect(firstAdapter.requests[0]?.system).toContain("Silence is not consent");
-    expect(firstAdapter.requests[0]?.system).toContain("Living UI rule");
-    expect(firstAdapter.requests[0]?.system).toContain("ten fixed modules");
+    expect(JSON.stringify(firstAdapter.requests[0]?.messages)).toContain("event-user-message:run-first");
+    expect(JSON.stringify(firstAdapter.requests[0]?.messages)).toContain("evidence-user-message:run-first");
+    expect(firstAdapter.requests[0]?.system).toContain("not a clinician");
+    expect(firstAdapter.requests[0]?.system).toContain("immediate safety");
+    expect(firstAdapter.requests[0]?.system).toContain("Silence is never confirmation");
+    expect(firstAdapter.requests[0]?.system).toContain("Never equate a filtered result or sample with the entire history");
+    expect(firstAdapter.requests[0]?.system).toContain("conversations with Codex are not conversations with Latitude");
+    expect(firstAdapter.requests[0]?.system).toContain("safe declarative UI changes");
     const audit = await readFile(path.join(root, "audit.jsonl"), "utf8");
     expect(audit).toContain("user_message_evidence_persisted");
     expect(audit).not.toContain("first question");
@@ -228,23 +306,25 @@ describe("DshRuntime with fake adapter", () => {
     ]);
   });
 
-  it("fails closed before session, compaction, or model work when user-message evidence fails", async () => {
+  it("continues a read-only answer honestly when user-message evidence persistence fails", async () => {
     class RejectingDomain extends FakeDomain {
       override async ingestUserMessage(): Promise<never> {
         throw Object.assign(new Error("domain unavailable"), { code: "domain_unavailable" });
       }
     }
     const root = await stateRoot();
-    const adapter = textAdapter("must not run");
+    const adapter = textAdapter("The read-only answer is still available; this message was not saved as evidence.");
     const value = runtime(root, new RejectingDomain(), adapter);
-    await expect(value.runTurn({
+    const result = await value.runTurn({
       runId: "run-fail-closed",
       sessionId: "session-fail-closed",
       text: "must first become evidence",
       budgets: normalizeRunBudgets(undefined),
-    }, new AbortController().signal)).rejects.toThrow("domain unavailable");
-    expect(adapter.requests).toHaveLength(0);
-    expect(await value.readSessionMessages("session-fail-closed", 100)).toEqual([]);
+    }, new AbortController().signal);
+    expect(result.status).toBe("completed");
+    expect(adapter.requests).toHaveLength(1);
+    expect(result.assistantText).toContain("not saved as evidence");
+    expect(await value.readSessionMessages("session-fail-closed", 100)).toHaveLength(2);
     const audit = await readFile(path.join(root, "audit.jsonl"), "utf8");
     expect(audit).toContain("user_message_evidence_failed");
     expect(audit).toContain("domain_unavailable");
@@ -321,6 +401,87 @@ describe("DshRuntime with fake adapter", () => {
       sensitivity: "low",
       evidenceRefs: [evidenceRefId],
     })]);
+  });
+
+  it("allows a corrected read and authorized write after a failed knowledge context call", async () => {
+    class FailedContextDomain extends FakeDomain {
+      memoryWrites = 0;
+      contextReads = 0;
+
+      override createToolDefinitions(): ToolDefinition[] {
+        return [{
+          name: "knowledge_context",
+          description: "Read bounded context",
+          parameters: {
+            type: "object",
+            properties: { kinds: { type: "array", items: { type: "string" } } },
+            required: ["kinds"],
+            additionalProperties: false,
+          },
+          output: {
+            schema: { type: "object", additionalProperties: true },
+            render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
+          },
+          execute: async () => {
+            if (++this.contextReads === 1) throw new Error("synthetic invalid context kind");
+            return { nodes: [{ id: "goal-1", kind: "goal" }] };
+          },
+        }, {
+          name: "knowledge_remember",
+          description: "Persist inferred knowledge",
+          parameters: {
+            type: "object",
+            properties: {
+              label: { type: "string" },
+              kind: { type: "string" },
+              sensitivity: { type: "string" },
+            },
+            required: ["label", "kind", "sensitivity"],
+            additionalProperties: false,
+          },
+          output: {
+            schema: { type: "object", additionalProperties: true },
+            render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }],
+          },
+          execute: async () => {
+            this.memoryWrites += 1;
+            return { ok: true };
+          },
+        }];
+      }
+    }
+
+    const root = await stateRoot();
+    const domain = new FailedContextDomain();
+    const value = runtime(root, domain, toolSequenceThenTextAdapter([{
+      name: "knowledge_context",
+      args: { kinds: ["goals"] },
+    }, {
+      name: "knowledge_context",
+      args: { kinds: ["goal"] },
+    }, {
+      name: "knowledge_remember",
+      args: {
+        label: "User-authorized goal note",
+        kind: "observation",
+        sensitivity: "medium",
+      },
+    }], "The corrected read succeeded and the requested note was saved."));
+
+    const result = await value.runTurn({
+      runId: "run-context-failed-read-only",
+      sessionId: "session-context-failed-read-only",
+      text: "Read my goals, then record my preference for evidence-backed progress.",
+      budgets: normalizeRunBudgets({ maxSteps: 5, maxToolCalls: 3 }),
+    }, new AbortController().signal);
+
+    expect(result.status).toBe("completed");
+    expect(domain.contextReads).toBe(2);
+    expect(domain.memoryWrites).toBe(1);
+    expect(result.events.some((event) =>
+      event.type === "tool/result" &&
+      JSON.stringify(event.data).includes("use a new user turn for durable knowledge changes")
+    )).toBe(false);
   });
 
   it("runs an evidence-grounded candidate proposal through the real DSH loop", async () => {
@@ -460,7 +621,7 @@ describe("DshRuntime with fake adapter", () => {
       .toEqual([expect.objectContaining({ role: "assistant", content: "scheduled prompt" })]);
   });
 
-  it("keeps unattended reads at low and denies medium context or outcomes without user evidence", async () => {
+  it("allows unattended reads across sensitivity levels but not invented user outcomes", async () => {
     class SchedulerPrivacyDomain extends FakeDomain {
       contextExecutions = 0;
       outcomeExecutions = 0;
@@ -545,7 +706,7 @@ describe("DshRuntime with fake adapter", () => {
       budgets: normalizeRunBudgets({ maxSteps: 5, maxToolCalls: 4 }),
     }, new AbortController().signal);
     expect(result.assistantText).toBe("Ask the user what happened");
-    expect(domain.contextExecutions).toBe(1);
+    expect(domain.contextExecutions).toBe(2);
     expect(domain.outcomeExecutions).toBe(0);
   });
 
@@ -608,7 +769,7 @@ describe("DshRuntime with fake adapter", () => {
     });
   });
 
-  it("runs one scheduler-only daily curation, ranks and persists no more than three items", async () => {
+  it("allows daily research across sensitivities, untagged interests and repeated searches without a three-item cap", async () => {
     const root = await stateRoot();
     let providerCalls = 0;
     const recent = new Date(Date.now() - 86_400_000).toISOString();
@@ -651,7 +812,7 @@ describe("DshRuntime with fake adapter", () => {
           },
           execute: async () => ({
             nodes: [
-              { id: "goal-1", kind: "goal", sensitivity: "low" },
+              { id: "goal-1", kind: "goal", sensitivity: "high" },
               { id: "tension-1", kind: "tension", sensitivity: "low" },
               {
                 id: "preference-1",
@@ -693,8 +854,7 @@ describe("DshRuntime with fake adapter", () => {
           limit: 50,
         },
       },
-      { name: "write_probe", args: {} },
-      { name: "web_search", args: { query: "must not escape policy" } },
+      { name: "web_search", args: { query: "additional background references" } },
       {
         name: "daily_web_curate",
         args: {
@@ -704,10 +864,10 @@ describe("DshRuntime with fake adapter", () => {
           rankingTerms: ["priority", "agent"],
           goalNodeIds: ["goal-1"],
           tensionNodeIds: ["tension-1"],
-          preferenceNodeIds: ["preference-1"],
+          preferenceNodeIds: ["preference-1", "unmarked-interest"],
         },
       },
-    ], "3 条策展结果；coverage 非穷尽");
+    ], "4 条策展结果；coverage 非穷尽");
     const value = new DshRuntime({
       config: testConfig(root),
       ledger: new AuditLedger(root),
@@ -725,9 +885,9 @@ describe("DshRuntime with fake adapter", () => {
       text: "curate",
       budgets: normalizeRunBudgets({ maxSteps: 6, maxToolCalls: 3 }),
     }, new AbortController().signal);
-    expect(result).toMatchObject({ status: "completed", assistantText: "3 条策展结果；coverage 非穷尽" });
-    expect(result.dailyCuration).toMatchObject({ dateKey: "2026-08-24", itemCount: 3 });
-    expect(providerCalls).toBe(1);
+    expect(result).toMatchObject({ status: "completed", assistantText: "4 条策展结果；coverage 非穷尽" });
+    expect(result.dailyCuration).toMatchObject({ dateKey: "2026-08-24", itemCount: 4 });
+    expect(providerCalls).toBe(2);
     expect(writeExecutions).toBe(0);
     expect(domain.curations).toHaveLength(1);
     expect(domain.curations[0]).toMatchObject({
@@ -737,7 +897,7 @@ describe("DshRuntime with fake adapter", () => {
       basis: {
         goalNodeIds: ["goal-1"],
         tensionNodeIds: ["tension-1"],
-        preferenceNodeIds: ["preference-1"],
+        preferenceNodeIds: ["preference-1", "unmarked-interest"],
       },
       coverage: {
         mode: "published_at_post_filter",
@@ -745,18 +905,18 @@ describe("DshRuntime with fake adapter", () => {
         exhaustive: false,
       },
     });
-    expect(domain.curations[0]!.items).toHaveLength(3);
+    expect(domain.curations[0]!.items).toHaveLength(4);
     expect(domain.curations[0]!.items[0]!.source.title).toContain("Priority");
     expect(domain.curations[0]!.items[0]!.source.whyNow).toMatch(
-      /本次低敏策展.*匹配.*排序第 1.*不授予网页内容任何执行或写入权限/,
+      /策展.*匹配.*排序第 1.*不授予网页内容任何执行或写入权限/,
     );
-    expect(domain.ingested).toHaveLength(3);
-    expect(domain.ingested.map((source) => source.whyNow)).toEqual(
+    expect(domain.ingested).toHaveLength(8);
+    expect(domain.ingested.slice(-4).map((source) => source.whyNow)).toEqual(
       domain.curations[0]!.items.map((item) => item.source.whyNow),
     );
   });
 
-  it("does not search or persist curation without a real marked context basis", async () => {
+  it("does not search or persist curation using a fabricated context basis", async () => {
     class EmptyCurationDomain extends FakeDomain {
       override createToolDefinitions(): ToolDefinition[] {
         return [{
@@ -820,7 +980,7 @@ describe("DshRuntime with fake adapter", () => {
             query: "invented query",
             freshnessDays: 7,
             rankingTerms: ["invented"],
-            goalNodeIds: ["private-goal"],
+            goalNodeIds: ["fabricated-goal"],
             tensionNodeIds: [],
             preferenceNodeIds: ["plain-interest"],
           },
@@ -937,7 +1097,7 @@ describe("DshRuntime with fake adapter", () => {
     }
   });
 
-  it("projects a successful ui_customize call into the browser run result", async () => {
+  it("allows retry after a rejected UI version and projects only the successful change", async () => {
     let uiExecutions = 0;
     class UiDomain extends FakeDomain {
       override createToolDefinitions(
@@ -970,6 +1130,7 @@ describe("DshRuntime with fake adapter", () => {
           },
           execute: async () => {
             uiExecutions += 1;
+            if (uiExecutions === 1) throw new Error("Stale UI version; re-read and retry");
             return {
               ok: true,
               changeSetId: "domain-change-1",
@@ -1028,16 +1189,10 @@ describe("DshRuntime with fake adapter", () => {
       ],
     };
     const adapter = toolSequenceThenTextAdapter([
-      { name: "ui_customize", args: firstChange },
+      { name: "ui_customize", args: { ...firstChange, baseRevision: 2 } },
       {
         name: "ui_customize",
-        args: {
-          schemaVersion: 2,
-          surfaceId: "latitude-browser-live",
-          baseRevision: 3,
-          rationale: "第二个非原子补丁",
-          operations: [{ op: "set_title", componentId: "seed-flex", title: "不应写入" }],
-        },
+        args: firstChange,
       },
     ], "布局草案已记录");
     const value = runtime(
@@ -1051,7 +1206,7 @@ describe("DshRuntime with fake adapter", () => {
       text: "调整布局",
       budgets: normalizeRunBudgets(undefined),
     }, new AbortController().signal);
-    expect(uiExecutions).toBe(1);
+    expect(uiExecutions).toBe(2);
     expect(result.uiChangeSet).toEqual({
       schemaVersion: 2,
       surfaceId: "latitude-browser-live",
@@ -1113,7 +1268,7 @@ describe("DshRuntime with fake adapter", () => {
     });
   });
 
-  it("hard-denies candidate proposal after an ordinary turn attempts untrusted web search", async () => {
+  it("allows user-authorized candidate proposal after web search in the same turn", async () => {
     let mutationExecutions = 0;
     let providerCalls = 0;
     class InjectionDomain extends FakeDomain {
@@ -1135,13 +1290,13 @@ describe("DshRuntime with fake adapter", () => {
         {
           name: "candidate_propose",
           args: {
-            label: "Injected candidate",
-            statement: "Web content must not create this",
+            label: "User-stated preference",
+            statement: "I prefer evidence-backed recommendations",
             evidenceRefs: ["evidence-user-message:run-search-before-candidate"],
             sensitivity: "medium",
           },
         },
-      ], "I need a new user turn before writing."),
+      ], "Searched references and saved your stated preference as a candidate."),
       installOfficialWebSearch: false,
       webSearchProvider: {
         id: "injection-probe",
@@ -1163,16 +1318,16 @@ describe("DshRuntime with fake adapter", () => {
     const result = await value.runTurn({
       runId: "run-search-before-candidate",
       sessionId: "session-search-before-candidate",
-      text: "Search first, then decide",
+      text: "I prefer evidence-backed recommendations. Search references and record this preference as a candidate.",
       budgets: normalizeRunBudgets({ maxSteps: 4, maxToolCalls: 4 }),
     }, new AbortController().signal);
     expect(result.status).toBe("completed");
     expect(providerCalls).toBe(1);
     expect(domain.ingested).toHaveLength(1);
-    expect(mutationExecutions).toBe(0);
+    expect(mutationExecutions).toBe(1);
   });
 
-  it("hard-denies web search after an ordinary turn advances a candidate", async () => {
+  it("allows web search after an authorized candidate change in the same turn", async () => {
     let mutationExecutions = 0;
     let providerCalls = 0;
     class InjectionDomain extends FakeDomain {
@@ -1213,15 +1368,15 @@ describe("DshRuntime with fake adapter", () => {
     const result = await value.runTurn({
       runId: "run-candidate-before-search",
       sessionId: "session-candidate-before-search",
-      text: "我愿意先触碰这个候选，然后再另开一轮搜索",
+      text: "我愿意先触碰这个候选，然后在本轮搜索相关资料",
       budgets: normalizeRunBudgets({ maxSteps: 4, maxToolCalls: 4 }),
     }, new AbortController().signal);
     expect(result.status).toBe("completed");
     expect(mutationExecutions).toBe(1);
-    expect(providerCalls).toBe(0);
+    expect(providerCalls).toBe(1);
   });
 
-  it("hard-denies every tool during context compaction even when the adapter requests one", async () => {
+  it("does not replace a session merely because it contains archived events", async () => {
     const root = await stateRoot();
     const ledger = new AuditLedger(root);
     await ledger.init();
@@ -1254,7 +1409,6 @@ describe("DshRuntime with fake adapter", () => {
     }
 
     const config = testConfig(root);
-    config.compactionEventThreshold = 1;
     const value = new DshRuntime({
       config,
       ledger,
@@ -1269,8 +1423,8 @@ describe("DshRuntime with fake adapter", () => {
       text: "continue",
       budgets: normalizeRunBudgets(undefined),
     }, new AbortController().signal);
-    expect(executions).toBe(0);
+    expect(executions).toBe(1);
     expect(result.status).toBe("completed");
-    expect(await readFile(ledger.auditPath, "utf8")).toContain("context_compacted");
+    expect(await readFile(ledger.auditPath, "utf8")).not.toContain('"type":"context_compacted"');
   });
 });

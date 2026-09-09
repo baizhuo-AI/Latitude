@@ -1,0 +1,55 @@
+{
+  "id": "tidy",
+  "title": "收拾随身物品",
+  "description": "把书签夹好，合上本子，整理整齐。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "托好本子",
+    "打开一小缝",
+    "理好书签",
+    "夹回页间",
+    "轻轻合上",
+    "抚平封面",
+    "确认收好",
+    "手放回原位"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1600
+    },
+    {
+      "frame": 1,
+      "ms": 400
+    },
+    {
+      "frame": 2,
+      "ms": 500
+    },
+    {
+      "frame": 3,
+      "ms": 500
+    },
+    {
+      "frame": 4,
+      "ms": 500
+    },
+    {
+      "frame": 5,
+      "ms": 500
+    },
+    {
+      "frame": 6,
+      "ms": 1700
+    },
+    {
+      "frame": 7,
+      "ms": 1800
+    }
+  ],
+  "duration": 7500
+}

@@ -1,0 +1,476 @@
+/* 桌面只留手边工具；卡片是主角，恢复入口贴在当前桌面的下沿。 */
+.dim-desktop-toolbar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 32px;
+  margin: 0 16px 0 auto;
+  padding: 0;
+  background: transparent;
+}
+
+.dim-desktop-toolbar .dim-focus-capsule {
+  margin: 0 auto 0 0;
+}
+
+.dim-desktop-tools {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.dim-desktop-add {
+  background: var(--dim-olive-deep);
+  color: var(--dim-paper);
+  border-color: var(--dim-olive-deep);
+}
+
+.dim-desktop-add:hover {
+  background: var(--dim-olive);
+  color: var(--dim-paper);
+}
+
+.dim-desktop-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 3px;
+  color: var(--dim-olive-deep);
+  font-size: 10px;
+  text-align: center;
+  background: rgb(112 126 68 / 10%);
+  border-radius: 3px;
+}
+
+.dim-desktop-outside {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 8px;
+  padding: 5px 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--dim-olive-deep);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.dim-desktop-undo-arrange {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dim-desktop-zoom-tools,
+.dim-desktop-zoom {
+  display: flex;
+  align-items: center;
+}
+
+.dim-desktop-zoom-tools {
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.dim-desktop-zoom {
+  border: 1px solid var(--dim-line-soft);
+  border-radius: 4px;
+}
+
+.dim-desktop-zoom .dim-btn {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.dim-desktop-zoom .dim-desktop-zoom-value {
+  min-width: 43px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dim-desktop-inventory,
+.dim-desktop-more-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - 82px));
+  box-sizing: border-box;
+  padding: 16px;
+  color: var(--dim-ink);
+  background: var(--dim-paper);
+  border: 1px solid var(--dim-line);
+  box-shadow: 0 8px 24px rgb(60 55 40 / 14%);
+}
+
+.dim-desktop-inventory-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.dim-desktop-inventory-heading strong {
+  font-size: 14px;
+}
+
+.dim-desktop-inventory-heading p,
+.dim-desktop-inventory-empty {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--dim-ink-soft);
+}
+
+.dim-desktop-card-search {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dim-ink);
+  background: var(--dim-inset);
+  border: 1px solid var(--dim-line-soft);
+}
+
+.dim-desktop-inventory-list {
+  max-height: min(390px, 50vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.dim-desktop-inventory-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--dim-line-soft);
+}
+
+.dim-desktop-card-swatch {
+  flex: 0 0 21px;
+  height: 26px;
+  background: #f5f1e6;
+  border: 1px solid var(--dim-line);
+  border-radius: 1px;
+}
+
+.dim-desktop-card-swatch.is-note {
+  background: #fcf1bc;
+  transform: rotate(-4deg);
+}
+
+.dim-desktop-inventory-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.dim-desktop-inventory-copy strong {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dim-desktop-inventory-copy small {
+  display: block;
+  margin-top: 5px;
+  color: var(--dim-ink-soft);
+  font-size: 10px;
+}
+
+.dim-desktop-more-panel {
+  display: grid;
+  gap: 4px;
+  width: 150px;
+  padding: 8px;
+}
+
+.dim-desktop-more-panel .dim-btn {
+  text-align: left;
+}
+
+.dim-desktop-connection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 8px 12px;
+  color: var(--dim-ink-soft);
+  background: rgb(253 250 242 / 68%);
+  border: 1px solid var(--dim-line-soft);
+  font-size: 12px;
+}
+
+.dim-desktop-connection p {
+  flex: 1;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.dim-desktop-connection-dot {
+  width: 5px;
+  height: 5px;
+  background: #ad874b;
+  border-radius: 50%;
+}
+
+.dim-custom-card-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(44 43 33 / 22%);
+}
+
+.dim-card-undo {
+  position: absolute;
+  z-index: 40;
+  right: 20px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(440px, calc(100% - 40px));
+  padding: 10px 12px 10px 16px;
+  color: var(--dim-ink);
+  background: var(--dim-paper);
+  border: 1px solid var(--dim-line);
+  border-left: 3px solid var(--dim-olive);
+  box-shadow: 0 6px 20px rgb(60 55 40 / 14%);
+  font-size: 12px;
+}
+
+.dim-card-undo-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dim-card-undo-message small {
+  display: block;
+  margin-top: 3px;
+  color: var(--dim-ink-soft);
+  font-size: 10px;
+}
+
+.dim-card-undo button {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--dim-olive-deep);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.dim-card-undo .dim-card-undo-action {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dim-card-undo button:hover {
+  background: var(--dim-inset);
+}
+
+.dim-desktop-toolbar button:focus-visible,
+.dim-card-undo button:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+@media (width <= 700px) {
+  .dim-desktop-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .dim-desktop-toolbar .dim-focus-capsule {
+    max-width: 100%;
+  }
+
+  .dim-desktop-tools {
+    justify-content: flex-start;
+  }
+
+  .dim-desktop-outside {
+    order: 5;
+    flex-basis: 100%;
+    margin: 0;
+  }
+
+  .dim-desktop-inventory,
+  .dim-desktop-more-panel {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 82px);
+  }
+}
+
+
+/* 页内工具占自己的行，卡片只能在下方纸面中平移。 */
+.dim-main:has(> .dim-stage--home) { padding: 0; gap: 0; }
+
+.dim-page-topline {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 48px;
+  padding: 7px 20px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--dim-line-soft);
+  background: #fcfaf1;
+  z-index: 35;
+}
+
+.dim-page-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--dim-ink-soft);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.dim-page-date-mark { color: var(--dim-olive); font-size: 18px; }
+
+.dim-page-topline > .dim-desktop-toolbar { margin: 0; }
+.dim-page-topline .dim-desktop-tools { gap: 8px; }
+.dim-page-topline .dim-desktop-add {
+  background: var(--dim-lime);
+  border-color: #bac744;
+  color: var(--dim-olive-deep);
+  font-weight: 600;
+}
+.dim-page-topline .dim-desktop-add:hover { background: #d3df63; }
+.dim-page-topline .dim-btn--quiet { color: var(--dim-ink-soft); }
+
+.dim-stage--home > .dim-layer--desk {
+  top: 49px;
+  height: calc(100% - 49px);
+}
+
+.dim-desktop-camera-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 20px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: calc(100% - 160px);
+  padding: 2px 3px;
+  border: 1px solid var(--dim-line);
+  border-radius: 0;
+  background: var(--dim-paper);
+  font-size: 11px;
+}
+
+.dim-desktop-camera-controls .dim-desktop-location-tools {
+  margin: 0;
+  padding-left: 6px;
+  border-left: 1px solid var(--dim-line-soft);
+}
+
+.dim-desktop-camera-controls .dim-desktop-location-tools:has(> .dim-location-home-label:only-child) {
+  display: none;
+}
+
+.dim-desktop-home-controls {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dim-desktop-home-controls > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--dim-line, #d8d2c0);
+  border-radius: 0;
+  background: var(--dim-paper, #fffdf5);
+  color: var(--dim-olive-deep, #3d5633);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dim-desktop-home-controls > .dim-home-remember { color: var(--dim-ink-soft); }
+.dim-desktop-home-controls > button:disabled { opacity: 0.5; cursor: default; }
+.dim-desktop-home-controls > button:focus-visible { outline: 2px solid var(--dim-olive); outline-offset: 2px; }
+.dim-desktop-home-controls svg { width: 13px; height: 13px; }
+
+.dim-location-home-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.dim-app-header .dim-app-header__brand > span:first-child { display: none; }
+.dim-app-header .dim-app-header__brand > span:last-child {
+  color: var(--dim-olive-deep);
+  font-size: 20px !important;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.dim-desk-scroll::-webkit-scrollbar { display: none; }
+
+@media (width <= 760px) {
+  .dim-main:has(> .dim-stage--home) { padding: 0; }
+  .dim-page-topline { padding-inline: 12px; }
+  .dim-page-date { font-size: 10px; letter-spacing: 0; }
+  .dim-page-date-mark { display: none; }
+  .dim-page-topline .dim-desktop-tools { gap: 2px; }
+  .dim-page-topline .dim-btn { padding-inline: 8px; }
+  .dim-desktop-camera-controls { left: 12px; bottom: 12px; }
+}
+
+@media (width <= 560px) {
+  .dim-page-date { display: none; }
+  .dim-page-topline { justify-content: flex-end; }
+}
+
+.dim-page-header-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* 窄版秘书入口并入同一条顶栏，避免另起一个标题区。 */
+.dim-page-secretary-tools .dim-app-header {
+  height: auto !important;
+  padding: 0 !important;
+}
+.dim-page-secretary-tools .dim-app-header__brand { display: none; }
+
+.dim-desktop-arrange-group { display: flex; flex-direction: column; padding-bottom: 6px; margin-bottom: 5px; border-bottom: 1px solid var(--dim-line-soft); }

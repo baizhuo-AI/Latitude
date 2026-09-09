@@ -1,0 +1,36 @@
+.dim-desktop-canvas {
+  width: calc(100% + 24px);
+  min-width: 0;
+  margin: -12px;
+}
+
+.dim-desktop-zoom-space {
+  position: relative;
+  overflow: clip;
+  min-width: 100%;
+}
+
+/* The captured paper can cross the current content bounds without disappearing. */
+.dim-desktop-zoom-space:has(.is-dragging, .is-resizing) {
+  overflow: visible;
+}
+
+.dim-desk-zoom-surface {
+  position: absolute;
+  transform-origin: top left;
+}
+
+.dim-desktop-toolbar {
+  left: 0;
+}
+
+.dim-desk-scroll.is-pan-ready .dim-desktop-canvas,
+.dim-desk-scroll.is-pan-ready .dim-desktop-canvas * {
+  cursor: grab;
+}
+
+.dim-desk-scroll.is-panning,
+.dim-desk-scroll.is-panning * {
+  cursor: grabbing;
+  user-select: none;
+}

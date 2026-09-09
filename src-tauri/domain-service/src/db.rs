@@ -1,11 +1,15 @@
+mod history;
+mod history_files;
+mod history_workflows;
 use crate::{
     error::{AppError, AppResult},
     models::{
         ActionRequest, ApplyFeedbackRequest, ApplyLocationRequest, AuditContext,
-        CandidateCommandRequest, CandidateCreateRequest, CompileContextRequest, ContextRequest,
+        CandidateCommandRequest, CandidateCreateRequest, CompileContextRequest,
+        ComputerHistoryEvidenceRequest, ContextRequest, EvidenceQueryRequest, EvidenceReadRequest,
         ExportDocument, LocateEventRequest, MessageEvidenceRequest, MutationResponse,
-        OutcomeRequest, RememberRequest, ResolveRevisionRequest, RetractRequest, RollbackRequest,
-        UpdateRequest, WebEvidenceRequest, WeeklyReviewRequest,
+        OutcomeRequest, RelationshipRequest, RememberRequest, ResolveRevisionRequest,
+        RetractRequest, RollbackRequest, UpdateRequest, WebEvidenceRequest, WeeklyReviewRequest,
     },
 };
 use chrono::{Datelike, Duration as ChronoDuration, Local, SecondsFormat, TimeZone, Utc};
@@ -26,7 +30,7 @@ use std::{
 use url::Url;
 use uuid::Uuid;
 
-const CURRENT_SCHEMA_VERSION: &str = "3";
+const CURRENT_SCHEMA_VERSION: &str = "5";
 const STARTUP_BACKUP_RETENTION: usize = 10;
 const MIGRATIONS: &[(i64, &str, &str)] = &[
     (
@@ -43,6 +47,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         3,
         "semantic-closure",
         include_str!("../migrations/0003_semantic_closure.sql"),
+    ),
+    (
+        4,
+        "raw-evidence-boundary",
+        include_str!("../migrations/0004_raw_evidence_boundary.sql"),
+    ),
+    (
+        5,
+        "computer-history",
+        include_str!("../migrations/0005_computer_history.sql"),
     ),
 ];
 
@@ -82,6 +96,20 @@ const NODE_STATUSES: &[&str] = &[
     "deleted",
 ];
 const SENSITIVITIES: &[&str] = &["low", "medium", "high", "highest"];
+const EVIDENCE_EVENT_TYPES: &[&str] = &["message", "activity"];
+const EVIDENCE_SAMPLING_MODES: &[&str] = &["recent", "source_balanced"];
+const SOURCE_TYPES: &[&str] = &[
+    "computer_history",
+    "chat",
+    "quick_note",
+    "checkin",
+    "schedule",
+    "feed_feedback",
+    "audio",
+    "transcript",
+    "import",
+    "web_search",
+];
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -209,6 +237,7 @@ pub struct Database {
     pool: SqlitePool,
     path: PathBuf,
     backup_dir: PathBuf,
+    history_file_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +305,7 @@ impl Database {
         let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
+            .pragma("secure_delete", "ON")
             .foreign_keys(true)
             .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
@@ -311,6 +341,7 @@ impl Database {
             pool,
             path,
             backup_dir,
+            history_file_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         };
         Ok((
             database,
@@ -418,6 +449,41 @@ impl Database {
                 Err(error) => return Err(error.into()),
             }
         }
+        // Automatic database backups must not become an unbounded second
+        // history store. Keep identities/tombstones, omit activity contents.
+        let copy = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(&target))
+            .await?;
+        let has_history: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='history_items'",
+        )
+        .fetch_one(&copy)
+        .await?;
+        if has_history > 0 {
+            sqlx::query("PRAGMA secure_delete=ON")
+                .execute(&copy)
+                .await?;
+            sqlx::query("UPDATE evidence_refs SET excerpt=NULL,raw_event_ids_json='[]',redaction_status='pointer_only' WHERE processor_name='latitude-history'").execute(&copy).await?;
+            for table in [
+                "history_items",
+                "history_summaries",
+                "history_memories",
+                "history_curation",
+            ] {
+                sqlx::query(&format!("DELETE FROM {table}"))
+                    .execute(&copy)
+                    .await?;
+            }
+            sqlx::query("UPDATE history_settings SET config_json='{}',status_json='{}'")
+                .execute(&copy)
+                .await?;
+            sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+                .execute(&copy)
+                .await?;
+            sqlx::query("VACUUM").execute(&copy).await?;
+        }
+        copy.close().await;
         Ok(target)
     }
 
@@ -529,7 +595,33 @@ impl Database {
             &request.sensitivity_ceiling,
             SENSITIVITIES,
         )?;
-        let limit = request.limit.clamp(1, 500) as i64;
+        validate_unique_non_empty("evidenceTypes", &request.evidence_types)?;
+        for evidence_type in &request.evidence_types {
+            validate_choice("evidenceType", evidence_type, EVIDENCE_EVENT_TYPES)?;
+        }
+        let requested_limit = request.limit.clamp(1, 500);
+        let limit = requested_limit as i64 + 1;
+        let normalized_query = request
+            .query
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let query_terms: Vec<String> = normalized_query
+            .as_deref()
+            .map(|query| {
+                query
+                    .split_whitespace()
+                    .filter(|term| !term.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let query_mode = if query_terms.is_empty() {
+            "none"
+        } else {
+            "any_whitespace_term"
+        };
         let mut builder = QueryBuilder::<Sqlite>::new(
             "SELECT id, schema_version, kind, layer, label, statement, payload_json, status, \
              authority, origin, scope_json, scope_key, sensitivity, valid_from, valid_to, \
@@ -538,22 +630,29 @@ impl Database {
         );
         if !request.include_retracted {
             builder.push(" AND deleted_at IS NULL AND status NOT IN ('revoked','deleted')");
+            builder
+                .push(" AND COALESCE(json_extract(payload_json,'$.historyReviewRequired'),0)<>1");
+        }
+        if request.exclude_history {
+            builder.push(" AND NOT EXISTS (SELECT 1 FROM node_evidence_links l JOIN evidence_refs e ON e.id=l.evidence_ref_id JOIN source_records s ON s.id=e.source_record_id WHERE l.node_id=nodes.id AND s.source_type='computer_history') AND COALESCE(json_extract(payload_json,'$.evidenceType'),'')<>'computer_history'");
         }
         builder
             .push(" AND CASE sensitivity WHEN 'low' THEN 0 WHEN 'medium' THEN 1 ")
             .push("WHEN 'high' THEN 2 WHEN 'highest' THEN 3 ELSE 99 END <= ")
             .push_bind(sensitivity_rank(&request.sensitivity_ceiling) as i64);
-        if let Some(query) = request
-            .query
-            .as_ref()
-            .map(|v| v.trim())
-            .filter(|v| !v.is_empty())
-        {
-            let pattern = format!("%{query}%");
-            builder.push(" AND (label LIKE ").push_bind(pattern.clone());
-            builder
-                .push(" OR COALESCE(statement,'') LIKE ")
-                .push_bind(pattern);
+        if !query_terms.is_empty() {
+            builder.push(" AND (");
+            for (index, term) in query_terms.iter().enumerate() {
+                if index > 0 {
+                    builder.push(" OR ");
+                }
+                let pattern = format!("%{term}%");
+                builder.push("(label LIKE ").push_bind(pattern.clone());
+                builder
+                    .push(" OR COALESCE(statement,'') LIKE ")
+                    .push_bind(pattern)
+                    .push(")");
+            }
             builder.push(")");
         }
         if !request.kinds.is_empty() {
@@ -567,10 +666,22 @@ impl Database {
             }
             separated.push_unseparated(")");
         }
+        if !request.evidence_types.is_empty() {
+            builder.push(" AND (kind != 'evidence_event' OR json_extract(payload_json, '$.evidenceType') IN (");
+            let mut separated = builder.separated(", ");
+            for evidence_type in &request.evidence_types {
+                separated.push_bind(evidence_type);
+            }
+            separated.push_unseparated("))");
+        }
         builder
-            .push(" ORDER BY updated_at DESC LIMIT ")
-            .push_bind(limit);
-        let nodes: Vec<NodeRecord> = builder.build_query_as().fetch_all(&self.pool).await?;
+            .push(" ORDER BY updated_at DESC, id ASC LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(request.offset as i64);
+        let mut nodes: Vec<NodeRecord> = builder.build_query_as().fetch_all(&self.pool).await?;
+        let has_more = nodes.len() > requested_limit as usize;
+        nodes.truncate(requested_limit as usize);
         let node_ids: Vec<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
         let edges = if node_ids.is_empty() {
             Vec::new()
@@ -581,8 +692,8 @@ impl Database {
                  direction, proximity, strength, basis, authority, status, rationale, scope_json, \
                  scope_key, valid_from, valid_to, recorded_at, superseded_at, created_at, updated_at \
                  FROM edges WHERE status NOT IN ('deleted','expired') AND \
-                 (from_node_id IN (SELECT value FROM json_each(?)) OR \
-                  to_node_id IN (SELECT value FROM json_each(?))) \
+                 from_node_id IN (SELECT value FROM json_each(?)) AND \
+                 to_node_id IN (SELECT value FROM json_each(?)) \
                  ORDER BY updated_at DESC",
             )
             .bind(&ids_json)
@@ -613,7 +724,319 @@ impl Database {
             "nodes": nodes.iter().map(NodeRecord::to_value).collect::<Vec<_>>(),
             "edges": edges.iter().map(EdgeRecord::to_value).collect::<Vec<_>>(),
             "starStates": star_states,
+            "coverage": {
+                "kinds": request.kinds,
+                "evidenceTypes": request.evidence_types,
+                "query": normalized_query,
+                "queryTerms": query_terms,
+                "queryMode": query_mode,
+                "includeRetracted": request.include_retracted,
+                "sensitivityCeiling": request.sensitivity_ceiling,
+                "limit": requested_limit,
+                "returnedNodeCount": nodes.len(),
+                "possiblyTruncated": has_more,
+                "offset": request.offset,
+                "nextOffset": if has_more { Some(request.offset as usize + nodes.len()) } else { None },
+                "contentTruncated": false,
+            },
         }))
+    }
+
+    /// Search the source/evidence layer without first forcing raw records into
+    /// the semantic knowledge graph. This is the read path used both for broad
+    /// source search and for drilling from a distilled node back to its inputs.
+    pub async fn query_evidence(&self, request: EvidenceQueryRequest) -> AppResult<Value> {
+        let requested_limit = request.limit.clamp(1, 500);
+        validate_choice(
+            "samplingMode",
+            &request.sampling_mode,
+            EVIDENCE_SAMPLING_MODES,
+        )?;
+        if request.events_per_source == 0 {
+            return Err(AppError::Invalid("eventsPerSource must be positive".into()));
+        }
+        let source_balanced = request.sampling_mode == "source_balanced";
+        if let Some(from) = &request.from {
+            validate_timestamp("from", from)?;
+        }
+        if let Some(to) = &request.to {
+            validate_timestamp("to", to)?;
+        }
+        validate_unique_non_empty("sourceTypes", &request.source_types)?;
+        validate_unique_non_empty("nodeIds", &request.node_ids)?;
+        validate_unique_non_empty("evidenceRefIds", &request.evidence_ref_ids)?;
+        for source_type in &request.source_types {
+            validate_choice("sourceType", source_type, SOURCE_TYPES)?;
+        }
+
+        let normalized_query = request
+            .query
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let query_terms: Vec<String> = normalized_query
+            .as_deref()
+            .map(|query| {
+                query
+                    .split_whitespace()
+                    .filter(|term| !term.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let select =
+            "SELECT e.id AS evidence_id, e.schema_version, e.source_record_id, e.actor_id, \
+             e.actor_role, e.attribution_status, e.segment_id, e.raw_event_ids_json, \
+             e.start_time, e.end_time, e.transcript_span, e.resource_id, e.excerpt, \
+             e.content_hash AS evidence_content_hash, e.redaction_status, e.processor_name, \
+             e.processor_version, e.created_at AS evidence_created_at, e.retracted_at, \
+             s.id AS source_id, s.source_type, s.captured_at, s.ended_at, s.storage_uri, \
+             s.content_hash AS source_content_hash, s.privacy_level, s.storage_policy, \
+             s.model_access, s.coverage_status, s.suppressed_count, s.collector_version, \
+             s.metadata_json, s.created_at AS source_created_at, \
+             COALESCE(e.start_time,s.captured_at,e.created_at) AS evidence_sort_time";
+        let mut builder = if source_balanced {
+            QueryBuilder::<Sqlite>::new(format!(
+                "WITH ranked_evidence AS ({select}, \
+                 ROW_NUMBER() OVER (PARTITION BY e.source_record_id \
+                 ORDER BY COALESCE(e.start_time,s.captured_at,e.created_at) DESC, e.id ASC) AS source_rank \
+                 FROM evidence_refs e JOIN source_records s ON s.id=e.source_record_id \
+                 WHERE s.deleted_at IS NULL"
+            ))
+        } else {
+            QueryBuilder::<Sqlite>::new(format!(
+                "{select} FROM evidence_refs e JOIN source_records s ON s.id=e.source_record_id \
+                 WHERE s.deleted_at IS NULL"
+            ))
+        };
+        if request.exclude_history {
+            builder.push(" AND s.source_type<>'computer_history'");
+        }
+        // Once native history settings have been explicitly configured, older
+        // manual imports are not an alternate model access path around them.
+        builder.push(" AND (s.source_type<>'computer_history' OR e.processor_name='latitude-history' OR NOT EXISTS (SELECT 1 FROM history_settings WHERE json_type(config_json,'$.enabled') IS NOT NULL))");
+        builder.push(" AND (COALESCE(e.processor_name,'') <> 'latitude-history' OR (s.model_access='external_allowed' AND e.start_time >= ")
+            .push_bind((Utc::now()-ChronoDuration::hours(48)).to_rfc3339_opts(SecondsFormat::Millis,true)).push("))");
+        if !request.include_retracted {
+            builder.push(" AND e.retracted_at IS NULL");
+        }
+        if !request.source_types.is_empty() {
+            builder.push(" AND s.source_type IN (");
+            let mut separated = builder.separated(", ");
+            for source_type in &request.source_types {
+                separated.push_bind(source_type);
+            }
+            separated.push_unseparated(")");
+        }
+        if !request.node_ids.is_empty() {
+            builder.push(
+                " AND EXISTS (SELECT 1 FROM node_evidence_links nel \
+                 WHERE nel.evidence_ref_id=e.id AND nel.node_id IN (",
+            );
+            let mut separated = builder.separated(", ");
+            for node_id in &request.node_ids {
+                separated.push_bind(node_id);
+            }
+            separated.push_unseparated("))");
+        }
+        if !query_terms.is_empty() {
+            builder.push(" AND (");
+            for (index, term) in query_terms.iter().enumerate() {
+                if index > 0 {
+                    builder.push(" OR ");
+                }
+                let pattern = format!("%{term}%");
+                builder
+                    .push("(COALESCE(e.excerpt,'') LIKE ")
+                    .push_bind(pattern.clone());
+                builder
+                    .push(" OR COALESCE(e.resource_id,'') LIKE ")
+                    .push_bind(pattern.clone());
+                builder
+                    .push(" OR COALESCE(e.transcript_span,'') LIKE ")
+                    .push_bind(pattern.clone());
+                builder
+                    .push(" OR s.metadata_json LIKE ")
+                    .push_bind(pattern)
+                    .push(")");
+            }
+            builder.push(")");
+        }
+        if let Some(from) = &request.from {
+            builder
+                .push(" AND COALESCE(e.end_time,e.start_time,s.ended_at,s.captured_at,e.created_at) >= ")
+                .push_bind(from);
+        }
+        if !request.evidence_ref_ids.is_empty() {
+            builder.push(" AND e.id IN (");
+            let mut ids = builder.separated(", ");
+            for id in &request.evidence_ref_ids {
+                ids.push_bind(id);
+            }
+            ids.push_unseparated(")");
+        }
+        if let Some(to) = &request.to {
+            builder
+                .push(" AND COALESCE(e.start_time,s.captured_at,e.created_at) <= ")
+                .push_bind(to);
+        }
+        if source_balanced {
+            builder
+                .push(") SELECT * FROM ranked_evidence WHERE source_rank <= ")
+                .push_bind(request.events_per_source as i64)
+                .push(" ORDER BY evidence_sort_time DESC, evidence_id ASC LIMIT ")
+                .push_bind(requested_limit as i64 + 1);
+        } else {
+            builder
+                .push(" ORDER BY evidence_sort_time DESC, evidence_id ASC LIMIT ")
+                .push_bind(requested_limit as i64 + 1);
+        }
+
+        builder.push(" OFFSET ").push_bind(request.offset as i64);
+        let mut rows = builder.build().fetch_all(&self.pool).await?;
+        let has_more = rows.len() > requested_limit as usize;
+        rows.truncate(requested_limit as usize);
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            let evidence_id: String = row.try_get("evidence_id")?;
+            let linked_nodes = sqlx::query(
+                "SELECT n.id, n.kind, n.label, n.statement, n.status, n.authority, n.origin, \
+                 n.sensitivity, l.role FROM node_evidence_links l \
+                 JOIN nodes n ON n.id=l.node_id WHERE l.evidence_ref_id=? \
+                 AND n.deleted_at IS NULL AND n.status NOT IN ('deleted','revoked') \
+                 ORDER BY n.updated_at DESC, n.id ASC",
+            )
+            .bind(&evidence_id)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|node| {
+                json!({
+                    "id": node.get::<String, _>("id"),
+                    "kind": node.get::<String, _>("kind"),
+                    "label": node.get::<String, _>("label"),
+                    "statement": node.get::<Option<String>, _>("statement"),
+                    "status": node.get::<String, _>("status"),
+                    "authority": node.get::<String, _>("authority"),
+                    "origin": node.get::<String, _>("origin"),
+                    "sensitivity": node.get::<String, _>("sensitivity"),
+                    "evidenceRole": node.get::<String, _>("role"),
+                })
+            })
+            .collect::<Vec<_>>();
+            let raw_event_ids_json: String = row.try_get("raw_event_ids_json")?;
+            let metadata_json: String = row.try_get("metadata_json")?;
+            items.push(json!({
+                "evidenceRef": {
+                    "id": evidence_id,
+                    "schemaVersion": row.get::<String, _>("schema_version"),
+                    "sourceRecordId": row.get::<String, _>("source_record_id"),
+                    "actorId": row.get::<Option<String>, _>("actor_id"),
+                    "actorRole": row.get::<String, _>("actor_role"),
+                    "attributionStatus": row.get::<String, _>("attribution_status"),
+                    "segmentId": row.get::<Option<String>, _>("segment_id"),
+                    "rawEventIds": serde_json::from_str::<Value>(&raw_event_ids_json)
+                        .unwrap_or_else(|_| json!([])),
+                    "startTime": row.get::<Option<String>, _>("start_time"),
+                    "endTime": row.get::<Option<String>, _>("end_time"),
+                    "transcriptSpan": row.get::<Option<String>, _>("transcript_span"),
+                    "resourceId": row.get::<Option<String>, _>("resource_id"),
+                    "excerpt": row.get::<Option<String>, _>("excerpt"),
+                    "contentHash": row.get::<String, _>("evidence_content_hash"),
+                    "redactionStatus": row.get::<String, _>("redaction_status"),
+                    "processorName": row.get::<String, _>("processor_name"),
+                    "processorVersion": row.get::<String, _>("processor_version"),
+                    "createdAt": row.get::<String, _>("evidence_created_at"),
+                    "retractedAt": row.get::<Option<String>, _>("retracted_at"),
+                },
+                "source": {
+                    "id": row.get::<String, _>("source_id"),
+                    "sourceType": row.get::<String, _>("source_type"),
+                    "capturedAt": row.get::<Option<String>, _>("captured_at"),
+                    "endedAt": row.get::<Option<String>, _>("ended_at"),
+                    "storageUri": row.get::<Option<String>, _>("storage_uri"),
+                    "contentHash": row.get::<String, _>("source_content_hash"),
+                    "privacyLevel": row.get::<String, _>("privacy_level"),
+                    "storagePolicy": row.get::<String, _>("storage_policy"),
+                    "modelAccess": row.get::<String, _>("model_access"),
+                    "coverageStatus": row.get::<String, _>("coverage_status"),
+                    "suppressedCount": row.get::<Option<i64>, _>("suppressed_count"),
+                    "collectorVersion": row.get::<Option<String>, _>("collector_version"),
+                    "metadata": serde_json::from_str::<Value>(&metadata_json)
+                        .unwrap_or_else(|_| json!({})),
+                    "createdAt": row.get::<String, _>("source_created_at"),
+                },
+                "linkedNodes": linked_nodes,
+            }));
+        }
+        Ok(json!({
+            "ok": true,
+            "items": items,
+            "coverage": {
+                "layer": "raw_evidence",
+                "query": normalized_query,
+                "queryTerms": query_terms,
+                "queryMode": if query_terms.is_empty() { "none" } else { "any_whitespace_term" },
+                "sourceTypes": request.source_types,
+                "nodeIds": request.node_ids,
+                "from": request.from,
+                "to": request.to,
+                "includeRetracted": request.include_retracted,
+                "samplingMode": request.sampling_mode,
+                "eventsPerSource": request.events_per_source,
+                "limit": requested_limit,
+                "returnedEvidenceCount": items.len(),
+                "possiblyTruncated": has_more,
+                "offset": request.offset,
+                "nextOffset": if has_more { Some(request.offset as usize + items.len()) } else { None },
+                "contentTruncated": false,
+                "sensitivityFiltered": false,
+            }
+        }))
+    }
+
+    /// Exact source read with lossless Unicode pagination, independent of graph nodes.
+    pub async fn read_evidence(&self, request: EvidenceReadRequest) -> AppResult<Value> {
+        validate_non_empty("evidenceRefId", &request.evidence_ref_id)?;
+        if request.length == Some(0) {
+            return Err(AppError::Invalid("length must be positive".into()));
+        }
+        let result = self
+            .query_evidence(serde_json::from_value(json!({
+                "evidenceRefIds": [request.evidence_ref_id],
+                "includeRetracted": true,
+                "excludeHistory": request.exclude_history,
+                "limit": 1
+            }))?)
+            .await?;
+        let mut item = result["items"]
+            .as_array()
+            .and_then(|items| items.first())
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(request.evidence_ref_id.clone()))?;
+        let text = item["evidenceRef"]["excerpt"].as_str().unwrap_or("");
+        let total = text.chars().count();
+        if request.offset > total {
+            return Err(AppError::Invalid(
+                "offset is beyond the end of this evidence".into(),
+            ));
+        }
+        let length = request
+            .length
+            .unwrap_or(total - request.offset)
+            .min(total - request.offset);
+        let content: String = text.chars().skip(request.offset).take(length).collect();
+        let end = request.offset + length;
+        item["evidenceRef"]["excerpt"] = json!(content);
+        item["range"] = json!({
+            "offset": request.offset, "length": length, "totalCharacters": total,
+            "nextOffset": if end < total { Some(end) } else { None },
+            "contentTruncated": request.offset > 0 || end < total
+        });
+        item["ok"] = json!(true);
+        Ok(item)
     }
 
     /// Project an evidence event onto current stars without mutating the graph.
@@ -1001,6 +1424,233 @@ impl Database {
         Ok(response)
     }
 
+    /// Create one evidence-backed relationship between two current graph nodes.
+    ///
+    /// This is intentionally separate from `apply_location`: a knowledge relationship must not
+    /// fabricate an orbital edge or require either endpoint to be a StarState.
+    pub async fn create_relationship(
+        &self,
+        request: RelationshipRequest,
+        idempotency: Option<&IdempotencyContext>,
+    ) -> AppResult<MutationResponse> {
+        request.audit.validate().map_err(AppError::Invalid)?;
+        validate_non_empty("fromNodeId", &request.from_node_id)?;
+        validate_non_empty("toNodeId", &request.to_node_id)?;
+        validate_non_empty("rationale", &request.rationale)?;
+        validate_json_object("scope", &request.scope)?;
+        validate_unique_non_empty("evidenceRefs", &request.evidence_refs)?;
+        if request.from_node_id == request.to_node_id {
+            return Err(AppError::Invalid(
+                "a relationship cannot point to the same node".into(),
+            ));
+        }
+        if request.evidence_refs.is_empty() {
+            return Err(AppError::Invalid(
+                "relationships require at least one evidenceRef".into(),
+            ));
+        }
+        validate_choice(
+            "relationType",
+            &request.relation_type,
+            &[
+                "derived_from",
+                "supports",
+                "contradicts",
+                "provides_evidence_for",
+                "tension_of",
+                "tests",
+                "influences",
+                "implemented_as",
+                "resulted_in",
+                "serves",
+                "blocks",
+                "about",
+                "part_of",
+                "used_for",
+                "exemplifies",
+                "conflicts_with",
+                "bridges",
+                "evolved_from",
+                "split_from",
+                "merged_from",
+            ],
+        )?;
+        validate_choice(
+            "basis",
+            &request.basis,
+            &[
+                "direct_observation",
+                "explicit_statement",
+                "user_confirmation",
+                "deterministic_context",
+                "contextual",
+                "behavioral_inference",
+                "semantic_only",
+                "derived_metric",
+            ],
+        )?;
+        let proximity = request.proximity.as_deref().unwrap_or("near");
+        validate_choice(
+            "proximity",
+            proximity,
+            &[
+                "direct", "near", "middle", "far", "boundary", "outside", "unknown",
+            ],
+        )?;
+        let strength = request.strength.as_deref().unwrap_or("medium");
+        validate_choice(
+            "strength",
+            strength,
+            &["weak", "medium", "strong", "not_applicable"],
+        )?;
+
+        let now = now_iso();
+        let (family, direction) = relationship_semantics(&request.relation_type);
+        let mut tx = self.pool.begin().await?;
+        if let Some(cached) = begin_idempotency(&mut tx, idempotency).await? {
+            return Ok(cached);
+        }
+        let from_node = fetch_node_tx(&mut tx, &request.from_node_id).await?;
+        let to_node = fetch_node_tx(&mut tx, &request.to_node_id).await?;
+        validate_current_relationship_node(&from_node, &now)?;
+        validate_current_relationship_node(&to_node, &now)?;
+        validate_relationship_endpoint_kinds(
+            &request.relation_type,
+            &from_node.kind,
+            &to_node.kind,
+        )?;
+        let mut all_evidence_is_verified_user = true;
+        for evidence_ref in &request.evidence_refs {
+            validate_and_source_evidence_tx(&mut tx, evidence_ref).await?;
+            let attribution =
+                sqlx::query("SELECT actor_role, attribution_status FROM evidence_refs WHERE id=?")
+                    .bind(evidence_ref)
+                    .fetch_one(&mut *tx)
+                    .await?;
+            all_evidence_is_verified_user &= attribution.get::<String, _>("actor_role") == "user"
+                && attribution.get::<String, _>("attribution_status") == "verified";
+        }
+        let relation_scope_key = scope_key(&request.scope)?;
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM edges WHERE relation_type=? AND scope_key=? \
+             AND status IN ('active','proposed','disputed') \
+             AND ((from_node_id=? AND to_node_id=?) \
+               OR (?='symmetric' AND from_node_id=? AND to_node_id=?)) LIMIT 1",
+        )
+        .bind(&request.relation_type)
+        .bind(&relation_scope_key)
+        .bind(&request.from_node_id)
+        .bind(&request.to_node_id)
+        .bind(direction)
+        .bind(&request.to_node_id)
+        .bind(&request.from_node_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(existing_id) = existing {
+            return Err(AppError::Conflict(format!(
+                "relationship already exists as {existing_id}"
+            )));
+        }
+
+        let change_set_id = create_change_set(
+            &mut tx,
+            "extraction",
+            &format!(
+                "Connect {} {} {} with evidence-backed rationale",
+                request.from_node_id, request.relation_type, request.to_node_id
+            ),
+            &request.audit,
+        )
+        .await?;
+        let (authority, status) = match (request.audit.actor.as_str(), request.basis.as_str()) {
+            ("user", "explicit_statement" | "direct_observation") => {
+                if !all_evidence_is_verified_user {
+                    return Err(AppError::Conflict(
+                        "user-stated relationships require verified user-authored evidenceRefs"
+                            .into(),
+                    ));
+                }
+                ("user_stated", "active")
+            }
+            ("user", "user_confirmation") => {
+                if !all_evidence_is_verified_user {
+                    return Err(AppError::Conflict(
+                        "user-confirmed relationships require verified user-authored evidenceRefs"
+                            .into(),
+                    ));
+                }
+                ("user_confirmed", "active")
+            }
+            ("importer", _) => ("imported_unverified", "proposed"),
+            _ => ("system_inferred", "proposed"),
+        };
+        let edge_id = create_edge_with_semantics_tx(
+            &mut tx,
+            &request.from_node_id,
+            &request.to_node_id,
+            EdgeSemantics {
+                family,
+                relation_type: &request.relation_type,
+                direction,
+                proximity,
+                strength,
+                basis: &request.basis,
+                authority,
+                status,
+                rationale: request.rationale.trim(),
+            },
+            &request.scope,
+            &now,
+        )
+        .await?;
+        let evidence_role = relationship_evidence_role(&request.relation_type);
+        for evidence_ref in &request.evidence_refs {
+            sqlx::query(
+                "INSERT INTO edge_evidence_links(edge_id, evidence_ref_id, role, created_at) \
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(&edge_id)
+            .bind(evidence_ref)
+            .bind(evidence_role)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO change_evidence_links(change_set_id, evidence_ref_id, created_at) \
+                 VALUES (?, ?, ?)",
+            )
+            .bind(&change_set_id)
+            .bind(evidence_ref)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
+        insert_operation(
+            &mut tx,
+            &change_set_id,
+            0,
+            "create_edge",
+            &edge_id,
+            None,
+            Some(&edge),
+            Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
+        )
+        .await?;
+        apply_change_set(&mut tx, &change_set_id, &now).await?;
+        let response = MutationResponse {
+            ok: true,
+            change_set_id,
+            value: json!({
+                "relationship": edge,
+                "evidenceRefs": request.evidence_refs,
+            }),
+        };
+        complete_idempotency(&mut tx, idempotency, &response, &now).await?;
+        tx.commit().await?;
+        Ok(response)
+    }
+
     /// Compile a bounded graph slice. This deliberately traverses graph relationships instead
     /// of using the legacy label/statement LIKE query.
     pub async fn compile_context(&self, request: CompileContextRequest) -> AppResult<Value> {
@@ -1116,12 +1766,18 @@ impl Database {
                         .unwrap_or_else(|| (vec![node_id.clone()], vec![], "graph".into()));
                     node_path.push(next.clone());
                     edge_path.push(edge.id.clone());
-                    let reason = match edge.relation_type.as_str() {
-                        "supports" => "supporting evidence for a selected claim",
-                        "contradicts" => "contradicting evidence for a selected claim",
-                        _ => "reachable through an active graph relationship",
-                    };
-                    path_by_node.insert(next.clone(), (node_path, edge_path, reason.into()));
+                    let reason = edge
+                        .rationale
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| match edge.relation_type.as_str() {
+                            "supports" => "supporting evidence for a selected claim".into(),
+                            "contradicts" => "contradicting evidence for a selected claim".into(),
+                            _ => "reachable through an active graph relationship".into(),
+                        });
+                    path_by_node.insert(next.clone(), (node_path, edge_path, reason));
                     queue.push_back((next, depth + 1));
                 }
             }
@@ -1342,37 +1998,39 @@ impl Database {
             .await?;
             sequence += 1;
 
-            let relation_type = if effective_kind == "observation" {
-                "derived_from"
-            } else {
-                "supports"
-            };
-            let edge_id = create_evidenced_edge_tx(
-                &mut tx,
-                source_node_id,
-                &id,
-                "provenance",
-                relation_type,
-                "The durable node is grounded in this exact EvidenceRef",
-                &request.scope,
-                evidence_ref,
-                authority,
-                &now,
-            )
-            .await?;
-            let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
-            insert_operation(
-                &mut tx,
-                &change_set_id,
-                sequence,
-                "create_edge",
-                &edge_id,
-                None,
-                Some(&edge),
-                Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
-            )
-            .await?;
-            sequence += 1;
+            if let Some(source_node_id) = source_node_id {
+                let relation_type = if effective_kind == "observation" {
+                    "derived_from"
+                } else {
+                    "supports"
+                };
+                let edge_id = create_evidenced_edge_tx(
+                    &mut tx,
+                    source_node_id,
+                    &id,
+                    "provenance",
+                    relation_type,
+                    "The durable node is grounded in this exact EvidenceRef",
+                    &request.scope,
+                    evidence_ref,
+                    authority,
+                    &now,
+                )
+                .await?;
+                let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
+                insert_operation(
+                    &mut tx,
+                    &change_set_id,
+                    sequence,
+                    "create_edge",
+                    &edge_id,
+                    None,
+                    Some(&edge),
+                    Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
+                )
+                .await?;
+                sequence += 1;
+            }
         }
         let mut star_state = Value::Null;
         if effective_kind == "claim" {
@@ -1987,7 +2645,7 @@ impl Database {
         .await?;
         let mut sequence = 0_i64;
         let mut feedback_ref = None;
-        let mut evidence_sources = Vec::new();
+        let mut evidence_sources: Vec<(String, Option<String>)> = Vec::new();
         let mut seen = HashSet::new();
         if request.audit.actor == "user" {
             let (created_ref, feedback_event) = create_inline_feedback_evidence_tx(
@@ -2003,7 +2661,7 @@ impl Database {
             .await?;
             feedback_ref = Some(created_ref.clone());
             seen.insert(created_ref.clone());
-            evidence_sources.push((created_ref, feedback_event));
+            evidence_sources.push((created_ref, Some(feedback_event)));
         }
         let mut has_verified_user_evidence = request.audit.actor == "user";
         for evidence_ref in &request.evidence_refs {
@@ -2378,32 +3036,34 @@ impl Database {
             .bind(&now)
             .execute(&mut *tx)
             .await?;
-            let edge_id = create_evidenced_edge_tx(
-                &mut tx,
-                source_node_id,
-                &effective_target_id,
-                "epistemic",
-                relation,
-                "Explicit user feedback is preserved as evidence for this change",
-                &json!({}),
-                evidence_ref,
-                authority,
-                &now,
-            )
-            .await?;
-            let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
-            insert_operation(
-                &mut tx,
-                &change_set_id,
-                sequence,
-                "create_edge",
-                &edge_id,
-                None,
-                Some(&edge),
-                Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
-            )
-            .await?;
-            sequence += 1;
+            if let Some(source_node_id) = source_node_id {
+                let edge_id = create_evidenced_edge_tx(
+                    &mut tx,
+                    source_node_id,
+                    &effective_target_id,
+                    "epistemic",
+                    relation,
+                    "Explicit user feedback is preserved as evidence for this change",
+                    &json!({}),
+                    evidence_ref,
+                    authority,
+                    &now,
+                )
+                .await?;
+                let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
+                insert_operation(
+                    &mut tx,
+                    &change_set_id,
+                    sequence,
+                    "create_edge",
+                    &edge_id,
+                    None,
+                    Some(&edge),
+                    Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
+                )
+                .await?;
+                sequence += 1;
+            }
         }
         if target_before.kind == "claim" {
             let (before_star, after_star) =
@@ -2644,33 +3304,35 @@ impl Database {
             .await?;
             sequence += 1;
 
-            let edge_id = create_evidenced_edge_tx(
-                &mut tx,
-                source_node_id,
-                &candidate_id,
-                "provenance",
-                "supports",
-                "This candidate is grounded in the exact EvidenceRef",
-                &request.scope,
-                evidence_ref,
-                authority,
-                &now,
-            )
-            .await?;
-            let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
-            insert_operation(
-                &mut tx,
-                &change_set_id,
-                sequence,
-                "create_edge",
-                &edge_id,
-                None,
-                Some(&edge),
-                Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
-            )
-            .await?;
-            sequence += 1;
-            evidence_edges.push(edge);
+            if let Some(source_node_id) = source_node_id {
+                let edge_id = create_evidenced_edge_tx(
+                    &mut tx,
+                    source_node_id,
+                    &candidate_id,
+                    "provenance",
+                    "supports",
+                    "This candidate is grounded in the exact EvidenceRef",
+                    &request.scope,
+                    evidence_ref,
+                    authority,
+                    &now,
+                )
+                .await?;
+                let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
+                insert_operation(
+                    &mut tx,
+                    &change_set_id,
+                    sequence,
+                    "create_edge",
+                    &edge_id,
+                    None,
+                    Some(&edge),
+                    Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
+                )
+                .await?;
+                sequence += 1;
+                evidence_edges.push(edge);
+            }
         }
 
         apply_change_set(&mut tx, &change_set_id, &now).await?;
@@ -2762,6 +3424,8 @@ impl Database {
 
         let next_state = match (payload_state, request.command.as_str()) {
             ("proposed", "touch") => "touched",
+            // Parking is a reversible pause; reopening does not confirm a conclusion.
+            ("parked", "touch") => "touched",
             ("proposed", "park") => "parked",
             ("proposed", "acknowledge_due") => "proposed",
             ("touched", "shape") => "shaping",
@@ -2948,33 +3612,35 @@ impl Database {
             )
             .await?;
             sequence += 1;
-            let edge_id = create_evidenced_edge_tx(
-                &mut tx,
-                source_node_id,
-                candidate_id,
-                "provenance",
-                "supports",
-                "This candidate transition is grounded in the exact EvidenceRef",
-                &serde_json::from_str(&before.scope_json)?,
-                evidence_ref,
-                authority,
-                &now,
-            )
-            .await?;
-            let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
-            insert_operation(
-                &mut tx,
-                &change_set_id,
-                sequence,
-                "create_edge",
-                &edge_id,
-                None,
-                Some(&edge),
-                Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
-            )
-            .await?;
-            sequence += 1;
-            evidence_edges.push(edge);
+            if let Some(source_node_id) = source_node_id {
+                let edge_id = create_evidenced_edge_tx(
+                    &mut tx,
+                    source_node_id,
+                    candidate_id,
+                    "provenance",
+                    "supports",
+                    "This candidate transition is grounded in the exact EvidenceRef",
+                    &serde_json::from_str(&before.scope_json)?,
+                    evidence_ref,
+                    authority,
+                    &now,
+                )
+                .await?;
+                let edge = fetch_edge_tx(&mut tx, &edge_id).await?.to_value();
+                insert_operation(
+                    &mut tx,
+                    &change_set_id,
+                    sequence,
+                    "create_edge",
+                    &edge_id,
+                    None,
+                    Some(&edge),
+                    Some(&json!({ "operation": "soft_close_edge", "targetRef": edge_id })),
+                )
+                .await?;
+                sequence += 1;
+                evidence_edges.push(edge);
+            }
         }
 
         let due_kind = if request.command == "acknowledge_due" {
@@ -3209,7 +3875,8 @@ impl Database {
             }
         }
 
-        let mut evidence_sources = Vec::with_capacity(request.evidence_refs.len().max(1));
+        let mut evidence_sources: Vec<(String, Option<String>)> =
+            Vec::with_capacity(request.evidence_refs.len().max(1));
         for evidence_ref in &request.evidence_refs {
             evidence_sources.push((
                 evidence_ref.clone(),
@@ -3240,7 +3907,7 @@ impl Database {
                 &now,
             )
             .await?;
-            evidence_sources.push((evidence_ref, source_node_id));
+            evidence_sources.push((evidence_ref, Some(source_node_id)));
         }
         let direct_user_outcome = request.audit.actor == "user";
         let (correction_authority, correction_origin) = if direct_user_outcome {
@@ -3408,32 +4075,34 @@ impl Database {
             )
             .await?;
             sequence += 1;
-            let evidence_edge_id = create_evidenced_edge_tx(
-                &mut tx,
-                source_node_id,
-                &outcome_id,
-                "provenance",
-                "supports",
-                "The result is grounded in this exact EvidenceRef",
-                &json!({ "actionId": request.action_id }),
-                evidence_ref,
-                outcome_authority,
-                &now,
-            )
-            .await?;
-            let evidence_edge = fetch_edge_tx(&mut tx, &evidence_edge_id).await?.to_value();
-            insert_operation(
-                &mut tx,
-                &change_set_id,
-                sequence,
-                "create_edge",
-                &evidence_edge_id,
-                None,
-                Some(&evidence_edge),
-                Some(&json!({ "operation": "soft_close_edge", "targetRef": evidence_edge_id })),
-            )
-            .await?;
-            sequence += 1;
+            if let Some(source_node_id) = source_node_id {
+                let evidence_edge_id = create_evidenced_edge_tx(
+                    &mut tx,
+                    source_node_id,
+                    &outcome_id,
+                    "provenance",
+                    "supports",
+                    "The result is grounded in this exact EvidenceRef",
+                    &json!({ "actionId": request.action_id }),
+                    evidence_ref,
+                    outcome_authority,
+                    &now,
+                )
+                .await?;
+                let evidence_edge = fetch_edge_tx(&mut tx, &evidence_edge_id).await?.to_value();
+                insert_operation(
+                    &mut tx,
+                    &change_set_id,
+                    sequence,
+                    "create_edge",
+                    &evidence_edge_id,
+                    None,
+                    Some(&evidence_edge),
+                    Some(&json!({ "operation": "soft_close_edge", "targetRef": evidence_edge_id })),
+                )
+                .await?;
+                sequence += 1;
+            }
         }
 
         let revision_hook = if let Some(claim_id) = linked_claim_id {
@@ -3658,6 +4327,242 @@ impl Database {
         Ok(response)
     }
 
+    /// Import one immutable Computer History segment into the raw evidence
+    /// layer. No semantic node is inferred here; later knowledge writes cite
+    /// the returned EvidenceRefs so the original event stays independently
+    /// searchable and reversible.
+    pub async fn record_computer_history_evidence(
+        &self,
+        request: ComputerHistoryEvidenceRequest,
+        idempotency: Option<&IdempotencyContext>,
+    ) -> AppResult<MutationResponse> {
+        request.audit.validate().map_err(AppError::Invalid)?;
+        validate_non_empty("segmentId", &request.segment_id)?;
+        validate_non_empty("storageUri", &request.storage_uri)?;
+        validate_non_empty("contentHash", &request.content_hash)?;
+        validate_timestamp("startedAt", &request.started_at)?;
+        if let Some(ended_at) = &request.ended_at {
+            validate_timestamp("endedAt", ended_at)?;
+        }
+        validate_choice(
+            "coverageStatus",
+            &request.coverage_status,
+            &["complete", "partial", "unknown"],
+        )?;
+        validate_json_object("metadata", &request.metadata)?;
+        if request.events.is_empty() {
+            return Err(AppError::Invalid(
+                "computer history import requires at least one event".into(),
+            ));
+        }
+        if request.events.len() > 1_000 {
+            return Err(AppError::Invalid(
+                "computer history import accepts at most 1000 events per request; continue the segment in batches".into(),
+            ));
+        }
+
+        let mut parsed_events = Vec::with_capacity(request.events.len());
+        for (index, event) in request.events.iter().enumerate() {
+            let object = event.as_object().ok_or_else(|| {
+                AppError::Invalid(format!("events[{index}] must be a JSON object"))
+            })?;
+            let raw_event_id = object
+                .get("id")
+                .cloned()
+                .ok_or_else(|| AppError::Invalid(format!("events[{index}].id is required")))?;
+            if !raw_event_id.is_string() && !raw_event_id.is_number() {
+                return Err(AppError::Invalid(format!(
+                    "events[{index}].id must be a string or number"
+                )));
+            }
+            let timestamp = object
+                .get("timestamp")
+                .and_then(Value::as_str)
+                .ok_or_else(|| AppError::Invalid(format!("events[{index}].timestamp is required")))?
+                .to_string();
+            validate_timestamp(&format!("events[{index}].timestamp"), &timestamp)?;
+            let raw = serde_json::to_string(event)?;
+            let content_hash = format!("sha256:{:x}", Sha256::digest(raw.as_bytes()));
+            let kind = object
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_string();
+            parsed_events.push((raw_event_id, timestamp, kind, raw, content_hash));
+        }
+
+        let now = now_iso();
+        let source_id = new_id("source");
+        let mut tx = self.pool.begin().await?;
+        if let Some(cached) = begin_idempotency(&mut tx, idempotency).await? {
+            return Ok(cached);
+        }
+        let change_set_id = create_change_set(
+            &mut tx,
+            "extraction",
+            &format!(
+                "Import Computer History segment {} as raw searchable evidence",
+                request.segment_id
+            ),
+            &request.audit,
+        )
+        .await?;
+        let metadata = json!({
+            "segmentId": request.segment_id,
+            "eventCount": parsed_events.len(),
+            "format": "skysight.events.jsonl",
+            "sourceMetadata": request.metadata,
+        });
+        let collector_version = request
+            .collector_version
+            .as_deref()
+            .unwrap_or("computer-history.unknown");
+        sqlx::query(
+            "INSERT INTO source_records(\
+             id, source_type, captured_at, ended_at, storage_uri, content_hash, privacy_level, \
+             storage_policy, model_access, coverage_status, collector_version, metadata_json, \
+             created_at) VALUES (?, 'computer_history', ?, ?, ?, ?, 'highest', 'local_only', \
+             'external_allowed', ?, ?, ?, ?)",
+        )
+        .bind(&source_id)
+        .bind(&request.started_at)
+        .bind(&request.ended_at)
+        .bind(&request.storage_uri)
+        .bind(&request.content_hash)
+        .bind(&request.coverage_status)
+        .bind(collector_version)
+        .bind(serde_json::to_string(&metadata)?)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+
+        let source_value = json!({
+            "id": source_id,
+            "sourceType": "computer_history",
+            "capturedAt": request.started_at,
+            "endedAt": request.ended_at,
+            "storageUri": request.storage_uri,
+            "contentHash": request.content_hash,
+            "privacyLevel": "highest",
+            "storagePolicy": "local_only",
+            "modelAccess": "external_allowed",
+            "coverageStatus": request.coverage_status,
+            "collectorVersion": collector_version,
+            "metadata": metadata,
+            "createdAt": now,
+        });
+        insert_operation(
+            &mut tx,
+            &change_set_id,
+            0,
+            "create_source",
+            &source_id,
+            None,
+            Some(&source_value),
+            Some(&json!({ "operation": "soft_delete_source", "targetRef": source_id })),
+        )
+        .await?;
+
+        let mut evidence_receipts = Vec::with_capacity(parsed_events.len());
+        for (offset, (raw_event_id, timestamp, kind, raw, content_hash)) in
+            parsed_events.into_iter().enumerate()
+        {
+            let evidence_id = new_id("evidence");
+            let actor_role = if kind.starts_with("keyboard.")
+                || kind.starts_with("mouse.")
+                || kind.starts_with("selection.")
+            {
+                "user"
+            } else {
+                "system"
+            };
+            let attribution_status = if actor_role == "user" {
+                "probable"
+            } else {
+                "verified"
+            };
+            let raw_event_ids = json!([raw_event_id]);
+            sqlx::query(
+                "INSERT INTO evidence_refs(\
+                 id, source_record_id, actor_role, attribution_status, segment_id, \
+                 raw_event_ids_json, start_time, resource_id, excerpt, content_hash, \
+                 redaction_status, processor_name, processor_version, created_at) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', \
+                 'latitude.computer-history-import', '0.1.0', ?)",
+            )
+            .bind(&evidence_id)
+            .bind(&source_id)
+            .bind(actor_role)
+            .bind(attribution_status)
+            .bind(&request.segment_id)
+            .bind(serde_json::to_string(&raw_event_ids)?)
+            .bind(&timestamp)
+            .bind(&request.storage_uri)
+            .bind(&raw)
+            .bind(&content_hash)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO change_evidence_links(change_set_id, evidence_ref_id, created_at) \
+                 VALUES (?, ?, ?)",
+            )
+            .bind(&change_set_id)
+            .bind(&evidence_id)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+            let evidence_value = json!({
+                "id": evidence_id,
+                "sourceRecordId": source_id,
+                "actorRole": actor_role,
+                "attributionStatus": attribution_status,
+                "segmentId": request.segment_id,
+                "rawEventIds": raw_event_ids,
+                "startTime": timestamp,
+                "resourceId": request.storage_uri,
+                "excerpt": raw,
+                "contentHash": content_hash,
+                "redactionStatus": "none",
+                "processorName": "latitude.computer-history-import",
+                "processorVersion": "0.1.0",
+                "createdAt": now,
+                "retractedAt": Value::Null,
+            });
+            insert_operation(
+                &mut tx,
+                &change_set_id,
+                (1 + offset) as i64,
+                "create_evidence",
+                &evidence_id,
+                None,
+                Some(&evidence_value),
+                Some(&json!({ "operation": "retract_evidence", "targetRef": evidence_id })),
+            )
+            .await?;
+            evidence_receipts.push(json!({
+                "evidenceRefId": evidence_id,
+                "rawEventIds": raw_event_ids,
+                "startTime": timestamp,
+                "kind": kind,
+            }));
+        }
+        apply_change_set(&mut tx, &change_set_id, &now).await?;
+        let response = MutationResponse {
+            ok: true,
+            change_set_id,
+            value: json!({
+                "sourceRecordId": source_id,
+                "segmentId": request.segment_id,
+                "importedEventCount": evidence_receipts.len(),
+                "evidence": evidence_receipts,
+            }),
+        };
+        complete_idempotency(&mut tx, idempotency, &response, &now).await?;
+        tx.commit().await?;
+        Ok(response)
+    }
+
     pub async fn record_message_evidence(
         &self,
         request: MessageEvidenceRequest,
@@ -3677,6 +4582,11 @@ impl Database {
         if let Some(message_id) = &request.message_id {
             validate_non_empty("messageId", message_id)?;
         }
+        let evidence_type = request
+            .evidence_type
+            .clone()
+            .unwrap_or_else(|| "message".to_string());
+        validate_choice("evidenceType", &evidence_type, &["message", "activity"])?;
 
         let now = now_iso();
         let occurred_at = request.occurred_at.as_deref().unwrap_or(&now).to_string();
@@ -3688,6 +4598,8 @@ impl Database {
             .message_id
             .clone()
             .unwrap_or_else(|| new_id("message"));
+        let (conversation_context, source_label) =
+            conversation_source(request.audit.session_id.as_deref());
         let mut tx = self.pool.begin().await?;
         if let Some(cached) = begin_idempotency(&mut tx, idempotency).await? {
             return Ok(cached);
@@ -3695,7 +4607,11 @@ impl Database {
         let change_set_id = create_change_set(
             &mut tx,
             "extraction",
-            "Capture the current user-authored message as first-class evidence",
+            if evidence_type == "activity" {
+                "Capture a user-authored activity as first-class evidence"
+            } else {
+                "Capture the current user-authored message as first-class evidence"
+            },
             &request.audit,
         )
         .await?;
@@ -3705,6 +4621,9 @@ impl Database {
             "turnId": request.audit.turn_id,
             "toolCallId": request.audit.tool_call_id,
             "authorship": "user",
+            "evidenceType": evidence_type,
+            "conversationContext": conversation_context,
+            "sourceLabel": source_label,
         });
         sqlx::query(
             "INSERT INTO source_records(\
@@ -3746,13 +4665,18 @@ impl Database {
             "occurredAt": occurred_at,
             "contentHash": content_hash,
             "authorship": "user",
+            "evidenceType": evidence_type,
         });
         insert_node_with_provenance(
             &mut tx,
             NewNode {
                 id: &node_id,
                 kind: "evidence_event",
-                label: "用户消息",
+                label: if evidence_type == "activity" {
+                    "用户记录的行动"
+                } else {
+                    "用户消息"
+                },
                 statement: Some(request.content.trim()),
                 payload: &payload,
                 scope: &json!({
@@ -4722,6 +5646,13 @@ impl Database {
                 })
             })
             .collect::<Vec<_>>();
+            let evidence_refs: Vec<String> = sqlx::query_scalar(
+                "SELECT evidence_ref_id FROM change_evidence_links WHERE change_set_id=? \
+                 ORDER BY created_at, evidence_ref_id",
+            )
+            .bind(&id)
+            .fetch_all(&self.pool)
+            .await?;
             items.push(json!({
                 "id": id,
                 "status": row.get::<String, _>("status"),
@@ -4733,6 +5664,7 @@ impl Database {
                 "createdAt": row.get::<String, _>("created_at"),
                 "appliedAt": row.get::<Option<String>, _>("applied_at"),
                 "inverseChangeSetId": row.get::<Option<String>, _>("inverse_change_set_id"),
+                "evidenceRefs": evidence_refs,
                 "operations": operations,
             }));
         }
@@ -5207,8 +6139,19 @@ impl Database {
         document: &ExportDocument,
         audit: &AuditContext,
     ) -> AppResult<MutationResponse> {
+        let _file_guard = self.history_file_lock.lock().await;
         audit.validate().map_err(AppError::Invalid)?;
         validate_export(document)?;
+        let deletions: Vec<String> = sqlx::query_scalar("SELECT id FROM history_deletions")
+            .fetch_all(&self.pool)
+            .await?;
+        let imported_deletions = document.data["historyDeletions"].as_array();
+        if deletions
+            .iter()
+            .any(|id| !imported_deletions.is_some_and(|rows| rows.iter().any(|r| r["id"] == *id)))
+        {
+            return Err(AppError::Conflict("此快照早于你清理电脑记录的操作，恢复会重新引入已删除内容。请选择清理之后导出的快照。".into()));
+        }
         let backup = self.create_backup("pre-restore").await?;
         let now = now_iso();
         let mut tx = self.pool.begin().await?;
@@ -5239,6 +6182,24 @@ impl Database {
             return Err(AppError::Invalid(
                 "restored snapshot content checksum does not match the export".into(),
             ));
+        }
+        // Restoring a profile cannot silently turn capture or cloud processing
+        // back on. The visible switch is the user's authority for that action.
+        let restored_config: String =
+            sqlx::query_scalar("SELECT config_json FROM history_settings WHERE id=1")
+                .fetch_optional(&mut *tx)
+                .await?
+                .unwrap_or_else(|| "{}".into());
+        let mut history_config: Value = serde_json::from_str(&restored_config)?;
+        if history_config["enabled"] == true
+            || history_config["modelProcessing"] == true
+            || history_config["externalEnabled"] == true
+        {
+            for key in ["enabled", "modelProcessing", "externalEnabled", "paused"] {
+                history_config[key] = json!(false);
+            }
+            sqlx::query("UPDATE history_settings SET revision=revision+1,config_json=?,status_json='{}' WHERE id=1").bind(history_config.to_string()).execute(&mut *tx).await?;
+            sqlx::query("UPDATE source_records SET model_access='forbidden' WHERE collector_version LIKE 'latitude-history/%'").execute(&mut *tx).await?;
         }
         let change_set_id = create_change_set(
             &mut tx,
@@ -5275,10 +6236,12 @@ impl Database {
             value: after,
         };
         tx.commit().await?;
+        self.write_history_memory_file().await?;
         Ok(response)
     }
 
     pub async fn delete_all(&self, audit: &AuditContext) -> AppResult<MutationResponse> {
+        let _file_guard = self.history_file_lock.lock().await;
         audit.validate().map_err(AppError::Invalid)?;
         let backup = self.create_backup("pre-delete-all").await?;
         let before_integrity = self.integrity().await?;
@@ -5339,6 +6302,7 @@ impl Database {
             value: after,
         };
         tx.commit().await?;
+        self.write_history_memory_file().await?;
         Ok(response)
     }
 
@@ -5348,6 +6312,7 @@ impl Database {
     /// Backup cleanup is allowlist-only: unknown entries and symlinks are never followed or
     /// removed, and make the returned result `partial` rather than widening the delete scope.
     pub async fn purge_all(&self) -> AppResult<Value> {
+        let _file_guard = self.history_file_lock.lock().await;
         let purged_at = now_iso();
         let before = self.integrity().await?;
 
@@ -5357,6 +6322,7 @@ impl Database {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
+        self.write_history_memory_file().await?;
 
         sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
             .execute(&self.pool)
@@ -5429,6 +6395,82 @@ struct EdgeSemantics<'a> {
     authority: &'a str,
     status: &'a str,
     rationale: &'a str,
+}
+
+fn relationship_semantics(relation_type: &str) -> (&'static str, &'static str) {
+    let family = match relation_type {
+        "supports" | "contradicts" | "provides_evidence_for" | "tension_of" => "epistemic",
+        "tests" | "implemented_as" | "resulted_in" | "blocks" => "behavioral",
+        "derived_from" | "evolved_from" | "split_from" | "merged_from" => "lineage",
+        _ => "semantic",
+    };
+    let direction = match relation_type {
+        "conflicts_with" | "bridges" => "symmetric",
+        _ => "directed",
+    };
+    (family, direction)
+}
+
+fn validate_current_relationship_node(node: &NodeRecord, now: &str) -> AppResult<()> {
+    let closed_status = matches!(
+        node.status.as_str(),
+        "unsupported" | "revoked" | "deleted" | "rejected" | "superseded" | "expired"
+    );
+    let validity_expired = node.valid_to.as_deref().is_some_and(|valid_to| {
+        match (
+            chrono::DateTime::parse_from_rfc3339(valid_to),
+            chrono::DateTime::parse_from_rfc3339(now),
+        ) {
+            (Ok(valid_to), Ok(now)) => valid_to <= now,
+            _ => true,
+        }
+    });
+    if node.deleted_at.is_some() || closed_status || validity_expired {
+        Err(AppError::Conflict(format!(
+            "node {} is not a current graph node",
+            node.id
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_relationship_endpoint_kinds(
+    relation_type: &str,
+    from_kind: &str,
+    to_kind: &str,
+) -> AppResult<()> {
+    let valid = match relation_type {
+        "tests" => {
+            matches!(from_kind, "action" | "experiment")
+                && matches!(to_kind, "claim" | "observation")
+        }
+        "implemented_as" => {
+            matches!(from_kind, "claim" | "decision" | "method" | "goal")
+                && matches!(to_kind, "action" | "experiment")
+        }
+        "resulted_in" => matches!(from_kind, "action" | "experiment") && to_kind == "outcome",
+        "tension_of" => {
+            matches!(from_kind, "evidence_event" | "observation" | "claim") && to_kind == "tension"
+        }
+        "evolved_from" | "split_from" | "merged_from" => from_kind == to_kind,
+        _ => true,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::Invalid(format!(
+            "relationType {relation_type} is not valid from {from_kind} to {to_kind}"
+        )))
+    }
+}
+
+fn relationship_evidence_role(relation_type: &str) -> &'static str {
+    match relation_type {
+        "supports" | "provides_evidence_for" => "support",
+        "contradicts" | "conflicts_with" | "tension_of" => "contradiction",
+        _ => "reason",
+    }
 }
 
 struct ClaimEffectResult {
@@ -5544,32 +6586,33 @@ fn revision_row_to_value(row: sqlx::sqlite::SqliteRow) -> Value {
 async fn validate_and_source_evidence_tx(
     tx: &mut Transaction<'_, Sqlite>,
     evidence_ref: &str,
-) -> AppResult<String> {
-    let retracted: Option<String> =
-        sqlx::query_scalar("SELECT retracted_at FROM evidence_refs WHERE id=?")
-            .bind(evidence_ref)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("evidenceRef {evidence_ref}")))?;
+) -> AppResult<Option<String>> {
+    let retracted: Option<String> = sqlx::query_scalar(
+        "SELECT e.retracted_at FROM evidence_refs e \
+             JOIN source_records s ON s.id=e.source_record_id \
+             WHERE e.id=? AND s.deleted_at IS NULL",
+    )
+    .bind(evidence_ref)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("evidenceRef {evidence_ref}")))?;
     if retracted.is_some() {
         return Err(AppError::Conflict(format!(
             "evidenceRef {evidence_ref} is retracted"
         )));
     }
-    sqlx::query_scalar(
+    let source_node_id = sqlx::query_scalar(
         "SELECT n.id FROM node_evidence_links l JOIN nodes n ON n.id=l.node_id \
          WHERE l.evidence_ref_id=? AND n.deleted_at IS NULL \
+         AND n.status NOT IN ('deleted','revoked') \
+         AND n.kind IN ('evidence_event','resource') \
          ORDER BY CASE n.kind WHEN 'evidence_event' THEN 0 WHEN 'resource' THEN 1 ELSE 2 END, \
          n.created_at ASC LIMIT 1",
     )
     .bind(evidence_ref)
     .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| {
-        AppError::Conflict(format!(
-            "evidenceRef {evidence_ref} has no active evidence/resource node"
-        ))
-    })
+    .await?;
+    Ok(source_node_id)
 }
 
 async fn link_outcome_evidence_to_edge_tx(
@@ -6580,6 +7623,21 @@ fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
+fn conversation_source(session_id: Option<&str>) -> (&'static str, &'static str) {
+    let session_id = session_id.unwrap_or_default();
+    if session_id.starts_with("codex-") {
+        ("codex_coding_agent", "Codex 编程助手对话")
+    } else if session_id.starts_with("latitude-browser-") {
+        ("latitude_ai", "维度 AI 对话")
+    } else if session_id.starts_with("latitude-sanitized-demo") {
+        ("demo", "演示数据")
+    } else if session_id.contains("scheduler") {
+        ("latitude_scheduler", "维度后台任务")
+    } else {
+        ("unknown", "来源待确认的本地对话")
+    }
+}
+
 fn new_id(prefix: &str) -> String {
     format!("{prefix}_{}", Uuid::new_v4())
 }
@@ -7115,6 +8173,56 @@ fn export_tables() -> Vec<(&'static str, &'static str, &'static [&'static str])>
 
 fn restore_table_order() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
     vec![
+        (
+            "historySettings",
+            "history_settings",
+            &["id", "revision", "config_json", "status_json"],
+        ),
+        (
+            "historyItems",
+            "history_items",
+            &[
+                "id",
+                "evidence_id",
+                "source_id",
+                "provider",
+                "observed_at",
+                "app",
+                "bundle_id",
+                "title",
+                "url",
+                "coverage",
+                "group_id",
+                "expired",
+            ],
+        ),
+        (
+            "historySummaries",
+            "history_summaries",
+            &["id", "revision", "content_json", "updated_at"],
+        ),
+        (
+            "historyMemories",
+            "history_memories",
+            &["id", "statement", "groups_json", "status", "updated_at"],
+        ),
+        (
+            "historyCuration",
+            "history_curation",
+            &["group_id", "updated_at"],
+        ),
+        (
+            "historyDeletions",
+            "history_deletions",
+            &[
+                "id",
+                "from_time",
+                "to_time",
+                "app",
+                "group_id",
+                "created_at",
+            ],
+        ),
         ("sourceRecords", "source_records", SOURCE_RECORD_COLUMNS),
         ("evidenceRefs", "evidence_refs", EVIDENCE_REF_COLUMNS),
         ("nodes", "nodes", NODE_COLUMNS),
@@ -7175,7 +8283,14 @@ async fn restore_table(
         let object = row.as_object().ok_or_else(|| {
             AppError::Invalid(format!("snapshot row for {table} must be an object"))
         })?;
-        let mut builder = QueryBuilder::<Sqlite>::new(format!("INSERT INTO {table} ("));
+        let mut builder = QueryBuilder::<Sqlite>::new(format!(
+            "INSERT {} INTO {table} (",
+            if table == "history_deletions" {
+                "OR IGNORE"
+            } else {
+                ""
+            }
+        ));
         {
             let mut names = builder.separated(", ");
             for column in columns {
@@ -7207,6 +8322,11 @@ async fn clear_domain_tables(tx: &mut Transaction<'_, Sqlite>) -> AppResult<()> 
         .execute(&mut **tx)
         .await?;
     for table in [
+        "history_items",
+        "history_summaries",
+        "history_memories",
+        "history_curation",
+        "history_settings",
         "change_evidence_links",
         "change_operations",
         "weekly_reviews",

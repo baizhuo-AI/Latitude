@@ -3,6 +3,7 @@ import "../styles/index.css"; // 提供 --font-sans / --font-mono
 import { DimensionApp } from "./DimensionApp";
 import { DeskGrid } from "./cards";
 import { DESK } from "./sample";
+import { buildBrowserProjection } from "../projections/desktop/browserProjection";
 import "./dimension.css";
 
 /**
@@ -22,6 +23,18 @@ export const Desk: Story = () => (
     <DimensionApp />
   </div>
 );
+
+/** 独立本机存储作用域，用于验证离线新建、找回和窗口缩放，不连接用户数据。 */
+export const OfflineWorkspace: Story = () => {
+  const { projection, layout } = buildBrowserProjection({
+    context: { nodes: [], edges: [] },
+    runtimeState: "unavailable",
+    now: new Date("2026-09-05T12:00:00Z"),
+  });
+  return <div style={{ position: "fixed", inset: 0 }}>
+    <DimensionApp layout={{ ...layout, id: "ui-workspace-acceptance" }} projection={projection} />
+  </div>;
+};
 
 /** 只看纸片:检查纸质、倾斜角、胶带和回形针 */
 export const Cards: Story = () => (

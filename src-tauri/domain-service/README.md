@@ -30,13 +30,15 @@ returns the first response, while a changed body returns `409`.
 
 Normal routes have a strict 2 MiB request limit. Only
 `POST /v1/admin/dangerous/prepare` has a dedicated 64 MiB limit so a complete restore snapshot
-can pass without expanding any ordinary write surface. Export checksums use the exact shape
+can pass without expanding any ordinary write surface. Computer History segment import has a
+route-local 16 MiB limit because an accessibility-tree event can contain a large visible document.
+Export checksums use the exact shape
 `sha256:<64 lowercase hexadecimal characters>`.
 
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/health` | Readiness, schema version, node/revision counts |
-| `POST` | `/v1/context` | Query active graph context; hard SQL filter by optional `sensitivityCeiling` |
+| `POST` | `/v1/context` | Query active graph context; hard SQL filters by optional `sensitivityCeiling`, exact `kinds`, and `evidenceTypes` (the latter constrains only `evidence_event`) |
 | `GET` | `/v1/changes?limit=100` | Latest-first ChangeSets with before/after/inverse operations |
 | `POST` | `/v1/changes` | Flat `operation=remember/update/retract/rollback` mutation |
 | `POST` | `/v1/changes/{changeSetId}/rollback` | Compatibility rollback route |
@@ -50,10 +52,14 @@ can pass without expanding any ordinary write surface. Export checksums use the 
 | `POST` | `/v1/revisions/{revisionId}/resolve` | Apply `confirms/contracts/revises/refutes` or `dismissed` to a pending receipt |
 | `GET` | `/v1/reviews?status=due&dueBefore={RFC3339}&sensitivityCeiling=low` | Return latest complete week only when it has an eligible loop artifact; stable ceiling-specific `receiptKey` |
 | `POST` | `/v1/reviews` | Generate/deduplicate a hard-filtered structured single/double-loop review |
+| `POST` | `/v1/evidence/query` | Search full raw evidence independently of the graph, reverse-resolve `nodeIds`, and continue with `offset` / `coverage.nextOffset`; no sensitivity filtering |
+| `POST` | `/v1/evidence/read` | Read full text by `evidenceRefId`, or continue by Unicode `offset` / `length`; `range.nextOffset` marks the next part |
+| `POST` | `/v1/evidence/computer-history` | Idempotently import one Skysight segment as a source plus raw EvidenceRefs, without inferring semantic nodes |
 | `POST` | `/v1/evidence/message` | Atomically capture a user-authored chat source, EvidenceRef, and evidence event |
 | `POST` | `/v1/evidence/web` | Store web provenance plus required immutable ranking-time `whyNow` as untrusted evidence, never prompt authority |
 | `POST` | `/v1/star-map/locate-event` | Read-only graph-aware location projection; `mutationPerformed=false` |
 | `POST` | `/v1/star-map/apply-location` | Audited `orbits` + semantic edge + StarState mutation; semantic-only stays proposed |
+| `POST` | `/v1/relationships` | Create one evidence-backed, auditable relationship between current nodes without fabricating an `orbits` edge |
 | `POST` | `/v1/star-map/compile-context` | Bounded graph traversal with paths, StarStates, epistemic and sensitivity policy |
 | `POST` | `/v1/star-map/apply-feedback` | Version claim feedback or persist resource curator preference without changing source trust |
 | `GET` | `/v1/admin/integrity` | `quick_check`, foreign-key violations, and core counts |
@@ -62,11 +68,17 @@ can pass without expanding any ordinary write surface. Export checksums use the 
 | `POST` | `/v1/admin/dangerous/commit` | Commit staged operation with token + exact phrase |
 
 Successful graph writes return `{ok, changeSetId, value}`. Ordinary message/memory/action input
-defaults to `sensitivity=medium`; `low` is an explicit opt-in boundary for unattended curation.
+defaults to `sensitivity=medium`. The local Agent's interactive and scheduled reads use the
+owner-authorized full scope (`highest`), rather than a hidden `low`-only gate. Explicitly
+requested narrower ceilings are still valid query filters; the low-ceiling API examples below
+illustrate those filters, not the scheduler's default authorization.
 A model write stays `origin=model, authority=system_inferred`, even if it cites a verified user
 message: that EvidenceRef proves what the user said, not that a model paraphrase is equivalent.
 Only an HTTP write with `audit.actor=user` can create `user_stated`, `user_corrected`, or an
-explicit `user_confirmed` fact. Model claim inference without EvidenceRefs is stored as an
+explicit `user_confirmed` fact. Relationship authority also depends on basis plus verified
+user-authored EvidenceRefs: contextual, behavioral, metric, or semantic-only relationship
+inferences remain `system_inferred/proposed` even when the user triggered the request. Model claim
+inference without EvidenceRefs is stored as an
 unsupported/proposed observation, never a canonical active claim. Generic claim update is
 fail-closed; claim semantics must use feedback, outcomes, or retract so lineage is preserved.
 

@@ -4,9 +4,10 @@ use crate::{
     models::{
         ActionRequest, ApplyFeedbackRequest, ApplyLocationRequest, AuditContext,
         CandidateCommandRequest, CandidateCreateRequest, ChangeRequest, CommitDangerousRequest,
-        CompileContextRequest, ContextRequest, ExportDocument, LocateEventRequest,
-        MessageEvidenceRequest, OutcomeRequest, PrepareDangerousRequest, ResolveRevisionRequest,
-        RollbackRequest, WebEvidenceRequest, WeeklyReviewRequest,
+        CompileContextRequest, ComputerHistoryEvidenceRequest, ContextRequest,
+        EvidenceQueryRequest, EvidenceReadRequest, ExportDocument, LocateEventRequest,
+        MessageEvidenceRequest, OutcomeRequest, PrepareDangerousRequest, RelationshipRequest,
+        ResolveRevisionRequest, RollbackRequest, WebEvidenceRequest, WeeklyReviewRequest,
     },
 };
 use axum::{
@@ -124,6 +125,20 @@ pub fn build_router_for_origins(
 
     let regular_routes = Router::new()
         .route("/health", get(health))
+        .route(
+            "/v1/history/settings",
+            get(history_settings).post(history_configure),
+        )
+        .route("/v1/history/heartbeat", post(history_heartbeat))
+        .route("/v1/history/ingest", post(history_ingest))
+        .route("/v1/history/query", post(history_query))
+        .route("/v1/history/summary", post(history_summary))
+        .route("/v1/history/memory", post(history_memory))
+        .route("/v1/history/suggestion", post(history_suggestion))
+        .route("/v1/history/workflow", post(history_workflow))
+        .route("/v1/history/diagnostics", get(history_diagnostics))
+        .route("/v1/history/clear", post(history_clear))
+        .route("/v1/history/expire", post(history_expire))
         .route("/v1/context", post(context))
         .route("/v1/changes", get(list_changes).post(changes))
         .route("/v1/changes/{change_set_id}/rollback", post(rollback_alias))
@@ -137,10 +152,13 @@ pub fn build_router_for_origins(
         )
         .route("/v1/outcomes", post(outcomes))
         .route("/v1/reviews", get(list_reviews).post(reviews))
+        .route("/v1/evidence/query", post(evidence_query))
+        .route("/v1/evidence/read", post(evidence_read))
         .route("/v1/evidence/web", post(web_evidence))
         .route("/v1/evidence/message", post(message_evidence))
         .route("/v1/star-map/locate-event", post(locate_event))
         .route("/v1/star-map/apply-location", post(apply_location))
+        .route("/v1/relationships", post(relationships))
         .route("/v1/star-map/compile-context", post(compile_context))
         .route("/v1/star-map/apply-feedback", post(apply_feedback))
         .route("/v1/revisions", get(list_revisions))
@@ -161,8 +179,21 @@ pub fn build_router_for_origins(
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(64 * 1024 * 1024));
 
+    // Ten-minute Computer History segments can legitimately exceed the normal
+    // 2 MiB command limit because one accessibility-tree event may contain a
+    // large visible document. Keep the larger allowance on this local import
+    // route only.
+    let computer_history_route = Router::new()
+        .route(
+            "/v1/evidence/computer-history",
+            post(computer_history_evidence),
+        )
+        .layer(DefaultBodyLimit::disable())
+        .layer(RequestBodyLimitLayer::new(16 * 1024 * 1024));
+
     regular_routes
         .merge(restore_prepare_route)
+        .merge(computer_history_route)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -432,6 +463,39 @@ async fn web_evidence(
     )?))
 }
 
+async fn evidence_query(
+    State(state): State<AppState>,
+    Json(request): Json<EvidenceQueryRequest>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(state.database.query_evidence(request).await?))
+}
+
+async fn evidence_read(
+    State(state): State<AppState>,
+    Json(request): Json<EvidenceReadRequest>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(state.database.read_evidence(request).await?))
+}
+
+async fn computer_history_evidence(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ComputerHistoryEvidenceRequest>,
+) -> AppResult<Json<Value>> {
+    let idempotency = idempotency_context(
+        &headers,
+        request.client_request_id.as_deref(),
+        "/v1/evidence/computer-history",
+        &request,
+    )?;
+    Ok(Json(serde_json::to_value(
+        state
+            .database
+            .record_computer_history_evidence(request, idempotency.as_ref())
+            .await?,
+    )?))
+}
+
 async fn message_evidence(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -473,6 +537,25 @@ async fn apply_location(
         state
             .database
             .apply_location(request, idempotency.as_ref())
+            .await?,
+    )?))
+}
+
+async fn relationships(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RelationshipRequest>,
+) -> AppResult<Json<Value>> {
+    let idempotency = idempotency_context(
+        &headers,
+        request.client_request_id.as_deref(),
+        "/v1/relationships",
+        &request,
+    )?;
+    Ok(Json(serde_json::to_value(
+        state
+            .database
+            .create_relationship(request, idempotency.as_ref())
             .await?,
     )?))
 }
@@ -697,4 +780,56 @@ fn parse_change_request(raw: Value) -> AppResult<ChangeRequest> {
     }
     serde_json::from_value(Value::Object(input))
         .map_err(|error| AppError::Invalid(format!("invalid change payload: {error}")))
+}
+
+async fn history_settings(State(s): State<AppState>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_settings().await?))
+}
+async fn history_expire(State(s): State<AppState>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_expire().await?))
+}
+async fn history_configure(
+    State(s): State<AppState>,
+    Json(v): Json<Value>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_configure(v).await?))
+}
+async fn history_heartbeat(
+    State(s): State<AppState>,
+    Json(v): Json<Value>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_heartbeat(v).await?))
+}
+async fn history_ingest(State(s): State<AppState>, Json(v): Json<Value>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_ingest(v).await?))
+}
+async fn history_query(State(s): State<AppState>, Json(v): Json<Value>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_query(v).await?))
+}
+async fn history_summary(
+    State(s): State<AppState>,
+    Json(v): Json<Value>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_summary(v).await?))
+}
+async fn history_memory(State(s): State<AppState>, Json(v): Json<Value>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_memory(v).await?))
+}
+async fn history_suggestion(
+    State(s): State<AppState>,
+    Json(v): Json<Value>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_suggestion(v).await?))
+}
+async fn history_workflow(
+    State(s): State<AppState>,
+    Json(v): Json<Value>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_workflow(v).await?))
+}
+async fn history_diagnostics(State(s): State<AppState>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_diagnostics().await?))
+}
+async fn history_clear(State(s): State<AppState>, Json(v): Json<Value>) -> AppResult<Json<Value>> {
+    Ok(Json(s.database.history_clear(v).await?))
 }

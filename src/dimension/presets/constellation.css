@@ -1,9 +1,6 @@
 /**
- * 夜空（v3）：这层不负责信息量，只负责方向感。
- *
- * 一颗北极星（当前方向）+ 外圈进度环 + 一条从地平线升向它的星径
- * （今天的锚点，走过的更亮）。深靛、细发线、大量留白；
- * 唯一的暖色给北极星 —— 仰望的地方不该吵闹，但应该足够璀璨。
+ * 水彩夜空：沿用已确认草案里的靛蓝纸纹和不规则光尘。
+ * 星体使用绘制素材；明暗分层闪烁，不描出圆核或几何星形。
  */
 
 .cst-root {
@@ -11,9 +8,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: linear-gradient(180deg, #050815 0%, #090e21 52%, #11182f 100%);
+  background: #101e32;
   color: #dfe4f4;
-  padding: 22px 30px 16px;
+  padding: 0 30px 16px;
 }
 
 /* 星云是独立的一层：平时静置；进场编排里它最后才从夜幕浮出来 */
@@ -22,10 +19,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(720px 390px at 50% 6%, rgb(112 132 211 / 34%), transparent 68%),
-    radial-gradient(560px 340px at 9% 56%, rgb(68 99 159 / 18%), transparent 72%),
-    radial-gradient(640px 360px at 94% 72%, rgb(114 77 153 / 14%), transparent 73%);
+  background: url("../../assets/constellation/watercolor-night.png") center / cover no-repeat;
 }
 
 @keyframes cst-nebula-in {
@@ -36,8 +30,10 @@
 /* ---------- 顶栏 ---------- */
 
 .cst-header {
+  position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  min-height: 48px;
   justify-content: space-between;
   gap: 16px;
   flex-shrink: 0;
@@ -52,8 +48,8 @@
 }
 
 .cst-header h1 {
-  margin: 6px 0 0;
-  font-size: 23px;
+  margin: 0;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #eef1fb;
@@ -71,9 +67,6 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse at 50% 44%, rgb(118 139 201 / 8%), transparent 57%),
-    linear-gradient(112deg, transparent 22%, rgb(118 139 201 / 4%) 48%, transparent 71%);
 }
 
 .cst-root {
@@ -85,6 +78,7 @@
   border-radius: 50%;
   background: #eef2ff;
   box-shadow: 0 0 6px rgb(196 212 255 / 46%);
+  opacity: var(--dust-opacity, 0.5);
   animation: cst-twinkle 6.5s ease-in-out infinite;
   animation-delay: var(--twinkle-delay, 0s);
 }
@@ -127,9 +121,8 @@
 }
 
 @keyframes cst-twinkle {
-  0%, 100% { transform: scale(0.88); filter: brightness(0.88); }
-  48% { transform: scale(1.34); filter: brightness(1.62); }
-  65% { transform: scale(1); filter: brightness(1); }
+  0%, 100% { opacity: calc(var(--dust-opacity, 0.5) * 0.62); }
+  48% { opacity: var(--dust-opacity, 0.5); }
 }
 
 /* ---------- 天空 ---------- */
@@ -138,17 +131,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  margin-top: 8px;
-  /* 北极星身后的暖色辉光：主光源要在天幕上压得住 */
-  background: radial-gradient(320px 200px at 50% 15%, rgb(255 233 189 / 9%), transparent 72%);
-}
-
-.cst-ring-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+  margin: 8px 32px 0 12px;
 }
 
 .cst-orbit-svg {
@@ -165,35 +148,6 @@
   stroke-width: 0.28;
   stroke-dasharray: 1.4 1.1;
   vector-effect: non-scaling-stroke;
-}
-
-.cst-ring-bg,
-.cst-ring-fg {
-  fill: none;
-  stroke-width: 0.45;
-  transform: rotate(-90deg);
-  transform-origin: 50% 15%;
-}
-
-.cst-ring-bg {
-  stroke: rgb(188 204 255 / 22%);
-}
-
-.cst-ring-fg {
-  stroke: rgb(255 239 205 / 95%);
-  stroke-linecap: round;
-  transition: stroke-dasharray 0.8s ease;
-}
-
-/* 地平线：一线远山剪影 */
-.cst-horizon {
-  position: absolute;
-  left: -4%;
-  right: -4%;
-  bottom: 6%;
-  height: 14%;
-  background: linear-gradient(180deg, transparent, rgb(6 8 16 / 85%) 55%);
-  clip-path: polygon(0 62%, 12% 44%, 24% 60%, 38% 34%, 52% 58%, 66% 40%, 80% 62%, 92% 46%, 100% 60%, 100% 100%, 0 100%);
 }
 
 .cst-sky-note {
@@ -216,28 +170,33 @@
   transform: translate(-50%, -50%);
   background: none;
   border: 0;
-  padding: 12px;
+  padding: 0;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
   z-index: 2;
+  /* 整个星标一起 screen，黑底光尘在按钮的堆叠上下文外融入水彩天幕。 */
+  mix-blend-mode: screen;
 }
 
 .cst-star-core {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: var(--cst-size);
-  height: var(--cst-size);
+  width: calc(var(--cst-size) * 6);
+  height: calc(var(--cst-size) * 6);
   transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, #ffffff 0%, var(--cst-color) 42%, transparent 74%);
-  box-shadow: 0 0 14px rgb(186 209 255 / 48%);
-  transition: transform 0.3s ease, filter 0.3s ease;
+  background: url("../../assets/constellation/painted-starlight.png") center / contain no-repeat;
+  opacity: 0.82;
+  animation: cst-small-star-twinkle 5.7s ease-in-out infinite;
+  animation-delay: var(--star-twinkle-delay, 0s);
+  transition: filter 0.3s ease;
+  pointer-events: none;
 }
 
 .cst-star:hover .cst-star-core,
 .cst-star.is-active .cst-star-core {
-  transform: translate(-50%, -50%) scale(1.35);
-  filter: brightness(1.25);
+  filter: brightness(1.3);
 }
 
 .cst-star:focus-visible {
@@ -246,41 +205,14 @@
   border-radius: 50%;
 }
 
-/* 星径上走过的更亮，前方的安静地暗着 */
-.cst-star-anchor:not(.is-done) .cst-star-core {
-  opacity: 0.72;
-}
-
-.cst-star-anchor.is-done .cst-star-core {
-  box-shadow: 0 0 14px 3px rgb(216 232 255 / 52%);
-}
-
-/* 北极星：主光源——白炽核心更宽，光晕四层外推，全场的暖都从这里来 */
-.cst-star-focus .cst-star-core {
-  background: radial-gradient(
-    circle,
-    #ffffff 0%,
-    #fffaf0 30%,
-    var(--cst-color) 52%,
-    rgb(255 233 189 / 0%) 76%
-  );
-  box-shadow:
-    0 0 12px 5px rgb(255 255 255 / 92%),
-    0 0 38px 13px rgb(255 240 208 / 62%),
-    0 0 92px 32px rgb(255 225 159 / 30%),
-    0 0 210px 84px rgb(255 214 140 / 14%);
-}
-
 /* 认知评价与大想法不是卡片：轻轻落在夜空里，靠近时才显出来源。 */
 .cst-star-cognition,
 .cst-star-big-idea {
-  min-width: 122px;
-  min-height: 42px;
   border: 0;
   border-radius: 50%;
   background: transparent;
   clip-path: none;
-  transition: transform 0.35s ease, filter 0.35s ease;
+  transition: filter 0.35s ease;
 }
 
 .cst-star-cognition:hover,
@@ -290,65 +222,28 @@
   filter: brightness(1.18);
 }
 
-.cst-star-cognition .cst-star-core,
-.cst-star-big-idea .cst-star-core {
-  left: 50%;
-  top: 50%;
-  opacity: 0.5;
-  box-shadow: 0 0 24px 4px rgb(159 199 216 / 30%);
-}
-
-.cst-star-cognition:hover .cst-star-core,
-.cst-star-cognition.is-active .cst-star-core,
-.cst-star-big-idea:hover .cst-star-core,
-.cst-star-big-idea.is-active .cst-star-core {
-  opacity: 1;
-}
-
-/* 四芒光芒：竖横两道柔光束 + 45° 一对短芒，全部是渐隐的椭圆，没有硬边 */
+/* 单层星光把亮度留在中心，细薄星芒自然消散，不再重复增强外围纹理。 */
 .cst-north-sparkle {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: calc(var(--cst-size) * 7.6);
-  height: calc(var(--cst-size) * 7.6);
+  width: clamp(240px, 24vw, 310px);
+  aspect-ratio: 1;
   transform: translate(-50%, -50%);
-  background:
-    radial-gradient(ellipse 3% 50% at 50% 50%, rgb(255 250 234 / 96%), rgb(255 244 214 / 0%) 72%),
-    radial-gradient(ellipse 50% 3% at 50% 50%, rgb(255 250 234 / 96%), rgb(255 244 214 / 0%) 72%);
-  animation: cst-north-breathe 5.5s ease-in-out infinite;
-}
-
-.cst-north-sparkle::before {
-  content: "";
-  position: absolute;
-  inset: 21%;
-  background:
-    radial-gradient(ellipse 4% 50% at 50% 50%, rgb(255 244 214 / 64%), rgb(255 244 214 / 0%) 70%),
-    radial-gradient(ellipse 50% 4% at 50% 50%, rgb(255 244 214 / 64%), rgb(255 244 214 / 0%) 70%);
-  transform: rotate(45deg);
-}
-
-/* 呼吸环：一圈极淡的光晕缓慢涨落，像星光的吞吐 */
-.cst-north-sparkle::after {
-  content: "";
-  position: absolute;
-  inset: 30%;
-  border: 1px solid rgb(255 233 189 / 40%);
-  border-radius: 50%;
-  animation: cst-north-ring 5.5s ease-in-out infinite;
+  background: url("../../assets/constellation/north-starlight-v2.png") center / contain no-repeat;
+  animation: cst-north-breathe 6.8s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes cst-north-breathe {
-  0%, 100% { opacity: 0.75; transform: translate(-50%, -50%) scale(1); }
-  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  0%, 100% { opacity: 0.97; }
+  43% { opacity: 1; }
+  68% { opacity: 0.985; }
 }
 
-@keyframes cst-north-ring {
-  0% { opacity: 0; transform: scale(0.72); }
-  35% { opacity: 0.55; }
-  80% { opacity: 0; transform: scale(1.3); }
-  100% { opacity: 0; transform: scale(1.3); }
+@keyframes cst-small-star-twinkle {
+  0%, 100% { opacity: 0.7; }
+  46% { opacity: 1; }
 }
 
 /* 星标：默认只给北极星和 hover / 选中的星 */
@@ -361,9 +256,10 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  max-width: 200px;
+  width: max-content;
+  max-width: clamp(96px, 16vw, 190px);
   text-align: center;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .cst-star-label small {
@@ -396,24 +292,32 @@
 }
 
 .cst-star-focus .cst-star-label strong {
-  color: #fff7e5;
-  font-size: clamp(24px, 2.35vw, 36px);
-  font-weight: 680;
-  letter-spacing: 0.16em;
-  text-shadow:
-    0 0 2px rgb(255 255 255 / 85%),
-    0 0 22px rgb(255 236 193 / 65%),
-    0 0 54px rgb(255 219 146 / 31%);
+  color: #edf6ff;
+  font-family: "Songti SC", "Noto Serif CJK SC", STSong, Georgia, serif;
+  font-size: clamp(22px, 1.8vw, 27px);
+  font-weight: 500;
+  letter-spacing: 0.075em;
+  background: transparent;
+  text-shadow: none;
+}
+
+.cst-star-focus .cst-star-label {
+  top: calc(50% + 72px);
+  max-width: min(320px, 65vw);
+  gap: 6px;
+  background: transparent;
+  filter: none;
 }
 
 .cst-star-focus .cst-star-label small {
-  color: #c9ab72;
+  color: #b7b99f;
 }
 
 .cst-star-cognition .cst-star-label,
 .cst-star-big-idea .cst-star-label {
-  inset: 0;
-  transform: none;
+  top: calc(50% + 18px);
+  left: 50%;
+  transform: translateX(-50%);
   align-items: center;
   justify-content: center;
   text-align: center;
@@ -433,16 +337,16 @@
 
 .cst-star-cognition .cst-star-label strong,
 .cst-star-big-idea .cst-star-label strong {
-  display: block;
-  overflow: visible;
+  display: -webkit-box;
   translate: 0;
-  color: #bed5e2;
+  color: #c6d5df;
   font-size: 12px;
-  font-weight: 470;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  opacity: 0.58;
-  text-shadow: 0 0 18px rgb(153 201 224 / 24%);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  opacity: 0.78;
+  text-shadow: none;
   transition: opacity 0.28s ease, color 0.28s ease, text-shadow 0.28s ease;
 }
 
@@ -452,7 +356,7 @@
 
 .cst-star-big-idea .cst-star-label strong {
   color: #dfc994;
-  text-shadow: 0 0 18px rgb(240 201 133 / 24%);
+  text-shadow: none;
 }
 
 .cst-star-cognition:hover .cst-star-label small,
@@ -469,12 +373,13 @@
 .cst-star-big-idea.is-active .cst-star-label strong {
   color: #e1f2fa;
   opacity: 0.96;
-  text-shadow: 0 0 24px rgb(153 215 242 / 46%);
+  text-shadow: none;
 }
 
 /* ---------- 底部观测行：去框静置，文字是夜空的一部分 ---------- */
 
 .cst-caption {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: baseline;
@@ -485,29 +390,35 @@
   min-height: 40px;
 }
 
-/* 类别词不做徽章：纯排印、低对比、宽字距，静静落在天幕上 */
-.cst-caption-kind {
+.cst-caption-discuss {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
   flex-shrink: 0;
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgb(240 201 133 / 72%);
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: #d8e3eb;
+  font: inherit;
+  cursor: pointer;
 }
 
-.cst-caption strong {
-  font-weight: 600;
-  color: #eef1fb;
+.cst-caption-discuss span {
+  color: #c4b790;
 }
 
-.cst-caption-detail {
-  color: #8d97bd;
-  font-size: 11px;
-  line-height: 1.6;
+.cst-caption-discuss:hover {
+  color: #fff8df;
+}
+
+.cst-caption-discuss:focus-visible {
+  outline: 1px solid #d4c59e;
+  outline-offset: 5px;
+}
+
+.cst-caption-spacer {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cst-caption-progress {
@@ -540,15 +451,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 三个视图常驻挂载，离开夜空后让新增的星体明暗动画休眠。 */
+.dim-deck-layer[data-deck-layer="constellation"]:not([data-pos="active"], [data-star-gather="dispersing"])
+  .cst-star-core {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cst-dust-point,
+  .cst-star-core,
   .cst-north-sparkle {
     animation: none;
   }
 
   .cst-star-core,
-  .cst-star-label strong,
-  .cst-ring-fg {
+  .cst-star-label strong {
     transition: none;
   }
 }

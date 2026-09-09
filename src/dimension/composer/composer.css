@@ -1,0 +1,32 @@
+.dim-composer { position: relative; min-width: 0; flex-shrink: 0; }
+.dim-composer textarea { min-height: 48px; max-height: 140px; resize: vertical; }
+.dim-composer__toolbar, .dim-composer__tools { display: flex; align-items: center; gap: 6px; }
+.dim-composer__toolbar { justify-content: space-between; margin-top: 5px; }
+.dim-composer__tools > button, .dim-composer__attachments > li > button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; background: transparent; color: var(--dim-ink-soft); cursor: pointer; border-radius: 5px; }
+.dim-composer__tools > button:hover { background: var(--dim-paper-alt, #eae6dc); color: var(--dim-ink); }
+.dim-composer__tools > button:disabled { opacity: 0.45; cursor: default; }
+.dim-composer__toolbar .dim-thread__composer-actions { display: flex; gap: 6px; margin: 0; }
+.dim-composer__toolbar .dim-thread__composer-actions button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; }
+.dim-composer__file { display: none; }
+.dim-composer__attachments { list-style: none; padding: 0; margin: 0 0 7px; max-height: 128px; overflow-y: auto; }
+.dim-composer__attachments > li { display: flex; align-items: flex-start; justify-content: space-between; gap: 5px; padding: 5px 7px; border: 1px solid var(--dim-line-soft); border-radius: 5px; margin-bottom: 4px; font-size: 11px; }
+.dim-composer__attachments details { flex: 1; min-width: 0; }
+.dim-composer__attachments summary { cursor: pointer; overflow-wrap: anywhere; }
+.dim-composer__attachments summary span { display: block; color: var(--dim-ink-soft); padding-left: 12px; font-size: 10px; }
+.dim-composer__attachments p { font-size: 10px; line-height: 1.5; color: var(--dim-ink-soft); }
+.dim-composer__attachments pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow-y: auto; font: 11px/1.5 var(--font-sans); }
+.dim-composer__error { margin: 5px 0; color: var(--dim-rust, #934e39); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.dim-composer.is-dropping { outline: 2px dashed var(--dim-olive); outline-offset: -2px; }
+.dim-composer__drop-hint { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; background: var(--dim-paper, #f8f5ec); opacity: 0.95; color: var(--dim-olive-deep); font-size: 13px; pointer-events: none; }
+.dim-composer__voice { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; padding: 7px 0; }
+.dim-composer__voice button { border: 0; background: transparent; color: var(--dim-olive-deep); text-decoration: underline; cursor: pointer; }
+.dim-composer__voice p { flex-basis: 100%; margin: 0; max-height: 54px; overflow: auto; }
+.dim-composer__recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim-rust, #934e39); }
+.dim-thread.dim-thread--native { width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; padding: 10px 12px; border-radius: 12px; box-sizing: border-box; }
+.dim-thread--native .dim-thread__scroll { flex: 1; min-height: 0; }
+.dim-thread--native .dim-thread__header { gap: 5px; }
+.dim-thread--native .dim-thread__identity { flex-wrap: wrap; gap: 4px; }
+.dim-thread--native .dim-thread__select { min-width: 90px; max-width: 160px; }
+.dim-thread--native .dim-thread__message { max-width: 94%; font-size: 12px; }
+.dim-thread--native .dim-thread__composer { margin-top: 8px; }
+.dim-thread--native .dim-thread__composer textarea { font-size: 13px; }

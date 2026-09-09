@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SEED_LAYOUT_DOCUMENT } from "../layout/seedLayout";
 import {
   BROWSER_COMMAND_IDS,
   BROWSER_LAYOUT_COMPONENT_IDS,
+  BROWSER_PRODUCT_LAYOUT_DOCUMENT as SEED_LAYOUT_DOCUMENT,
   assertBrowserProductionOperations,
   createBrowserCompositionRegistry,
   layoutV1ToUiSurfaceV2,
@@ -11,13 +11,13 @@ import {
 } from "./browserProduction";
 
 describe("Browser production composition registry", () => {
-  it("keeps five-card LayoutV1 art inside a 15-component trusted Browser surface", () => {
+  it("keeps the original five cards plus activity inside a 16-component trusted Browser surface", () => {
     const layout = structuredClone(SEED_LAYOUT_DOCUMENT);
     layout.id = "latitude-browser-live";
     layout.revision = 3;
     const surface = layoutV1ToUiSurfaceV2(layout, "2026-08-24T12:00:00.000Z");
 
-    expect(surface.components).toHaveLength(15);
+    expect(surface.components).toHaveLength(16);
     for (const component of surface.components.filter((item) =>
       BROWSER_LAYOUT_COMPONENT_IDS.includes(
         item.id as (typeof BROWSER_LAYOUT_COMPONENT_IDS)[number],
@@ -49,11 +49,11 @@ describe("Browser production composition registry", () => {
     layout.id = "latitude-browser-live";
     layout.revision = 3;
     const surface = layoutV1ToUiSurfaceV2(layout);
-    const feed = surface.components.find((component) => component.id === "seed-feed")!;
-    feed.actions.feedback = BROWSER_COMMAND_IDS.anchorComplete;
+    const activity = surface.components.find((component) => component.id === "seed-activity")!;
+    activity.actions.capture = BROWSER_COMMAND_IDS.anchorComplete;
 
     expect(createBrowserCompositionRegistry().validateDocument(surface)).toContain(
-      "component seed-feed cannot bind command latitude.anchor.complete to event feedback",
+      "component seed-activity cannot bind command latitude.anchor.complete to event capture",
     );
   });
 
@@ -85,14 +85,14 @@ describe("Browser production composition registry", () => {
     current.components = current.components.filter((item) =>
       BROWSER_LAYOUT_COMPONENT_IDS.includes(
         item.id as (typeof BROWSER_LAYOUT_COMPONENT_IDS)[number],
-      ));
+      ) && item.id !== "seed-activity");
 
     const migrated = migrateFiveCardBrowserSurface(current, false);
     expect(migrated.revision).toBe(7);
-    expect(migrated.components).toHaveLength(15);
+    expect(migrated.components).toHaveLength(16);
     expect(migrated.components.find((item) => item.id === "secretary-companion"))
       .toMatchObject({ visible: false, slot: "overlay" });
-    expect(uiSurfaceV2ToLayoutV1(migrated, layout).cards).toHaveLength(5);
+    expect(uiSurfaceV2ToLayoutV1(migrated, layout).cards).toHaveLength(6);
     expect(uiSurfaceV2ToLayoutV1(migrated, layout).arrangement.orderedCardIds)
       .toEqual(layout.arrangement.orderedCardIds);
   });
@@ -120,12 +120,12 @@ describe("Browser production composition registry", () => {
     oldSix.components = oldSix.components.filter((component) =>
       BROWSER_LAYOUT_COMPONENT_IDS.includes(
         component.id as (typeof BROWSER_LAYOUT_COMPONENT_IDS)[number],
-      ) || component.id === "secretary-companion");
+      ) && component.id !== "seed-activity" || component.id === "secretary-companion");
     oldSix.components.find((component) => component.id === "secretary-companion")!.visible = false;
 
     const migrated = migrateFiveCardBrowserSurface(oldSix);
     expect(migrated.revision).toBe(11);
-    expect(migrated.components).toHaveLength(15);
+    expect(migrated.components).toHaveLength(16);
     expect(migrated.components.find((component) => component.id === "secretary-companion"))
       .toMatchObject({ visible: false });
     expect(migrated.components.find((component) => component.id === "command-bar"))

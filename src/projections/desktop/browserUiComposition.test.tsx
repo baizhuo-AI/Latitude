@@ -1,11 +1,15 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { SEED_LAYOUT_DOCUMENT } from "../../runtime/layout/seedLayout";
 import { validateLayoutDocument } from "../../runtime/layout/validate";
 import {
   BROWSER_LAYOUT_COMPONENT_IDS,
+  BROWSER_PRODUCT_LAYOUT_DOCUMENT as SEED_LAYOUT_DOCUMENT,
+  componentProps,
+  createBrowserCompositionRegistry,
   layoutV1ToUiSurfaceV2,
+  readPresentation,
 } from "../../runtime/composition/browserProduction";
+import { UiDocumentEngine } from "../../runtime/composition/uiDocument";
 import {
   dispatchAgentUiChangeSet,
   exportBrowserUiCompositionBackup,
@@ -16,6 +20,129 @@ import {
 
 describe("browser UiChangeSet", () => {
   beforeEach(() => window.localStorage.clear());
+
+  it("只迁移 persisted 旧默认标题，并用一次 system receipt 保留其他桌面偏好", () => {
+    const base = structuredClone(SEED_LAYOUT_DOCUMENT);
+    base.cards.find((card) => card.id === "seed-flex")!.presentation!.title = "最近值得想一想";
+    base.cards.find((card) => card.id === "seed-rhythm")!.presentation!.title = "这些行动该看结果了";
+
+    const persistedLayout = structuredClone(base);
+    persistedLayout.revision = 9;
+    persistedLayout.cards.find((card) => card.id === "seed-flex")!.presentation!.title = "当前认知张力";
+    const rhythm = persistedLayout.cards.find((card) => card.id === "seed-rhythm")!;
+    rhythm.presentation!.title = "结果回收时间窗";
+    rhythm.span = 12;
+    persistedLayout.cards.find((card) => card.id === "seed-feed")!.hidden = true;
+    persistedLayout.arrangement.orderedCardIds = [
+      "seed-flex",
+      "seed-rhythm",
+      "seed-review-plan",
+      "seed-feed",
+      "seed-schedule",
+      "seed-activity",
+    ];
+    window.localStorage.setItem(
+      `latitude.browser-ui-composition.v2:${base.id}`,
+      JSON.stringify({ document: layoutV1ToUiSurfaceV2(persistedLayout), changes: [] }),
+    );
+
+    const first = renderHook(() => useBrowserUiComposition(structuredClone(base)));
+    expect(first.result.current.document.revision).toBe(10);
+    expect(first.result.current.layout.arrangement.orderedCardIds).toEqual(
+      persistedLayout.arrangement.orderedCardIds,
+    );
+    expect(first.result.current.layout.cards.find((card) => card.id === "seed-feed")?.hidden)
+      .toBe(true);
+    expect(first.result.current.layout.cards.find((card) => card.id === "seed-rhythm"))
+      .toMatchObject({ span: 12, presentation: { title: "这些行动该看结果了" } });
+    expect(first.result.current.layout.cards.find((card) => card.id === "seed-flex")?.presentation)
+      .toMatchObject({ title: "最近值得想一想" });
+    expect(first.result.current.history).toHaveLength(1);
+    expect(first.result.current.history[0]).toMatchObject({
+      actor: "system",
+      authorization: "automatic",
+      reason: "更新 Browser 默认卡片文案",
+      beforeRevision: 9,
+      afterRevision: 10,
+    });
+    expect(first.result.current.history[0].operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ op: "setProps", componentId: "seed-flex" }),
+        expect.objectContaining({ op: "setProps", componentId: "seed-rhythm" }),
+      ]),
+    );
+    const storedAfterMigration = window.localStorage.getItem(
+      `latitude.browser-ui-composition.v2:${base.id}`,
+    );
+
+    first.unmount();
+    const second = renderHook(() => useBrowserUiComposition(structuredClone(base)));
+    expect(second.result.current.document.revision).toBe(10);
+    expect(second.result.current.history).toHaveLength(1);
+    expect(window.localStorage.getItem(`latitude.browser-ui-composition.v2:${base.id}`))
+      .toBe(storedAfterMigration);
+  });
+
+  it("保留用户明确选回旧标题，同时不把只改纸面样式误判成改名", () => {
+    const base = structuredClone(SEED_LAYOUT_DOCUMENT);
+    base.cards.find((card) => card.id === "seed-flex")!.presentation!.title = "最近值得想一想";
+    base.cards.find((card) => card.id === "seed-rhythm")!.presentation!.title = "这些行动该看结果了";
+
+    const startingLayout = structuredClone(base);
+    startingLayout.cards.find((card) => card.id === "seed-flex")!.presentation!.title = "我给它起的名字";
+    startingLayout.cards.find((card) => card.id === "seed-rhythm")!.presentation!.title = "结果回收时间窗";
+    const engine = new UiDocumentEngine(
+      layoutV1ToUiSurfaceV2(startingLayout),
+      createBrowserCompositionRegistry(),
+    );
+    const before = engine.snapshot().document;
+    const flex = before.components.find((component) => component.id === "seed-flex")!;
+    const rhythm = before.components.find((component) => component.id === "seed-rhythm")!;
+    engine.apply({
+      id: "user-copy-and-style",
+      baseRevision: before.revision,
+      actor: "user",
+      authorization: "direct_user",
+      reason: "选回熟悉的标题并调整纸面",
+      operations: [
+        {
+          op: "setProps",
+          componentId: flex.id,
+          props: componentProps(String(flex.props.bindingRef), {
+            ...readPresentation(flex.props),
+            title: "当前认知张力",
+          }),
+        },
+        {
+          op: "setProps",
+          componentId: rhythm.id,
+          props: componentProps(String(rhythm.props.bindingRef), {
+            ...readPresentation(rhythm.props),
+            tilt: 1.25,
+          }),
+        },
+      ],
+      createdAt: "2026-09-05T08:00:00.000Z",
+    });
+    const persisted = engine.snapshot();
+    window.localStorage.setItem(
+      `latitude.browser-ui-composition.v2:${base.id}`,
+      JSON.stringify({ document: persisted.document, changes: persisted.changes }),
+    );
+
+    const { result } = renderHook(() => useBrowserUiComposition(base));
+    expect(result.current.layout.cards.find((card) => card.id === "seed-flex")?.presentation)
+      .toMatchObject({ title: "当前认知张力" });
+    expect(result.current.layout.cards.find((card) => card.id === "seed-rhythm")?.presentation)
+      .toMatchObject({ title: "这些行动该看结果了", tilt: 1.25 });
+    expect(result.current.history).toHaveLength(2);
+    expect(result.current.history[1]).toMatchObject({
+      actor: "system",
+      beforeRevision: persisted.document.revision,
+      afterRevision: persisted.document.revision + 1,
+      operations: [expect.objectContaining({ op: "setProps", componentId: "seed-rhythm" })],
+    });
+  });
 
   it("保存显隐、顺序、宽度、标题，并以新的 ChangeSet 精确回滚", () => {
     const { result } = renderHook(() =>
@@ -29,6 +156,7 @@ describe("browser UiChangeSet", () => {
         reason: "把行动放在第一张纸",
         orderedCardIds: [
           "seed-schedule",
+          "seed-activity",
           "seed-feed",
           "seed-review-plan",
           "seed-rhythm",
@@ -309,7 +437,7 @@ describe("browser UiChangeSet", () => {
     legacyFive.components = legacyFive.components.filter((item) =>
       BROWSER_LAYOUT_COMPONENT_IDS.includes(
         item.id as (typeof BROWSER_LAYOUT_COMPONENT_IDS)[number],
-      ));
+      ) && item.id !== "seed-activity");
     window.localStorage.setItem(
       "latitude.secretary-companion.v1",
       JSON.stringify({ x: 123, y: 234, hidden: true }),
@@ -321,14 +449,14 @@ describe("browser UiChangeSet", () => {
 
     const { result } = renderHook(() => useBrowserUiComposition(base));
     expect(result.current.document.revision).toBe(3);
-    expect(result.current.document.components).toHaveLength(15);
+    expect(result.current.document.components).toHaveLength(16);
     expect(result.current.document.components.find((item) => item.id === "secretary-companion"))
       .toMatchObject({ visible: false });
     expect(JSON.parse(window.localStorage.getItem("latitude.secretary-companion.v1")!))
       .toEqual({ x: 123, y: 234, hidden: true });
     expect(JSON.parse(window.localStorage.getItem(
       "latitude.browser-ui-composition.v2:latitude-browser-live",
-    )!).document.components).toHaveLength(15);
+    )!).document.components).toHaveLength(16);
   });
 
   it("用户与 Agent 通过同一 CAS 调整系统模块，非法 move/command 不落地", () => {

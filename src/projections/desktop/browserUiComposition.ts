@@ -33,6 +33,18 @@ const STORAGE_PREFIX_V1 = "latitude.browser-ui-composition.v1";
 const STORAGE_PREFIX_V2 = "latitude.browser-ui-composition.v2";
 const ALLOWED_SPANS = new Set<LayoutSpan>([4, 5, 7, 12]);
 const COMPANION_POSITION_STORAGE_KEY = "latitude.secretary-companion.v1";
+const DEFAULT_CARD_TITLE_MIGRATIONS = [
+  {
+    componentId: "seed-flex",
+    from: "当前认知张力",
+    to: "最近值得想一想",
+  },
+  {
+    componentId: "seed-rhythm",
+    from: "结果回收时间窗",
+    to: "这些行动该看结果了",
+  },
+] as const;
 
 export interface BrowserUiCardPatch {
   hidden?: boolean;
@@ -647,8 +659,11 @@ function readPersisted(
     const raw = window.localStorage.getItem(`${STORAGE_PREFIX_V2}:${baseLayout.id}`);
     if (raw) {
       const validated = validatePersistedV2(JSON.parse(raw), registry);
-      const normalized = normalizeRuntimeSurface(validated);
-      if (normalized.document.components.length !== validated.document.components.length) {
+      const normalized = normalizeRuntimeSurface(validated, registry);
+      if (
+        normalized.document.components.length !== validated.document.components.length ||
+        normalized.document.revision !== validated.document.revision
+      ) {
         persistV2(baseLayout.id, normalized);
       }
       return normalized;
@@ -666,8 +681,9 @@ function readPersisted(
         registry,
         readLegacyCompanionVisible(),
       );
-      persistV2(baseLayout.id, migrated);
-      return migrated;
+      const normalized = normalizeRuntimeSurface(migrated, registry);
+      persistV2(baseLayout.id, normalized);
+      return normalized;
     }
   } catch {
     // A damaged preference never replaces the product layout.
@@ -684,14 +700,83 @@ function readPersisted(
 
 function normalizeRuntimeSurface(
   persisted: PersistedCompositionV2,
+  registry: CompositionRegistry,
 ): PersistedCompositionV2 {
-  return {
+  return migrateDefaultCardTitles({
     document: migrateLegacyBrowserSurface(
       persisted.document,
       readLegacyCompanionVisible(),
     ),
     changes: [...persisted.changes],
-  };
+  }, registry);
+}
+
+/**
+ * One-time product-copy migration for persisted Browser cards.
+ *
+ * Layout state remains entirely in the existing document. A title changes only
+ * when it still equals the retired product default and no user receipt ever
+ * changed that component's title. The UiDocumentEngine supplies the revision,
+ * inverse operation and auditable system receipt.
+ */
+function migrateDefaultCardTitles(
+  persisted: PersistedCompositionV2,
+  registry: CompositionRegistry,
+): PersistedCompositionV2 {
+  const componentById = new Map(
+    persisted.document.components.map((component) => [component.id, component]),
+  );
+  const operations: UiPatchOperation[] = [];
+
+  for (const migration of DEFAULT_CARD_TITLE_MIGRATIONS) {
+    const component = componentById.get(migration.componentId);
+    if (!component || readPresentation(component.props).title !== migration.from) continue;
+    if (wasTitleExplicitlyCustomized(persisted.changes, migration.componentId)) continue;
+    operations.push({
+      op: "setProps",
+      componentId: component.id,
+      props: componentProps(String(component.props.bindingRef), {
+        ...readPresentation(component.props),
+        title: migration.to,
+      }),
+    });
+  }
+
+  if (operations.length === 0) return persisted;
+  assertBrowserProductionOperations(operations);
+  const engine = new UiDocumentEngine(
+    persisted.document,
+    registry,
+    persisted.changes,
+  );
+  const current = engine.snapshot().document;
+  const createdAt = new Date().toISOString();
+  engine.apply({
+    id: createId("ui-default-copy"),
+    baseRevision: current.revision,
+    actor: "system",
+    authorization: "automatic",
+    reason: "更新 Browser 默认卡片文案",
+    operations,
+    createdAt,
+  });
+  const snapshot = engine.snapshot();
+  return { document: snapshot.document, changes: [...snapshot.changes] };
+}
+
+function wasTitleExplicitlyCustomized(
+  changes: readonly AppliedUiChange[],
+  componentId: string,
+): boolean {
+  return changes.some((change) => {
+    if (change.actor !== "user") return false;
+    return change.operations.some((operation, index) => {
+      if (operation.op !== "setProps" || operation.componentId !== componentId) return false;
+      const inverse = change.inverse[change.inverse.length - index - 1];
+      if (inverse?.op !== "setProps" || inverse.componentId !== componentId) return false;
+      return readPresentation(operation.props).title !== readPresentation(inverse.props).title;
+    });
+  });
 }
 
 function migratePersistedV1(

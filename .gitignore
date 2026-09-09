@@ -40,3 +40,12 @@ pipeline/out/
 *.mp3
 # 热词表 id(非密钥,但属本机运行态)
 pipeline/.vocab_id
+
+# Generated native Agent runtime (contains no user state)
+/src-tauri/resources/agent/
+
+# Local analysis, visual experiments and generated native build caches
+/docs/analysis/
+/out/
+/native/**/.build/
+/native/**/.swiftpm/

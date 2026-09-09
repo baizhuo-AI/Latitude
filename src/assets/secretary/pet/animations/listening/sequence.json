@@ -1,0 +1,55 @@
+{
+  "id": "listening",
+  "title": "认真倾听",
+  "description": "看着你听，轻轻点一下头。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "认真听你说",
+    "自然抬手",
+    "手放到耳边",
+    "轻轻点头",
+    "点头停一下",
+    "轻眨一下眼",
+    "慢慢放下手",
+    "继续倾听"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 2300
+    },
+    {
+      "frame": 1,
+      "ms": 450
+    },
+    {
+      "frame": 2,
+      "ms": 350
+    },
+    {
+      "frame": 3,
+      "ms": 350
+    },
+    {
+      "frame": 4,
+      "ms": 350
+    },
+    {
+      "frame": 5,
+      "ms": 130
+    },
+    {
+      "frame": 6,
+      "ms": 470
+    },
+    {
+      "frame": 7,
+      "ms": 2600
+    }
+  ],
+  "duration": 7000
+}

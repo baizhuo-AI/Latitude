@@ -53,6 +53,25 @@ test("artifact scan requires dist, ignores a missing optional build, and never f
   });
 });
 
+test("artifact scan distinguishes identifier suffixes from standalone, header and URL credentials", async () => {
+  await withWorkspace(async (workspace) => {
+    await mkdir(path.join(workspace, "dist"), { recursive: true });
+    const artifact = path.join(workspace, "dist", "app.js");
+    await writeFile(artifact, 'const key = "dim-desk-arranged-undo-paper";');
+    assert.equal((await scanCredentialArtifacts({ workspace })).ok, true);
+
+    const fixture = `sk-${"q".repeat(32)}`;
+    for (const content of [fixture, `Bearer ${fixture}`, `https://example.com/?key=${fixture}`]) {
+      await writeFile(artifact, content);
+      await assert.rejects(scanCredentialArtifacts({ workspace }), (error) => {
+        assert.match(error.message, /sk-prefixed-credential, 1 match/u);
+        assert.equal(error.message.includes(fixture), false);
+        return true;
+      });
+    }
+  });
+});
+
 async function withWorkspace(run) {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "latitude-artifact-scan-test-"));
   try {

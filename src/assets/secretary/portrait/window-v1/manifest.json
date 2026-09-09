@@ -1,0 +1,47 @@
+{
+  "generator": "OpenAI image_gen",
+  "date": "2026-09-09",
+  "composition": "Opaque character and watercolor window scenes",
+  "assets": [
+    {
+      "file": "idle_breathe.png",
+      "width": 1024,
+      "height": 1536,
+      "png_color_type": 2,
+      "sha256": "7405d7167d6235a58673213368447f67b618f08ad2dcd87498875c721430766a",
+      "framing": "Full-body source displayed as a bust using CSS"
+    },
+    {
+      "file": "thinking.png",
+      "width": 1122,
+      "height": 1402,
+      "png_color_type": 2,
+      "sha256": "af875674a36aa7eac4ec603bf323ced8fe6840bcbf1c5ff7d1905a041f3bdeca",
+      "framing": "Prepared frame composition"
+    },
+    {
+      "file": "offering.png",
+      "width": 1122,
+      "height": 1402,
+      "png_color_type": 2,
+      "sha256": "cef3b7042e2fe859607290043a7c9bfb65afd8ed9c14aef8a376906eb71c56f7",
+      "framing": "Prepared frame composition"
+    },
+    {
+      "file": "wave_small.png",
+      "width": 1122,
+      "height": 1402,
+      "png_color_type": 2,
+      "sha256": "2e47e13ce92e4d39f67ca67668b4c618e1d04ade98cf72cc97272d23d6addb55",
+      "framing": "Prepared frame composition"
+    },
+    {
+      "file": "window-background.png",
+      "width": 1086,
+      "height": 1448,
+      "png_color_type": 2,
+      "sha256": "2a575a1ea6fd13dcafd4a590d6bb53b0910351d27c1b31d7dfa782fa7e892c83",
+      "framing": "Prepared frame composition"
+    }
+  ]
+}

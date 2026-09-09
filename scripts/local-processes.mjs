@@ -85,14 +85,16 @@ export function terminalLocalHealthFailure(serviceName, body) {
     body?.status === "unavailable" &&
     body?.model?.configured === false
   ) {
-    return "DeepSeek is not configured. Set DEEPSEEK_API_KEY in .env.local and retry.";
+    const provider = modelProviderSetup(body?.model?.provider);
+    return `${provider.label} is not configured. Set ${provider.credential} in .env.local and retry.`;
   }
   if (
     serviceName === "agent" &&
     body?.status === "unavailable" &&
     body?.model?.authentication === "failed"
   ) {
-    return "DeepSeek authentication was rejected. Replace DEEPSEEK_API_KEY in .env.local and restart.";
+    const provider = modelProviderSetup(body?.model?.provider);
+    return `${provider.label} authentication was rejected. Replace ${provider.credential} in .env.local and restart.`;
   }
   if (
     serviceName === "agent" &&
@@ -102,6 +104,16 @@ export function terminalLocalHealthFailure(serviceName, body) {
     return "Agent data maintenance completed and requires a fresh restart.";
   }
   return null;
+}
+
+function modelProviderSetup(provider) {
+  if (provider === "openai") {
+    return { label: "OpenAI", credential: "OPENAI_API_KEY" };
+  }
+  if (provider === "anthropic") {
+    return { label: "Anthropic", credential: "ANTHROPIC_API_KEY" };
+  }
+  return { label: "DeepSeek", credential: "DEEPSEEK_API_KEY" };
 }
 
 function probeLoopbackPort(host, port) {

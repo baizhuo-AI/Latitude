@@ -1,11 +1,14 @@
+import type { HistoryService } from "../history/historyService.js";
+import { DesktopContentError, type DesktopStore } from "../desktop/desktopStore.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { AgentAdminError, type AgentAdminService } from "../admin/adminService.js";
 import type { AgentHostConfig } from "../config.js";
-import { isDeepSeekConfigured } from "../config.js";
 import type { DomainClientLike } from "../domain/domainClient.js";
 import { IdempotencyConflictError, type RunJobStore } from "../jobs/jobStore.js";
-import type { DshRuntime } from "../runtime/dshRuntime.js";
+import { ProviderSettingsError, type DshRuntime } from "../runtime/dshRuntime.js";
+import { PersonaError } from "../runtime/personaStore.js";
+import type { PersonaChange } from "../../../../src/shared/agentExperience.js";
 import type { DurableScheduler } from "../scheduler/durableScheduler.js";
 import { normalizeRunRequest, type PublicRunJob } from "../types.js";
 
@@ -23,12 +26,14 @@ class HttpError extends Error {
 }
 
 export interface AgentHttpServerOptions {
+  desktop?: DesktopStore;
   config: AgentHostConfig;
   runtime: DshRuntime;
   jobs: RunJobStore;
   domain: DomainClientLike;
   scheduler: DurableScheduler;
   admin: AgentAdminService;
+  history?: HistoryService;
 }
 
 export class AgentHttpServer {
@@ -84,12 +89,13 @@ export class AgentHttpServer {
 
     if (request.method === "GET" && url.pathname === "/health") {
       const domainHealthy = await this.options.domain.health(AbortSignal.timeout(1_000));
-      const modelConfigured = isDeepSeekConfigured();
+      const modelConfigured = this.options.runtime.providerConfigured;
       const modelAuthentication = this.options.runtime.providerAuthentication;
       const mutationInProgress = this.options.admin.isMutationInProgress;
       const snapshotInProgress = this.options.admin.isSnapshotInProgress;
+      const providerChangeInProgress = this.options.runtime.isProviderChangeInProgress;
       const restartRequired = this.options.admin.isRestartRequired;
-      const status = mutationInProgress || snapshotInProgress
+      const status = mutationInProgress || snapshotInProgress || providerChangeInProgress
         ? "starting"
         : restartRequired || !modelConfigured ||
             modelAuthentication === "failed" || !domainHealthy
@@ -101,7 +107,7 @@ export class AgentHttpServer {
         apiVersion: "v1",
         model: {
           provider: this.options.runtime.provider,
-          id: this.options.config.model,
+          id: this.options.runtime.model,
           configured: modelConfigured,
           authentication: modelAuthentication,
         },
@@ -113,6 +119,7 @@ export class AgentHttpServer {
           restartRequired,
           mutationInProgress,
           snapshotInProgress,
+          providerChangeInProgress,
         },
       });
       return;
@@ -159,6 +166,43 @@ export class AgentHttpServer {
       throw new HttpError(503, "host_restart_required", "Restart Agent Host after state change");
     }
 
+    if (url.pathname === "/v1/agent/desktop" && request.method === "GET" && this.options.desktop) {
+      this.writeJson(response, 200, this.options.desktop.read(url.searchParams.get("date") ?? undefined));
+      return;
+    }
+    if (url.pathname === "/v1/agent/desktop/todo" && request.method === "POST" && this.options.desktop) {
+      this.writeJson(response, 200, this.options.desktop.updateTodo(await this.readJson(request)));
+      return;
+    }
+    if (url.pathname === "/v1/agent/history/status" && request.method === "GET" && this.options.history) {
+      this.writeJson(response, 200, await this.options.history.status()); return;
+    }
+    if (url.pathname === "/v1/agent/history/workflow" && request.method === "POST" && this.options.history) {
+      try { this.writeJson(response,200,await this.options.history.workflowAction(await this.readJson(request))); }
+      catch(error) { throw new HttpError(409,"history_workflow_unavailable",error instanceof Error ? error.message : "工作方式暂不可用。"); }
+      return;
+    }
+
+    if (
+      request.method === "GET" &&
+      url.pathname === "/v1/agent/settings/provider"
+    ) {
+      this.writeJson(response, 200, await this.options.runtime.getProviderSettings());
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/agent/settings/provider"
+    ) {
+      this.writeJson(
+        response,
+        200,
+        await this.options.runtime.updateProviderSettings(await this.readJson(request)),
+      );
+      return;
+    }
+
     if (
       request.method === "POST" &&
       (url.pathname === "/v1/agent/turns" || url.pathname === "/v1/agent/runs")
@@ -172,6 +216,28 @@ export class AgentHttpServer {
         pollUrl: `/v1/agent/runs/${encodeURIComponent(job.runId)}`,
         deduplicated: !created,
       });
+      return;
+    }
+
+    if (url.pathname === "/v1/agent/persona") {
+      if (request.method === "GET") {
+        this.writeJson(response, 200, this.options.runtime.persona.state);
+        return;
+      }
+      if (request.method === "POST") {
+        const body = await this.readJson(request) as PersonaChange;
+        if (!body || typeof body !== "object") throw new HttpError(400, "invalid_persona", "人设修改必须是对象。");
+        this.writeJson(response, 200, await this.options.runtime.persona.change(body, { actor: "user" }));
+        return;
+      }
+    }
+    const progressMatch = url.pathname.match(/^\/v1\/agent\/runs\/([^/]+)\/events$/);
+    if (request.method === "GET" && progressMatch) {
+      const runId = decodePath(progressMatch[1]);
+      const job = this.options.jobs.get(runId);
+      if (!job) throw new HttpError(404, "run_not_found", "Agent run was not found");
+      const after = integerQuery(url.searchParams.get("after"), -1, -1, Number.MAX_SAFE_INTEGER);
+      this.writeJson(response, 200, await this.options.runtime.readRunProgress(job.request.sessionId, runId, after));
       return;
     }
 
@@ -203,6 +269,12 @@ export class AgentHttpServer {
       return;
     }
 
+    const latestRunMatch = url.pathname.match(/^\/v1\/agent\/sessions\/([^/]+)\/latest-run$/);
+    if (request.method === "GET" && latestRunMatch) {
+      const job = this.options.jobs.latestForSession(decodePath(latestRunMatch[1]));
+      this.writeJson(response, 200, { run: job ? publicJob(job) : null });
+      return;
+    }
     const messagesMatch = url.pathname.match(
       /^\/v1\/agent\/sessions\/([^/]+)\/messages$/,
     );
@@ -377,6 +449,16 @@ export class AgentHttpServer {
       });
       return;
     }
+    if (error instanceof ProviderSettingsError || error instanceof PersonaError) {
+      this.writeJson(response, error.status, {
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof DesktopContentError) {
+      this.writeJson(response, error.status, { error: { code: "desktop_content_conflict", message: error.message } });
+      return;
+    }
     if (error instanceof TypeError) {
       this.writeJson(response, 400, {
         error: { code: "invalid_request", message: error.message },
@@ -408,9 +490,12 @@ export class AgentHttpServer {
   }
 }
 
-function publicJob(job: PublicRunJob): Omit<PublicRunJob, "requestFingerprint" | "idempotencyKey"> {
+function publicJob(job: PublicRunJob) {
   const { requestFingerprint: _fingerprint, idempotencyKey: _key, ...safe } = job;
-  return safe;
+  const { systemPrompt: _systemPrompt, ...request } = safe.request;
+  if (!safe.result) return { ...safe, request };
+  const { events: _events, ...result } = safe.result;
+  return { ...safe, request, result };
 }
 
 function singleHeader(value: string | string[] | undefined): string | undefined {

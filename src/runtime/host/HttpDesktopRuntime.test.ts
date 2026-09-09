@@ -17,6 +17,21 @@ afterEach(() => {
 });
 
 describe("HttpDesktopRuntime 本机边界", () => {
+  it("默认等待超过旧的 330 秒仍继续，只有显式等待预算才终止", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => jsonResponse({ runId: "long-run", status: "running" }));
+    const runtime = new HttpDesktopRuntime({ fetchImpl: fetchMock });
+    const controller = new AbortController();
+    let finished = false;
+    const waiting = runtime.agent.waitForRun("long-run", { signal: controller.signal, pollIntervalMs: 60_000 })
+      .finally(() => { finished = true; });
+    const rejected = expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(400_000);
+    expect(finished).toBe(false);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(5);
+    controller.abort();
+    await rejected;
+  });
   it("使用构建期公开 loopback 地址连接非默认本地服务端口", async () => {
     vi.stubEnv("VITE_LATITUDE_AGENT_URL", "http://127.0.0.1:51231");
     vi.stubEnv("VITE_LATITUDE_DOMAIN_URL", "http://localhost:51232");
@@ -112,6 +127,79 @@ describe("HttpDesktopRuntime 本机边界", () => {
       operation: "update",
       id: "claim-1",
       clientRequestId: "fixed-change-key"
+    });
+  });
+
+  it("通过 Agent Host 读取并保存 Provider，而不是写入浏览器存储", async () => {
+    const settings = {
+      active: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+      options: [{
+        id: "deepseek-official",
+        label: "DeepSeek",
+        configured: true,
+        credentialName: "DEEPSEEK_API_KEY",
+        models: [{ id: "deepseek-v4-flash", label: "DeepSeek V4 Flash" }],
+      }],
+      appliesTo: "next_turn" as const,
+    };
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) =>
+      jsonResponse(init?.method === "POST"
+        ? { ...settings, active: { provider: "openai", model: "gpt-5.4-mini" } }
+        : settings)
+    );
+    const runtime = new HttpDesktopRuntime({ fetchImpl: fetchMock });
+
+    await runtime.agent.getProviderSettings();
+    await runtime.agent.updateProviderSettings({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "http://127.0.0.1:43120/v1/agent/settings/provider",
+      "http://127.0.0.1:43120/v1/agent/settings/provider",
+    ]);
+    const secondInit = fetchMock.mock.calls[1]?.[1];
+    expect(secondInit?.method).toBe("POST");
+    expect(JSON.parse(String(secondInit?.body))).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it("把今天做过保存为带 activity 类型的用户证据，而不是普通聊天", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).endsWith("/v1/scheduler/wake")) return jsonResponse({ accepted: true });
+      return jsonResponse({
+        ok: true,
+        changeSetId: "cs-activity",
+        value: {
+          sourceRecordId: "source-activity",
+          evidenceRefId: "evidence-activity",
+          nodeId: "node-activity",
+          node: { id: "node-activity", kind: "evidence_event" },
+        },
+      });
+    });
+    const runtime = new HttpDesktopRuntime({ fetchImpl: fetchMock });
+
+    await runtime.recordActivity({
+      content: "把第一版服务接回原来的纸面",
+      occurredAt: "2026-09-01T15:20:00.000Z",
+      sensitivity: "low",
+      audit: { actor: "user", sessionId: "session-1", authorizationMode: "automatic" },
+    }, { idempotencyKey: "activity-1" });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:43121/v1/evidence/message");
+    expect(JSON.parse(String(init.body))).toEqual({
+      clientRequestId: "activity-1",
+      content: "把第一版服务接回原来的纸面",
+      occurredAt: "2026-09-01T15:20:00.000Z",
+      sensitivity: "low",
+      evidenceType: "activity",
+      audit: { actor: "user", sessionId: "session-1", authorizationMode: "automatic" },
     });
   });
 

@@ -1,0 +1,55 @@
+{
+  "id": "doze",
+  "title": "抱本子打盹",
+  "description": "眼皮慢慢合上，轻轻点头，再醒过来。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "有一点困",
+    "眼皮放松",
+    "轻轻闭眼",
+    "慢慢低头",
+    "安静打盹",
+    "稍微抬头",
+    "睁开眼睛",
+    "把本子抱稳"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 1400
+    },
+    {
+      "frame": 1,
+      "ms": 450
+    },
+    {
+      "frame": 2,
+      "ms": 600
+    },
+    {
+      "frame": 3,
+      "ms": 800
+    },
+    {
+      "frame": 4,
+      "ms": 2800
+    },
+    {
+      "frame": 5,
+      "ms": 800
+    },
+    {
+      "frame": 6,
+      "ms": 650
+    },
+    {
+      "frame": 7,
+      "ms": 2500
+    }
+  ],
+  "duration": 10000
+}

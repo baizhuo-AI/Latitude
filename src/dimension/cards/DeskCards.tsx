@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { CardShell } from "./CardShell";
+import { useContext, useState } from "react";
+import { CardReadingContext, CardShell } from "./CardShell";
 import "./card-interactions.css";
 import type {
+  ActivityCard,
+  ActivityEntry,
   AnchorCard,
   AnchorRow,
   CardAccent,
@@ -55,6 +57,215 @@ function shellProps(card: {
     clip: card.clip,
     dogear: card.dogear
   };
+}
+
+/* ---------- 今天做过 ---------- */
+
+function ActivityRowView({
+  entry,
+  onEdit,
+  onRetract,
+  onLineage
+}: {
+  entry: ActivityEntry;
+  onEdit?: (entry: ActivityEntry, nextText: string) => void | Promise<void>;
+  onRetract?: (entry: ActivityEntry) => void | Promise<void>;
+  onLineage?: (lineage: LineageRef) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.text);
+  const [busy, setBusy] = useState(false);
+
+  const commit = async () => {
+    const next = draft.trim();
+    if (!next || next === entry.text || !onEdit) {
+      setDraft(entry.text);
+      setEditing(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      await onEdit(entry, next);
+      setEditing(false);
+    } catch {
+      // 接线方负责给出具体失败提示；保留输入让用户可以重试。
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="dim-activity-row">
+      <span className="dim-activity-dot" aria-hidden="true" />
+      <div className="dim-activity-main">
+        {editing ? (
+          <input
+            className="dim-anchor-edit"
+            value={draft}
+            autoFocus
+            disabled={busy}
+            aria-label={`编辑做过的事：${entry.text}`}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={(event) => event.target.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void commit();
+              if (event.key === "Escape") {
+                setDraft(entry.text);
+                setEditing(false);
+              }
+            }}
+          />
+        ) : (
+          <span className="dim-activity-text">{entry.text}</span>
+        )}
+        <span className="dim-activity-meta">
+          {entry.timeLabel} · 你记下的
+        </span>
+      </div>
+      <div className="dim-activity-actions">
+        {editing ? (
+          <button type="button" className="dim-btn dim-btn--quiet" disabled={busy} onClick={() => void commit()}>
+            {busy ? "保存中" : "保存"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="dim-btn dim-btn--quiet"
+            disabled={!onEdit}
+            aria-label={`修改：${entry.text}`}
+            onClick={() => {
+              setDraft(entry.text);
+              setEditing(true);
+            }}
+          >
+            修改
+          </button>
+        )}
+        <button
+          type="button"
+          className="dim-btn dim-btn--quiet"
+          disabled={busy || !onRetract}
+          aria-label={`撤下：${entry.text}`}
+          onClick={async () => {
+            if (!onRetract) return;
+            setBusy(true);
+            try {
+              await onRetract(entry);
+            } catch {
+              // 接线方负责给出具体失败提示；原记录保持可见。
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          撤下
+        </button>
+        <button
+          type="button"
+          className="dim-btn dim-btn--quiet"
+          disabled={!onLineage}
+          aria-label={`查看来源：${entry.lineage.label}`}
+          onClick={() => onLineage?.(entry.lineage)}
+        >
+          来源
+        </button>
+      </div>
+    </li>
+  );
+}
+
+export function ActivityCardView({
+  card,
+  onCapture,
+  onEdit,
+  onRetract,
+  onReflect,
+  onLineage
+}: {
+  card: ActivityCard;
+  onCapture?: (text: string) => void | Promise<void>;
+  onEdit?: (entry: ActivityEntry, nextText: string) => void | Promise<void>;
+  onRetract?: (entry: ActivityEntry) => void | Promise<void>;
+  onReflect?: () => void;
+  onLineage?: (lineage: LineageRef) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const readyToSubmit = card.canCapture && Boolean(onCapture) && Boolean(draft.trim()) && !submitting;
+
+  return (
+    <CardShell {...shellProps(card)}
+      headerContent={<>
+        <p className="dim-activity-intro">这里只记已经发生的事，不是待办。</p>
+        <form
+          className="dim-activity-capture"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const text = draft.trim();
+            if (!text || !onCapture || !card.canCapture) return;
+            setSubmitting(true);
+            try {
+              await onCapture(text);
+              setDraft("");
+            } catch {
+              // 接线方负责给出具体失败提示；保留输入让用户可以重试。
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+        >
+          <input
+            className="dim-input dim-activity-input"
+            value={draft}
+            disabled={!card.canCapture || submitting}
+            aria-label="记下一件已经做过的事"
+            placeholder={card.capturePlaceholder}
+            title={!card.canCapture ? card.captureUnavailableReason : undefined}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button
+            type="submit"
+            className="dim-btn dim-btn--accent"
+            disabled={!readyToSubmit}
+            aria-disabled={!readyToSubmit}
+          >
+            {submitting ? "记下中…" : "记下"}
+          </button>
+        </form>
+      </>}
+      footer={<div className="dim-activity-reflect">
+        <span className="dim-meta">
+          {card.entries.length < 2 ? "记下两件后，就可以一起看今天。" : "观察会标成待确认，不会直接变成结论。"}
+        </span>
+        <button
+          type="button"
+          className="dim-btn"
+          disabled={!card.canReflect || card.entries.length < 2 || !onReflect}
+          aria-disabled={!card.canReflect || card.entries.length < 2 || !onReflect}
+          title={!card.canReflect ? card.reflectUnavailableReason : undefined}
+          onClick={onReflect}
+        >
+          帮我看看今天
+        </button>
+      </div>}
+    >
+      {card.entries.length > 0 ? (
+        <ol className="dim-activity-list">
+          {card.entries.map((entry) => (
+            <ActivityRowView
+              key={entry.id}
+              entry={entry}
+              onEdit={onEdit}
+              onRetract={onRetract}
+              onLineage={onLineage}
+            />
+          ))}
+        </ol>
+      ) : (
+        <p className="dim-body dim-activity-empty">{card.emptyHint}</p>
+      )}
+    </CardShell>
+  );
 }
 
 /* ---------- ◇ 锚点列表 ---------- */
@@ -144,6 +355,7 @@ export function AnchorsCardView({
   onComplete?: (row: AnchorRow) => void;
   onEdit?: (row: AnchorRow, nextText: string) => void;
 }) {
+  const reading = useContext(CardReadingContext);
   return (
     <CardShell {...shellProps(card)}>
       <div style={{ marginTop: 14, position: "relative" }}>
@@ -159,7 +371,7 @@ export function AnchorsCardView({
             const lineage = row.lineage;
             const done = row.done === true;
             // 只有带来源的可行动行能改名：汇总行 / 折叠行没有可写回的实体
-            const editable = !done && row.actionable === true && Boolean(lineage) && Boolean(onEdit);
+            const editable = !reading && !done && row.actionable === true && Boolean(lineage) && Boolean(onEdit);
             return (
               <div
                 key={i}
@@ -330,39 +542,35 @@ export function NoteCardView({ card }: { card: NoteCard }) {
 /* ---------- 柱状图 ---------- */
 
 export function ChartCardView({ card }: { card: ChartCard }) {
+  const hasData = card.bars.length > 0;
   return (
-    <CardShell {...shellProps(card)} paper={card.paper ?? "grid"}>
-      <div
-        style={{
-          marginTop: 16,
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 4,
-          height: 50
-        }}
-      >
-        {card.bars.map((h, i) => (
-          <span
-            key={i}
-            style={{
-              flex: 1,
-              // 最矮也留 6%,否则空时段整根消失、读不出时间轴
-              height: `${Math.max(6, Math.min(100, h * 100))}%`,
-              // 高值用实色,低值退一档 —— 柱子本身就带出忙闲节奏
-              background: h >= 0.8 ? "#5aa8ae" : h >= 0.4 ? "#6cb2b6" : "#8cc3c6"
-            }}
-          />
-        ))}
+    <CardShell {...shellProps(card)} paper={card.paper ?? "grid"}
+      footer={hasData && card.link ? <button type="button" className="dim-btn dim-btn--quiet dim-chart-link">
+        {card.link} →
+      </button> : undefined}>
+      <div className={`dim-chart-card${hasData ? "" : " dim-chart-card--empty"}`}>
+        {hasData ? (
+          <>
+            <div className="dim-chart-bars" role="img" aria-label={`${card.bars.length} 个行动回看时段`}>
+              {card.bars.map((height, index) => {
+                const value = Math.max(0, Math.min(1, height));
+                return (
+                  <span
+                    key={index}
+                    data-chart-value={value}
+                    style={{
+                      height: `${value * 100}%`,
+                      background: value >= 0.8 ? "#5aa8ae" : value >= 0.4 ? "#6cb2b6" : "#8cc3c6"
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <p className="dim-chart-empty">{card.emptyHint ?? "还没有可展示的行动回看安排。"}</p>
+        )}
       </div>
-      {card.link && (
-        <button
-          type="button"
-          className="dim-btn dim-btn--quiet"
-          style={{ marginTop: 12, padding: "2px 0", color: "var(--dim-olive)" }}
-        >
-          {card.link} →
-        </button>
-      )}
     </CardShell>
   );
 }
@@ -371,19 +579,13 @@ export function ChartCardView({ card }: { card: ChartCard }) {
 
 export function TextCardView({ card }: { card: TextCard }) {
   return (
-    <CardShell {...shellProps(card)}>
+    <CardShell {...shellProps(card)}
+      footer={card.link ? <button type="button" className="dim-btn dim-btn--quiet dim-text-card-link">
+        {card.link} →
+      </button> : undefined}>
       <p className="dim-body" style={{ marginTop: 11 }}>
         {card.body}
       </p>
-      {card.link && (
-        <button
-          type="button"
-          className="dim-btn dim-btn--quiet"
-          style={{ marginTop: 12, padding: "2px 0", color: "var(--dim-olive)" }}
-        >
-          {card.link} →
-        </button>
-      )}
     </CardShell>
   );
 }
@@ -406,8 +608,53 @@ export function ProposalCardView({
   onReject?: () => void;
   onVerdict?: (verdict: ProposalVerdict) => void;
 }) {
+  const actions = card.verdicts && card.verdicts.length > 0 ? (
+    /* 裁决不是一个「接受」按钮（PRD §4.2）：五种回应各有合法结果 */
+    <div
+      className="dim-card-footer-actions"
+    >
+      {card.verdicts.map((verdict) => (
+        <button
+          key={verdict.id}
+          type="button"
+          className={
+            verdict.id === "try" || verdict.id === "holds"
+              ? "dim-btn dim-btn--accent"
+              : "dim-btn"
+          }
+          onClick={(event) => {
+            if (isFirstActivation(event.detail)) onVerdict?.(verdict);
+          }}
+        >
+          {verdict.label}
+        </button>
+      ))}
+    </div>
+  ) : (
+    <div className="dim-card-footer-actions">
+      <button
+        type="button"
+        className="dim-btn dim-btn--accent"
+        onClick={(event) => {
+          if (isFirstActivation(event.detail)) onAccept?.();
+        }}
+      >
+        {card.accept}
+      </button>
+      <button
+        type="button"
+        className="dim-btn"
+        onClick={(event) => {
+          if (isFirstActivation(event.detail)) onReject?.();
+        }}
+      >
+        {card.reject}
+      </button>
+    </div>
+  );
+
   return (
-    <CardShell {...shellProps(card)} paper={card.paper ?? "sticky"}>
+    <CardShell {...shellProps(card)} paper={card.paper ?? "sticky"} footer={actions}>
       <p
         style={{
           margin: "12px 0 0",
@@ -426,50 +673,6 @@ export function ProposalCardView({
         <p className="dim-body" style={{ marginTop: 10, color: "var(--dim-ink-soft)" }}>
           {card.consequence}
         </p>
-      )}
-      {card.verdicts && card.verdicts.length > 0 ? (
-        /* 裁决不是一个「接受」按钮（PRD §4.2）：五种回应各有合法结果 */
-        <div
-          style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}
-        >
-          {card.verdicts.map((verdict) => (
-            <button
-              key={verdict.id}
-              type="button"
-              className={
-                verdict.id === "try" || verdict.id === "holds"
-                  ? "dim-btn dim-btn--accent"
-                  : "dim-btn"
-              }
-              onClick={(event) => {
-                if (isFirstActivation(event.detail)) onVerdict?.(verdict);
-              }}
-            >
-              {verdict.label}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
-          <button
-            type="button"
-            className="dim-btn dim-btn--accent"
-            onClick={(event) => {
-              if (isFirstActivation(event.detail)) onAccept?.();
-            }}
-          >
-            {card.accept}
-          </button>
-          <button
-            type="button"
-            className="dim-btn"
-            onClick={(event) => {
-              if (isFirstActivation(event.detail)) onReject?.();
-            }}
-          >
-            {card.reject}
-          </button>
-        </div>
       )}
     </CardShell>
   );

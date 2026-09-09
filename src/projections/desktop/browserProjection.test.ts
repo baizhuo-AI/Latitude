@@ -2,6 +2,128 @@ import { describe, expect, it } from "vitest";
 import { buildBrowserProjection } from "./browserProjection";
 
 describe("buildBrowserProjection", () => {
+  it("把今天的 activity 证据投进原纸面，并让记录能力与助手能力分别降级", () => {
+    const result = buildBrowserProjection({
+      runtimeState: "unavailable",
+      domainState: "ready",
+      agentState: "unavailable",
+      now: new Date("2026-09-01T16:00:00Z"),
+      context: {
+        nodes: [
+          {
+            id: "activity-today",
+            kind: "evidence_event",
+            statement: "把第一版服务接回原来的纸面",
+            status: "active",
+            payload: {
+              evidenceType: "activity",
+              occurredAt: "2026-09-01T15:20:00Z",
+              authorship: "user",
+            },
+          },
+          {
+            id: "ordinary-message",
+            kind: "evidence_event",
+            statement: "这只是普通聊天",
+            payload: { evidenceType: "message", occurredAt: "2026-09-01T15:30:00Z" },
+          },
+          {
+            id: "activity-yesterday",
+            kind: "evidence_event",
+            statement: "昨天的记录",
+            payload: { evidenceType: "activity", occurredAt: "2026-08-30T15:30:00Z" },
+          },
+        ],
+        edges: [],
+      },
+    });
+
+    const activity = result.projection.bindings["desktop.activity"];
+    if (!activity || activity.kind !== "activity") throw new Error("activity projection missing");
+    expect(activity.entries).toHaveLength(1);
+    expect(activity.entries[0]).toMatchObject({
+      id: "activity-today",
+      text: "把第一版服务接回原来的纸面",
+      lineage: { entityId: "activity-today" },
+    });
+    expect(activity.canCapture).toBe(true);
+    expect(activity.canReflect).toBe(false);
+    expect(result.projection.secretary).toMatchObject({
+      state: "ready",
+      gesture: "idle",
+      stateCn: "未连接",
+      headline: "秘书暂时没连上。",
+    });
+    expect(result.layout.cards.find((card) => card.id === "seed-activity")).toMatchObject({
+      kind: "activity",
+      binding: "desktop.activity",
+      presentation: { title: "今天做过" },
+    });
+    expect(result.layout.cards.find((card) => card.id === "seed-schedule")).toMatchObject({
+      kind: "anchors",
+      binding: "desktop.schedule",
+    });
+  });
+
+  it("distinguishes connecting and unavailable services from a real empty desktop without claiming work", () => {
+    const starting = buildBrowserProjection({
+      runtimeState: "starting",
+      domainState: "starting",
+      agentState: "starting",
+      now: new Date("2026-09-01T16:00:00Z"),
+      context: { nodes: [], edges: [] },
+    });
+    expect(starting.projection.secretary).toMatchObject({
+      state: "ready",
+      gesture: "idle",
+      stateCn: "正在连接",
+      headline: "秘书正在连接。",
+    });
+    expect(starting.projection.secretary.headline).not.toMatch(/稍等|处理|思考/);
+
+    const unavailable = buildBrowserProjection({
+      runtimeState: "unavailable",
+      now: new Date("2026-09-01T16:00:00Z"),
+      context: { nodes: [], edges: [] },
+    });
+    expect(unavailable.projection.secretary).toMatchObject({
+      state: "ready",
+      gesture: "idle",
+      stateCn: "未连接",
+      headline: "秘书暂时没连上。",
+    });
+    expect(unavailable.projection.bindings["desktop.feed"]).toMatchObject({
+      items: [],
+      emptyHint: "暂时看不到已保存的资讯。",
+    });
+    expect(unavailable.projection.bindings["desktop.schedule"]).toMatchObject({
+      rows: [],
+      emptyHint: "暂时看不到行动记录。",
+    });
+    expect(unavailable.projection.bindings["desktop.rhythm"]).toEqual({
+      kind: "chart",
+      bars: [],
+      emptyHint: "暂时看不到行动的回看安排。",
+    });
+
+    const readyWithoutReviewSchedule = buildBrowserProjection({
+      runtimeState: "ready",
+      now: new Date("2026-09-01T16:00:00Z"),
+      context: {
+        nodes: [{ id: "unscheduled-action", kind: "action", label: "还没约回看时间", status: "active" }],
+        edges: [],
+      },
+    });
+    expect(readyWithoutReviewSchedule.projection.bindings["desktop.rhythm"]).toEqual({
+      kind: "chart",
+      bars: [],
+      emptyHint: "还没有安排需要回看的行动。",
+    });
+    expect(readyWithoutReviewSchedule.projection.bindings["desktop.feed"]).toMatchObject({
+      emptyHint: "维度AI还没有找到值得主动递给你的新资讯。",
+    });
+  });
+
   it("routes north star, medium themes, short desktop goals and constellation claims by typed Domain payload", () => {
     const result = buildBrowserProjection({
       runtimeState: "ready",
@@ -240,7 +362,7 @@ describe("buildBrowserProjection", () => {
     });
 
     expect(result.projection.runtimeStatus).toBe("ready");
-    expect(result.projection.secretary.headline).toContain("1 个行动到了结果窗口");
+    expect(result.projection.secretary.headline).toContain("1 个行动该看结果了");
     expect(result.projection.secretary.metrics).toMatchObject([
       { label: "熟悉", value: 0, stage: "尚未形成" },
       { label: "默契", value: 0, stage: "尚未形成" },
@@ -257,6 +379,14 @@ describe("buildBrowserProjection", () => {
         { text: "上午九点写 25 分钟", meta: "结果待回收" },
       ],
     });
+    expect(result.projection.bindings["desktop.rhythm"]).toMatchObject({
+      kind: "chart",
+      bars: [1, 0, 0, 0, 0, 0, 0, 0],
+      link: "看看该看结果的行动",
+    });
+    expect(
+      result.layout.cards.find((card) => card.binding === "desktop.rhythm")?.presentation?.title,
+    ).toBe("这些行动该看结果了");
   });
 
   it("reads familiarity and rapport from a typed relationship node but keeps unreceipted capability at zero", () => {
@@ -981,5 +1111,8 @@ describe("buildBrowserProjection", () => {
       kind: "note",
       body: "上午适合深度工作，但产出估算要保守",
     });
+    expect(
+      result.layout.cards.find((card) => card.binding === "desktop.flex")?.presentation?.title,
+    ).toBe("最近值得想一想");
   });
 });

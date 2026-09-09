@@ -20,6 +20,7 @@ import {
   containsCredentialText,
   redactCredentialText,
 } from "../security/credentialRedaction.js";
+import { PROVIDER_SETTINGS_FILE } from "../provider/providerSettings.js";
 
 const SNAPSHOT_SCHEMA_VERSION = 1 as const;
 const PREPARE_TTL_MS = 5 * 60_000;
@@ -29,6 +30,7 @@ const ROOT_MANAGED_FILES = new Set([
   "audit.jsonl",
   "scheduler-receipts.jsonl",
   "scheduler-acks.jsonl",
+  PROVIDER_SETTINGS_FILE,
 ]);
 const SESSION_FILE = /^sessions\/[a-f0-9]{64}\.(?:events\.jsonl|meta\.json)$/;
 const DSH_ID_FILE = "dsh/.anonymous-user-id";

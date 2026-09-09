@@ -53,7 +53,7 @@ interface ChatStore {
   createConv: (title?: string, opts?: { deferSync?: boolean }) => Promise<string>;
   deleteConv: (id: string) => Promise<void>;
   renameConv: (id: string, title: string) => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, options?: { transientContext?: string }) => Promise<void>;
   stop: () => void;
 }
 
@@ -163,6 +163,8 @@ type ChatBackend = ReturnType<typeof useSettingsStore.getState>["chatBackend"];
  * 飞书等无 UI 的入口可全部不传，只取 Promise 返回的最终回复。
  */
 export interface AgentRoundOptions {
+  /** Request-local UI context; never append this to persisted user messages. */
+  transientContext?: string;
   /**
    * 覆盖大脑后端；默认读 settings。
    * 注意：非主窗（如未来的飞书执行 webview）settings store 内存态可能不是真相源，
@@ -293,6 +295,7 @@ export async function submitAgentRound(
     if (backend === "deepseek-api") {
       // 路线 A：DeepSeek API + 内置 agent loop（chatTools.ts 的工具）
       const result = await chatAgentCall(history, {
+        ...(opts.transientContext ? { transientContext: opts.transientContext } : {}),
         onStep: (info) => hooks.onApiToolStep?.(info.name)
       });
       final = result.content;
@@ -301,7 +304,7 @@ export async function submitAgentRound(
       //（人设 + 记忆 + 历史 + 当前消息）拼成完整 prompt 注入，与 API 路线上下文等价。
       const kind: CliKind =
         backend === "claude-cli" ? "claude" : backend === "codex-cli" ? "codex" : "kiro";
-      const fullPrompt = buildCliPrompt(await buildAgentSystemPrompt(), history, trimmed);
+      const fullPrompt = buildCliPrompt(await buildAgentSystemPrompt(opts.transientContext), history, trimmed);
       const result = await sendViaCli(kind, fullPrompt, {
         onText: (t) => hooks.onCliText?.(t),
         onThinking: (t) => hooks.onCliThinking?.(t),
@@ -416,7 +419,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     emitSync("conversations");
   },
 
-  sendMessage: async (content) => {
+  sendMessage: async (content, options) => {
     const trimmed = content.trim();
     if (!trimmed || get().loading) return;
 
@@ -436,6 +439,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // 大脑编排全部交给入口无关的 submitAgentRound；这里只负责把每一步投影到 Zustand，
       // 保持悬浮条的流式 / loading / 列表排序行为与重构前完全一致。
       await submitAgentRound(cid, trimmed, {
+        ...(options?.transientContext ? { transientContext: options.transientContext } : {}),
         hooks: {
           onUserPersisted: (msg) =>
             set((s) => {

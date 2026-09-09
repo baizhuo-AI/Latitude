@@ -1,0 +1,60 @@
+.dim-card-context-menu {
+  --menu-paper: #fffdf4;
+  --menu-ink: #29473d;
+  --menu-shadow: 0 8px 28px rgb(35 43 31 / 18%);
+
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 2100;
+  width: 224px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 8px;
+  color: var(--menu-ink);
+  background: var(--menu-paper);
+  border: 1px solid #d4cfbc;
+  border-radius: 4px;
+  box-shadow: var(--menu-shadow);
+  font: 13px/1.45 var(--font-sans, sans-serif);
+}
+
+.dim-card-context-heading { padding: 7px 9px 11px; margin-bottom: 4px; border-bottom: 1px solid #e7e3d5; }
+.dim-card-context-heading span { display: block; color: #858777; font-size: 10px; letter-spacing: 0.12em; }
+.dim-card-context-heading strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font-weight: 500; }
+.dim-card-context-menu button { display: flex; width: 100%; min-height: 38px; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 9px; border: 0; border-radius: 2px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dim-card-context-menu button small { color: #858777; font-size: 10px; }
+.dim-card-context-menu button:hover, .dim-card-context-menu button:focus-visible { background: #edf0de; outline: 1px solid #bdc699; outline-offset: -1px; }
+.dim-card-context-menu button.is-danger { color: #ad624d; }
+.dim-card-context-menu button:disabled { opacity: 0.45; cursor: default; }
+
+.dimension-root.dim-card-content-backdrop { position: fixed; inset: 0; z-index: 2050; display: grid; place-items: center; padding: 28px; background: rgb(28 39 31 / 24%); }
+.dim-card-content-dialog { width: min(580px, 100%); max-height: calc(100dvh - 56px); display: flex; flex-direction: column; background: var(--dim-paper, #fffdf4); color: var(--dim-ink, #29473d); border: 1px solid var(--dim-line, #d4cfbc); }
+.dim-card-content-dialog > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--dim-line-soft); }
+.dim-card-content-dialog > header span { font-size: 10px; color: var(--dim-ink-soft); letter-spacing: 0.1em; }
+.dim-card-content-dialog h2 { margin: 5px 0 0; font-size: 18px; font-weight: 500; }
+.dim-card-content-body { min-height: 0; overflow: auto; padding: 24px; }
+.dim-card-content-dialog .dim-card-content-body .dim-paper { height: auto; min-height: 0; padding: 0; margin: 0; border: 0; background: transparent; box-shadow: none; transform: none !important; }
+.dim-card-content-body .dim-card-shell .dim-card-header { padding: 0; border: 0; }
+.dim-card-content-body .dim-paper > svg[aria-hidden],
+.dim-card-content-body .dim-tape,
+.dim-card-content-body .dim-card-heading-meta,
+.dim-card-content-body .dim-card-header > .dim-title,
+.dim-card-content-body .dim-card-header > .dim-eyebrow { display: none; }
+.dim-card-content-body .dim-paper::before,
+.dim-card-content-body .dim-paper::after { content: none; }
+.dim-card-content-body .dim-card-body { overflow: visible; max-height: none; }
+.dim-card-content-body .dim-activity-actions { opacity: 1; }
+.dim-card-content-dialog > footer { padding: 12px 24px; border-top: 1px solid var(--dim-line-soft); display: flex; flex-direction: column; gap: 10px; }
+.dim-card-content-dialog > footer p { margin: 0; color: var(--dim-ink-soft); font-size: 12px; line-height: 1.5; }
+.dim-card-content-dialog > footer > div { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.dim-card-reading { height: 100%; }
+.dim-card-reading > .dim-paper { box-sizing: border-box; width: 100%; height: 100%; min-height: 0 !important; margin-top: 0 !important; }
+.dim-card-reading .dim-btn,
+.dim-card-reading .dim-activity-capture { display: none; }
+.dim-resizable[data-card-locked] { cursor: default; }
+.dim-resizable:focus-visible { outline: 2px solid var(--dim-olive); outline-offset: 5px; }
+.dim-resizable.is-size-editing { outline: 1px dashed var(--dim-olive); outline-offset: 5px; }
+.dim-card-resize-done { position: absolute; top: -32px; right: 0; padding: 5px 10px; border: 1px solid var(--dim-line); color: var(--dim-olive-deep); background: var(--dim-paper); font-size: 11px; cursor: pointer; }
+.dim-resizable.is-size-editing .dim-card-resize { opacity: 1; }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { MemoryRouter } from "react-router-dom";
 import { useActivityStore } from "../../lib/activityStore";
@@ -15,6 +15,8 @@ import { pendingProposalOf, useProposalsStore } from "../../lib/proposalsStore";
 import { useTodoStore } from "../../lib/store";
 import { onSync } from "../../lib/syncBus";
 import { DimensionPresetApp } from "../../dimension/presets/DimensionPresetApp";
+import type { DesktopViewContext } from "../../dimension/desktopWorkspace";
+import { serializeDesktopViewContext } from "../../dimension/desktopViewContext";
 import { DeskThread } from "../../dimension/DeskThread";
 import { RealityTimeline } from "../../dimension/RealityTimeline";
 import { DimToast, useDimToast } from "../../dimension/Shell";
@@ -109,6 +111,15 @@ function TauriLiveDimensionApp() {
   const { toast, say } = useDimToast();
   const [now, setNow] = useState(() => new Date());
   const [threadOpen, setThreadOpen] = useState(false);
+  const desktopViewContext = useRef<DesktopViewContext | null>(null);
+  const updateDesktopViewContext = useCallback((next: DesktopViewContext) => { desktopViewContext.current = next; }, []);
+  const sendDesktopMessage = useCallback(async (text: string) => {
+    setThreadOpen(true);
+    try {
+      await useChatStore.getState().sendMessage(text, { transientContext: serializeDesktopViewContext(desktopViewContext.current) });
+      return true;
+    } catch { say("秘书这次没接上话，请再试一次。"); return false; }
+  }, [say]);
   const [overlay, setOverlay] = useState<OverlayState>(null);
   const [digests, setDigests] = useState<DailyDigestRow[]>([]);
   const [memoryFacts, setMemoryFacts] = useState<MemoryFact[]>([]);
@@ -423,20 +434,15 @@ function TauriLiveDimensionApp() {
   return (
     <>
       <DimensionPresetApp
+        onDesktopContextChange={updateDesktopViewContext}
         projection={projection}
         layout={layout}
         paperHandlers={cardHandlers}
-        onSendMessage={(text) => {
-          // 对话条接真秘书：同一会话真相，与悬浮条 / 飞书通道共享。
-          setThreadOpen(true);
-          void useChatStore
-            .getState()
-            .sendMessage(text)
-            .catch(() => say("秘书这次没接上话，请再试一次。"));
-        }}
+        onSendMessage={sendDesktopMessage}
         thread={
           threadOpen ? (
             <DeskThread
+              onSend={sendDesktopMessage}
               messages={chatMessages}
               conversations={chatConversations}
               currentId={chatCurrentId}

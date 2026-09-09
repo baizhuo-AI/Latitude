@@ -1,0 +1,125 @@
+.pet-notice-bubble {
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 24px));
+  padding: 12px 14px 14px;
+  color: var(--dim-ink, #302d26);
+  background: var(--dim-paper, #fdfaf2);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(55 48 34 / 16%);
+  font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  pointer-events: auto;
+  touch-action: auto;
+  animation: pet-notice-enter 160ms ease-out;
+}
+
+.pet-notice-bubble-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  color: var(--dim-ink-soft, #716b5e);
+  font-size: 12px;
+}
+
+.pet-notice-bubble button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pet-notice-bubble-header button {
+  width: 32px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.pet-notice-bubble-text {
+  display: -webkit-box;
+  margin: 0 0 10px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.pet-notice-open {
+  padding: 4px 12px;
+  background: var(--dim-page, #f4efe2);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  border-radius: 6px;
+}
+
+.pet-notice-bubble button:hover {
+  background: var(--dim-line, #d8d2c0);
+}
+
+.pet-notice-bubble button:focus-visible,
+.pet-notice-settings select:focus-visible,
+.pet-notice-settings input:focus-visible {
+  outline: 2px solid var(--dim-olive, #7c8a3e);
+  outline-offset: 3px;
+}
+
+.pet-notice-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr);
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  color: var(--dim-ink, #302d26);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  border-radius: 10px;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.pet-notice-settings legend {
+  padding: 0 5px;
+  font-weight: 600;
+}
+
+.pet-notice-settings label {
+  align-self: center;
+}
+
+.pet-notice-settings select,
+.pet-notice-settings input {
+  width: 100%;
+  min-height: 36px;
+  padding: 5px 8px;
+  color: inherit;
+  background: var(--dim-paper, #fdfaf2);
+  border: 1px solid var(--dim-line, #d8d2c0);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.pet-notice-settings p {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: var(--dim-ink-soft, #716b5e);
+  font-size: 12px;
+}
+
+@keyframes pet-notice-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (width <= 360px) {
+  .pet-notice-settings { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-notice-bubble,
+  .pet-notice-expression { animation: none; }
+}

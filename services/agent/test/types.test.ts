@@ -9,7 +9,6 @@ import {
   loadAgentHostConfig,
 } from "../src/config.js";
 import {
-  MAX_RUN_BUDGETS,
   normalizeRunBudgets,
   normalizeRunRequest,
 } from "../src/types.js";
@@ -60,7 +59,9 @@ describe("Agent Host request contract", () => {
       .toBe("legacy");
   });
 
-  it("applies explicit bounded step/tool/wall/output budgets", () => {
+  it("has no implicit budgets and honors optional caller budgets without application maxima", () => {
+    expect(normalizeRunBudgets(undefined)).toEqual({});
+    expect(normalizeRunBudgets({ maxSteps: 0, wallClockMs: 0 })).toEqual({});
     expect(normalizeRunBudgets({
       maxSteps: 2,
       maxToolCalls: 3,
@@ -72,8 +73,11 @@ describe("Agent Host request contract", () => {
       wallClockMs: 4_000,
       maxOutputTokens: 512,
     });
-    expect(() => normalizeRunBudgets({ maxSteps: MAX_RUN_BUDGETS.maxSteps + 1 }))
-      .toThrow(/must not exceed/);
+    expect(normalizeRunBudgets({ maxSteps: 100, wallClockMs: 900_000, maxOutputTokens: 100_000 }))
+      .toEqual({ maxSteps: 100, wallClockMs: 900_000, maxOutputTokens: 100_000 });
+    for (const maxSteps of [-1, 1.5, Infinity]) {
+      expect(() => normalizeRunBudgets({ maxSteps })).toThrow();
+    }
   });
 
   it("rejects unsafe session ids and oversized retry ids", () => {

@@ -132,7 +132,8 @@ export function SecretaryPortrait({ secretary }: { secretary: Secretary }) {
       )}
 
       <span className="dim-badge">
-        {STATE_LABEL[secretary.state]}
+        {secretary.connectionState === "unavailable" ? "未连接"
+          : secretary.connectionState === "starting" ? "连接中" : STATE_LABEL[secretary.state]}
       </span>
     </div>
   );

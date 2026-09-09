@@ -1,19 +1,20 @@
-import { useMemo, useState } from "react";
+import { MotionSurface } from "../../dimension/SurfaceMotion";
+import { useMemo, useRef, useState } from "react";
+import "./composition-dialog.css";
 import type { CardPresentation } from "../../dimension/types";
 import {
   BROWSER_COMPANION_COMPONENT_ID,
+  BROWSER_SYSTEM_COMPONENT_IDS,
   BROWSER_SYSTEM_COMPONENT_SPECS,
 } from "../../runtime/composition/browserProduction";
 import type { CompositionRegistry } from "../../runtime/composition/registry";
-import type { UiSurfaceDocumentV2 } from "../../runtime/composition/types";
-import type { LayoutDocumentV1, LayoutSpan } from "../../runtime/layout/types";
+import type { UiComponentInstance, UiSurfaceDocumentV2 } from "../../runtime/composition/types";
+import type { LayoutDocumentV1 } from "../../runtime/layout/types";
 import type {
   BrowserUiCardPatch,
   BrowserUiChangeSet,
   BrowserUiChangeSetDraft,
 } from "./browserUiComposition";
-
-const SPANS: LayoutSpan[] = [4, 5, 7, 12];
 
 export function BrowserCompositionDialog({
   layout,
@@ -24,6 +25,9 @@ export function BrowserCompositionDialog({
   onRollback,
   onReset,
   onClose,
+  zIndex = 100,
+  onActivate,
+  windowMode = false,
 }: {
   layout: LayoutDocumentV1<string, CardPresentation>;
   document: UiSurfaceDocumentV2;
@@ -33,12 +37,20 @@ export function BrowserCompositionDialog({
   onRollback: (id: string) => void;
   onReset: () => void;
   onClose: () => void;
+  zIndex?: number;
+  onActivate?: () => void;
+  windowMode?: boolean;
 }) {
   const cardsById = useMemo(
     () => new Map(layout.cards.map((card) => [card.id, card])),
     [layout.cards],
   );
   const [order, setOrder] = useState([...layout.arrangement.orderedCardIds]);
+  // The weekly review remains stored for dialogue/runtime use, but has no card settings entry.
+  const editableOrder = order.filter((id) => {
+    const card = cardsById.get(id);
+    return card && card.region !== "review-plan";
+  });
   const [patches, setPatches] = useState<Record<string, BrowserUiCardPatch>>(() =>
     Object.fromEntries(
       [
@@ -78,9 +90,16 @@ export function BrowserCompositionDialog({
 
   function move(id: string, delta: -1 | 1) {
     setOrder((current) => {
+      const visible = current.filter((cardId) => {
+        const card = cardsById.get(cardId);
+        return card && card.region !== "review-plan";
+      });
+      const visibleIndex = visible.indexOf(id);
+      const targetId = visible[visibleIndex + delta];
+      if (visibleIndex < 0 || !targetId) return current;
+      // Swap actual document slots so omitted source cards keep their original position.
       const index = current.indexOf(id);
-      const target = index + delta;
-      if (index < 0 || target < 0 || target >= current.length) return current;
+      const target = current.indexOf(targetId);
       const next = [...current];
       [next[index], next[target]] = [next[target], next[index]];
       return next;
@@ -88,310 +107,135 @@ export function BrowserCompositionDialog({
   }
 
   return (
-    <div
-      className="dimension-root"
-      style={backdropStyle}
+    <MotionSurface
+      className="dimension-root dim-composition-dialog"
+      style={{
+        ...backdropStyle,
+        zIndex,
+        ...(windowMode ? windowStyle : {}),
+      }}
       role="dialog"
-      aria-modal="true"
+      aria-modal={!windowMode}
       aria-label="桌面设置"
+      onPointerDown={onActivate}
     >
-      <section className="dim-paper" style={paperStyle}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <section
+        className="dim-paper dim-composition-paper"
+        style={{
+          ...paperStyle,
+          ...(windowMode ? windowPaperStyle : {}),
+        }}
+      >
+        <header className="dim-composition-header">
           <div>
-            <p className="dim-eyebrow">桌面</p>
-            <h2 style={{ margin: "5px 0 0", fontSize: 21 }}>桌面设置</h2>
-            <p className="dim-body" style={{ marginTop: 7 }}>
-              调整卡片的名称、宽度和顺序。
-            </p>
+            <p className="dim-eyebrow">YOUR CARDS</p>
+            <h2>桌面设置</h2>
+            <p className="dim-composition-description">整理卡片名称、显示与顺序。大小可回到主页拖动调整。</p>
           </div>
-          <button type="button" className="dim-btn" onClick={onClose}>关闭</button>
-        </div>
+          <button type="button" className="dim-btn dim-btn--quiet" onClick={onClose}>关闭</button>
+        </header>
 
-        <details>
-          <summary className="dim-eyebrow">高级设置</summary>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-          {(() => {
-          const companion = document.components.find(
-            (component) => component.id === BROWSER_COMPANION_COMPONENT_ID,
-          );
-          const definition = companion ? registry.component(companion.type) : undefined;
-          const patch = patches[BROWSER_COMPANION_COMPONENT_ID] ?? {};
-          if (!companion || !definition) return null;
-          return (
-            <div className="dim-paper" style={{ padding: "10px", marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <div>
-                  <p className="dim-eyebrow">SIDEBAR · SECRETARY RAIL</p>
-                  <p className="dim-body">左侧秘书栏（可收起，状态与动作仍由同一组件契约管理）</p>
-                </div>
-                <label className="dim-meta" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <input
-                    type="checkbox"
-                    aria-label="隐藏秘书栏"
-                    checked={patch.hidden === true}
-                    onChange={(event) => updateCard(
-                      BROWSER_COMPANION_COMPONENT_ID,
-                      { hidden: event.target.checked },
-                    )}
-                  />
-                  隐藏
-                </label>
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                  gap: 8,
-                  marginTop: 8,
-                }}
-              >
-                {definition.events.map((event) => (
-                  <label key={event} className="dim-meta">
-                    {eventLabel(event)}
-                    <select
-                      aria-label={`秘书栏 ${eventLabel(event)}动作`}
-                      value={patch.actions?.[event] ?? ""}
-                      onChange={(changeEvent) => updateCard(
-                        BROWSER_COMPANION_COMPONENT_ID,
-                        {
-                          actions: {
-                            ...(patch.actions ?? {}),
-                            [event]: changeEvent.target.value || null,
-                          },
-                        },
-                      )}
-                      style={{ display: "block", width: "100%", marginTop: 4 }}
-                    >
-                      <option value="">关闭动作</option>
-                      {registry.allowedCommands(companion.type, event).map((command) => (
-                        <option key={command.id} value={command.id}>
-                          {commandLabel(command.id)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        <details>
-          <summary className="dim-eyebrow">其他功能</summary>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-            {BROWSER_SYSTEM_COMPONENT_SPECS.map((spec) => {
-              const component = document.components.find((candidate) => candidate.id === spec.id);
-              const definition = component ? registry.component(component.type) : undefined;
-              const patch = patches[spec.id] ?? {};
-              if (!component || !definition) return null;
-              const label = moduleLabel(spec.id);
-              return (
-                <div key={spec.id} className="dim-paper" style={{ padding: "9px 10px" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <div>
-                      <p className="dim-eyebrow">{spec.slot}</p>
-                      <p className="dim-body">{label}</p>
-                    </div>
-                    <label className="dim-meta" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <input
-                        type="checkbox"
-                        aria-label={`隐藏${label}`}
-                        checked={patch.hidden === true}
-                        onChange={(event) => updateCard(spec.id, { hidden: event.target.checked })}
-                      />
-                      隐藏
-                    </label>
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                      gap: 8,
-                      marginTop: 8,
-                    }}
-                  >
-                    {definition.events.map((event) => (
-                      <label key={event} className="dim-meta">
-                        {eventLabel(event)}
-                        <select
-                          aria-label={`${label} ${eventLabel(event)}动作`}
-                          value={patch.actions?.[event] ?? ""}
-                          onChange={(changeEvent) => updateCard(spec.id, {
-                            actions: {
-                              ...(patch.actions ?? {}),
-                              [event]: changeEvent.target.value || null,
-                            },
-                          })}
-                          style={{ display: "block", width: "100%", marginTop: 4 }}
-                        >
-                          <option value="">关闭动作</option>
-                          {registry.allowedCommands(component.type, event).map((command) => (
-                            <option key={command.id} value={command.id}>
-                              {commandLabel(command.id)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-          </div>
-        </details>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {order.map((id, index) => {
+        <div className="dim-composition-card-list">
+          {editableOrder.map((id, index) => {
             const card = cardsById.get(id);
             if (!card) return null;
             const patch = patches[id] ?? {};
             const component = document.components.find((candidate) => candidate.id === id);
-            const definition = component ? registry.component(component.type) : undefined;
+            const label = regionLabel(card.region);
             return (
-              <div
-                key={id}
-                className="dim-paper"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(130px, 1fr) auto auto auto",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "9px 10px",
-                }}
-              >
-                <label className="dim-body" style={{ minWidth: 0 }}>
-                  <span className="dim-eyebrow">{card.region}</span>
-                  <input
-                    aria-label={`${card.region} 标题`}
-                    className="dim-input"
-                    value={patch.title ?? ""}
-                    onChange={(event) => updateCard(id, { title: event.target.value })}
-                    style={{ display: "block", width: "100%", marginTop: 4 }}
+              <article key={id} className="dim-composition-card" aria-label={`${label}设置`}>
+                <div className="dim-composition-card-heading">
+                  <span className="dim-composition-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                  <label className="dim-composition-title">
+                    <span className="dim-eyebrow">{label}</span>
+                    <input
+                      aria-label={`${label} 标题`}
+                      className="dim-input"
+                      value={patch.title ?? ""}
+                      onChange={(event) => updateCard(id, { title: event.target.value })}
+                    />
+                  </label>
+                  <VisibilityToggle
+                    label={label}
+                    hidden={patch.hidden === true}
+                    onChange={(hidden) => updateCard(id, { hidden })}
                   />
-                </label>
-                <label className="dim-meta">
-                  宽度
-                  <select
-                    aria-label={`${card.region} 宽度`}
-                    value={patch.span ?? card.span}
-                    onChange={(event) => updateCard(id, { span: Number(event.target.value) as LayoutSpan })}
-                    style={{ display: "block", marginTop: 4 }}
-                  >
-                    {SPANS.map((span) => <option key={span} value={span}>{span}/12</option>)}
-                  </select>
-                </label>
-                <label className="dim-meta" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <input
-                    type="checkbox"
-                    aria-label={`${card.region} 隐藏`}
-                    checked={patch.hidden === true}
-                    onChange={(event) => updateCard(id, { hidden: event.target.checked })}
-                  />
-                  隐藏
-                </label>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button
-                    type="button"
-                    className="dim-btn dim-btn--quiet"
-                    aria-label={`上移 ${card.region}`}
-                    disabled={index === 0}
-                    onClick={() => move(id, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="dim-btn dim-btn--quiet"
-                    aria-label={`下移 ${card.region}`}
-                    disabled={index === order.length - 1}
-                    onClick={() => move(id, 1)}
-                  >
-                    ↓
-                  </button>
+                  <div className="dim-composition-order" role="group" aria-label={`${label}顺序`}>
+                    <button
+                      type="button"
+                      className="dim-btn dim-btn--quiet"
+                      aria-label={`上移 ${label}`}
+                      disabled={index === 0}
+                      onClick={() => move(id, -1)}
+                    >↑</button>
+                    <button
+                      type="button"
+                      className="dim-btn dim-btn--quiet"
+                      aria-label={`下移 ${label}`}
+                      disabled={index === editableOrder.length - 1}
+                      onClick={() => move(id, 1)}
+                    >↓</button>
+                  </div>
                 </div>
-                {component && definition && definition.events.length > 0 && (
-                  <details style={{ gridColumn: "1 / -1" }}>
-                    <summary className="dim-meta">高级动作</summary>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                        gap: 8,
-                        marginTop: 8,
-                      }}
-                    >
-                      {definition.events.map((event) => (
-                        <label key={event} className="dim-meta">
-                          {eventLabel(event)}
-                          <select
-                            aria-label={`${card.region} ${eventLabel(event)}动作`}
-                            value={patch.actions?.[event] ?? ""}
-                            onChange={(changeEvent) =>
-                              updateCard(id, {
-                                actions: {
-                                  ...(patch.actions ?? {}),
-                                  [event]: changeEvent.target.value || null,
-                                },
-                              })
-                            }
-                            style={{ display: "block", width: "100%", marginTop: 4 }}
-                          >
-                            <option value="">关闭动作</option>
-                            {registry.allowedCommands(component.type, event).map((command) => (
-                              <option key={command.id} value={command.id}>
-                                {commandLabel(command.id)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-                  </details>
+                {component && (
+                  <ActionSettings
+                    label={label}
+                    component={component}
+                    registry={registry}
+                    actions={patch.actions ?? {}}
+                    onChange={(actions) => updateCard(id, { actions })}
+                  />
                 )}
-              </div>
+              </article>
             );
           })}
         </div>
 
-        {error && <p role="alert" className="dim-body">{error}</p>}
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" className="dim-btn dim-btn--quiet" onClick={onReset}>
-            恢复产品默认
-          </button>
-          <button
-            type="button"
-            className="dim-btn dim-btn--accent"
-            onClick={() => {
-              try {
-                onApply({
-                  cards: patches,
-                  orderedCardIds: order,
-                  reason: "用户在组件控制面板调整桌面",
-                  actor: "user",
-                });
-                onClose();
-              } catch (cause) {
-                setError(cause instanceof Error ? cause.message : "桌面变更没有通过校验");
-              }
-            }}
-          >
-            保存
-          </button>
-        </div>
+        <details className="dim-composition-section">
+          <summary>秘书与其他功能</summary>
+          <div className="dim-composition-module-list">
+            {[BROWSER_COMPANION_COMPONENT_ID, ...BROWSER_SYSTEM_COMPONENT_SPECS.map((spec) => spec.id)].map((id) => {
+              const component = document.components.find((candidate) => candidate.id === id);
+              if (id === BROWSER_SYSTEM_COMPONENT_IDS.commandBar || !component || !registry.component(component.type)) return null;
+              const patch = patches[id] ?? {};
+              const label = id === BROWSER_COMPANION_COMPONENT_ID ? "秘书栏" : moduleLabel(id);
+              return (
+                <section key={id} className="dim-composition-module" aria-label={`${label}设置`}>
+                  <div className="dim-composition-module-heading">
+                    <h3>{label}</h3>
+                    <VisibilityToggle
+                      label={label}
+                      hidden={patch.hidden === true}
+                      onChange={(hidden) => updateCard(id, { hidden })}
+                    />
+                  </div>
+                  <ActionSettings
+                    label={label}
+                    component={component}
+                    registry={registry}
+                    actions={patch.actions ?? {}}
+                    onChange={(actions) => updateCard(id, { actions })}
+                    summary="功能开关"
+                  />
+                </section>
+              );
+            })}
+          </div>
+        </details>
 
-        <details>
-          <summary className="dim-eyebrow">变更记录</summary>
+
+
+        <details className="dim-composition-section">
+          <summary>变更记录</summary>
           <p className="dim-body">
             这里可以撤销最近的桌面调整。
           </p>
           {history.length === 0 ? (
             <p className="dim-meta">还没有桌面变更。</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="dim-composition-history">
               {[...history].reverse().slice(0, 8).map((entry) => (
-                <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div key={entry.id} className="dim-composition-history-row">
                   <span className="dim-meta" style={{ flex: 1 }}>
                     {entry.actor === "model" ? "AI" : "你"} · {entry.reason} · {formatTime(entry.appliedAt)}
                     {entry.rolledBackBy ? " · 曾被反转" : entry.rollbackOf ? " · 反转记录" : ""}
@@ -409,8 +253,123 @@ export function BrowserCompositionDialog({
             </div>
           )}
         </details>
+        {error && <p role="alert" className="dim-composition-error">{error}</p>}
+        <footer className="dim-composition-footer">
+          <button type="button" className="dim-btn dim-btn--quiet" onClick={onReset}>
+            恢复产品默认
+          </button>
+          <button
+            type="button"
+            className="dim-btn dim-btn--accent"
+            onClick={() => {
+              try {
+                onApply({
+                  cards: patches,
+                  orderedCardIds: order,
+                  reason: "调整卡片与功能设置",
+                  actor: "user",
+                });
+                onClose();
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : "桌面变更没有通过校验");
+              }
+            }}
+          >
+            保存
+          </button>
+        </footer>
       </section>
-    </div>
+    </MotionSurface>
+  );
+}
+
+function VisibilityToggle({ label, hidden, onChange }: {
+  label: string;
+  hidden: boolean;
+  onChange: (hidden: boolean) => void;
+}) {
+  return (
+    <label className="dim-composition-visibility">
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={`${label} 显示`}
+        checked={!hidden}
+        onChange={(event) => onChange(!event.target.checked)}
+      />
+      <span>{hidden ? "已隐藏" : "显示"}</span>
+    </label>
+  );
+}
+
+function ActionSettings({ label, component, registry, actions, onChange, summary = "卡片功能" }: {
+  label: string;
+  component: UiComponentInstance;
+  registry: CompositionRegistry;
+  actions: Record<string, string | null>;
+  onChange: (actions: Record<string, string | null>) => void;
+  summary?: string;
+}) {
+  const definition = registry.component(component.type);
+  // Turning a function off and back on restores the user's chosen authorized binding.
+  const lastBindings = useRef({ ...component.actions });
+  const events = definition?.events.filter((event) => event !== "review") ?? [];
+  if (!events.length) return null;
+  const enabledCount = events.filter((event) => Boolean(actions[event])).length;
+
+  return (
+    <details className="dim-composition-actions">
+      <summary aria-label={`${label} ${summary}`}>
+        <span>{summary}</span>
+        <span className="dim-composition-action-count">{enabledCount} 项已开启</span>
+      </summary>
+      <div className="dim-composition-action-list">
+        {events.map((event) => {
+          const allowed = registry.allowedCommands(component.type, event);
+          const binding = actions[event];
+          const enabled = Boolean(binding);
+          return (
+            <div key={event} className="dim-composition-action-row">
+              <label className="dim-composition-action-toggle">
+                <span>{eventLabel(event)}</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={`${label} ${eventLabel(event)}`}
+                  checked={enabled}
+                  disabled={!enabled && allowed.length === 0}
+                  onChange={(changeEvent) => {
+                    if (binding) lastBindings.current[event] = binding;
+                    const remembered = lastBindings.current[event];
+                    const nextBinding = allowed.find((command) => command.id === remembered)?.id ?? allowed[0]?.id ?? null;
+                    onChange({ ...actions, [event]: changeEvent.target.checked ? nextBinding : null });
+                  }}
+                />
+              </label>
+              {enabled && allowed.length > 1 && (
+                <fieldset className="dim-composition-binding-options">
+                  <legend>使用方式</legend>
+                  {allowed.map((command) => (
+                    <label key={command.id}>
+                      <input
+                        type="radio"
+                        name={`${component.id}-${event}-binding`}
+                        checked={binding === command.id}
+                        onChange={() => {
+                          lastBindings.current[event] = command.id;
+                          onChange({ ...actions, [event]: command.id });
+                        }}
+                      />
+                      {commandLabel(command.id, command.description)}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
@@ -428,7 +387,12 @@ const backdropStyle = {
 const paperStyle = {
   width: "min(760px, 100%)",
   maxHeight: "min(820px, 92vh)",
-  overflowY: "auto",
+  overflow: "auto",
+  resize: "both",
+  minWidth: "min(300px, calc(100vw - 48px))",
+  minHeight: 220,
+  maxWidth: "calc(100vw - 48px)",
+  boxSizing: "border-box",
   padding: 22,
   display: "flex",
   flexDirection: "column",
@@ -436,27 +400,58 @@ const paperStyle = {
   color: "var(--dim-ink)",
 } as const;
 
+const windowStyle = {
+  inset: "auto",
+  top: "50%",
+  left: "50%",
+  width: "max-content",
+  maxWidth: "calc(100vw - 48px)",
+  padding: 0,
+  display: "block",
+  background: "transparent",
+  transform: "translate(-50%, -50%)",
+} as const;
+
+const windowPaperStyle = {
+  width: "min(760px, calc(100vw - 48px))",
+  boxShadow: "0 26px 64px rgb(55 48 34 / 24%), 0 3px 10px rgb(55 48 34 / 12%)",
+} as const;
+
 function formatTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
 }
 
+function regionLabel(region: string): string {
+  return {
+    activity: "今天做过",
+    feed: "今日资讯",
+    schedule: "今天的锚点",
+    "review-plan": "周回顾",
+    rhythm: "结果时间窗",
+    flex: "当前观察",
+  }[region] ?? region;
+}
+
 function eventLabel(event: string): string {
   return {
     feedback: "资讯反馈",
+    capture: "记下一件事",
+    retract: "撤下记录",
+    reflect: "一起看今天",
     lineage: "查看来源",
     complete: "回收结果",
-    edit: "修改行动",
+    edit: "修改内容",
     chat: "打开对话",
     review: "周回顾",
     outcome: "回收到期结果",
     search: "搜索",
     refresh: "刷新",
     cancel: "停止",
-    touch: "触碰候选",
-    shape: "塑形候选",
+    touch: "继续讨论",
+    shape: "补充或修改",
     conclude: "形成结论",
-    park: "搁置候选",
+    park: "先搁置",
     close: "合上",
     submit: "提交结果",
     data_safety: "打开数据与安全",
@@ -467,15 +462,19 @@ function eventLabel(event: string): string {
     purge: "永久删除",
     rollback: "撤销变更",
     send: "发送消息",
-    paper: "纸面桌面",
-    clue: "线索板桌面",
-    constellation: "星图桌面",
+    paper: "主页",
+    clue: "线索版",
+    constellation: "星图",
   }[event] ?? event;
 }
 
-function commandLabel(commandId: string): string {
+function commandLabel(commandId: string, description: string): string {
   return {
     "latitude.feed.feedback": "记录资讯反馈",
+    "latitude.activity.capture": "记下一件已经做过的事",
+    "latitude.activity.edit": "修改活动记录",
+    "latitude.activity.retract": "撤下活动记录",
+    "latitude.activity.reflect": "请秘书一起看今天",
     "latitude.lineage.open": "打开真实来源",
     "latitude.anchor.complete": "回收行动结果",
     "latitude.anchor.edit": "修改真实行动",
@@ -506,19 +505,19 @@ function commandLabel(commandId: string): string {
     "latitude.navigation.clue": "切到线索板桌面",
     "latitude.navigation.constellation": "切到星图桌面",
     "latitude.inspector.close": "合上来源检查器",
-  }[commandId] ?? commandId;
+  }[commandId] ?? description;
 }
 
 function moduleLabel(componentId: string): string {
   return {
-    "browser-control-strip": "本地产品闭环控制",
-    "candidate-intervention-strip": "候选共创",
+    "browser-control-strip": "搜索与任务操作",
+    "candidate-intervention-strip": "与你有关的想法",
     "browser-thread": "与秘书的对话",
     "outcome-dialog": "结果回收",
     "diagnostics-dialog": "本地服务诊断",
     "data-safety-dialog": "数据与安全",
     "command-bar": "底部对话条",
-    "dimension-navigation": "三层桌面导航",
+    "dimension-navigation": "视图切换",
     "source-inspector-dialog": "来源检查器",
   }[componentId] ?? componentId;
 }

@@ -36,6 +36,7 @@ function fakeRuntime(health: DesktopRuntimeHealth): DesktopRuntimePort {
     health: vi.fn(async () => health),
     getContext: vi.fn(),
     applyChange: vi.fn(),
+    recordActivity: vi.fn(),
     listChangeSets: vi.fn(),
     createAction: vi.fn(),
     createCandidate: vi.fn(),

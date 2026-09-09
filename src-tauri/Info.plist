@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>启用电脑操作行为记录后，维度读取浏览器当前页面地址和窗口隐私状态，以遵守你设置的网站范围并排除无痕浏览。</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>在你点击语音输入后，维度使用麦克风把你的话转成可编辑的草稿。</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>维度使用系统语音识别把录音转成文字。语音可能由 Apple 的语音服务处理，转换后由你决定是否发送。</string>
+</dict>
+</plist>

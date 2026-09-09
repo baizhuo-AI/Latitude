@@ -1,0 +1,104 @@
+/* The paper owns its decoration; only the content pane scrolls inside a resized card. */
+.dim-card-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: visible;
+}
+
+.dim-card-header,
+.dim-card-footer {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.dim-card-heading-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dim-card-heading-meta .dim-hint {
+  flex-shrink: 0;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.dim-card-header .dim-title {
+  overflow-wrap: anywhere;
+}
+
+.dim-card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  overflow-wrap: anywhere;
+  cursor: auto;
+}
+
+.dim-card-body:focus-visible {
+  outline: 1px solid var(--dim-olive);
+  outline-offset: -1px;
+}
+
+.dim-card-footer {
+  padding-top: 12px;
+}
+
+.dim-card-footer > .dim-activity-reflect {
+  margin-top: 0;
+}
+
+.dim-card-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dim-card-footer .dim-chart-link,
+.dim-card-footer .dim-text-card-link {
+  margin-top: 0;
+  padding: 2px 0;
+  color: var(--dim-olive);
+}
+
+/* 原始概念稿的记录页层级：细色线标识用途，留白服务标题和正文。 */
+.dim-card-shell .dim-card-header {
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--dim-line-soft);
+}
+
+.dim-card-shell > .dim-card-body { padding-top: 2px; }
+.dim-card-shell .dim-eyebrow { color: #79816b; }
+.dim-card-shell:has(.dim-activity-capture) { border-top: 2px solid #a8b46e; }
+.dim-card-shell:has(.dim-anchor-row) { border-top: 2px solid #c2c99b; }
+.dim-card-shell.dim-paper--grid { border-top: 2px solid #75a9a6; }
+.dim-card-shell.dim-paper--grid .dim-title { color: #386d68; }
+.dim-card-shell.dim-paper--sticky { border-color: #ded5a4; }
+.dim-card-shell.dim-paper--sticky .dim-card-header { border-color: #e6ddaf; }
+.dim-card-shell.dim-paper--newsprint .dim-card-header { border-bottom: 0; padding-bottom: 0; }
+
+.dim-card-shell .dim-card-footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--dim-line-soft);
+}
+
+.dim-card-shell .dim-activity-capture {
+  padding-block: 0;
+  border-bottom: 1px solid #bdc7a0;
+}
+
+.dim-card-shell .dim-activity-input {
+  padding-left: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dim-card-shell:has(.dim-activity-capture) .dim-card-header {
+  border-bottom: 0;
+  padding-bottom: 0;
+}

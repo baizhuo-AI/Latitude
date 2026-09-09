@@ -1,0 +1,55 @@
+{
+  "id": "sketch",
+  "title": "画小草图",
+  "description": "画一个框，补上线条，停下来看看。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "选好位置",
+    "画上边",
+    "画右边",
+    "画下边",
+    "补左边",
+    "连一小段线",
+    "停笔看看",
+    "准备接着画"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 800
+    },
+    {
+      "frame": 1,
+      "ms": 450
+    },
+    {
+      "frame": 2,
+      "ms": 450
+    },
+    {
+      "frame": 3,
+      "ms": 450
+    },
+    {
+      "frame": 4,
+      "ms": 450
+    },
+    {
+      "frame": 5,
+      "ms": 550
+    },
+    {
+      "frame": 6,
+      "ms": 2800
+    },
+    {
+      "frame": 7,
+      "ms": 1550
+    }
+  ],
+  "duration": 7500
+}

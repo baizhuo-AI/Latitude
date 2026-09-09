@@ -1,14 +1,22 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { CardPresentation } from "../../dimension/types";
 import { SEED_DESKTOP_PROJECTION } from "../../projections/desktop/seedProjection";
 import {
+  BROWSER_PRODUCT_LAYOUT_DOCUMENT,
   createBrowserCompositionRegistry,
   layoutV1ToUiSurfaceV2,
 } from "../composition/browserProduction";
 import { LayoutRenderer } from "./LayoutRenderer";
 import { SEED_LAYOUT_DOCUMENT } from "./seedLayout";
 import type { LayoutDocumentV1 } from "./types";
+
+function openContent(title: string) {
+  const close = screen.queryByRole("button", { name: "关闭卡片内容" });
+  if (close) fireEvent.click(close);
+  fireEvent.contextMenu(screen.getByRole("group", { name: `卡片：${title}` }), { clientX: 100, clientY: 100 });
+  fireEvent.click(screen.getByRole("menuitem", { name: /^(编辑|查看)内容$/ }));
+}
 
 function cloneLayout(): LayoutDocumentV1<string, CardPresentation> {
   return {
@@ -27,6 +35,47 @@ function cloneLayout(): LayoutDocumentV1<string, CardPresentation> {
 }
 
 describe("LayoutRenderer", () => {
+  it("右键锁定后禁止移动和缩放并跨刷新保留，帮助只回传所选卡片上下文", () => {
+    const layout = { ...cloneLayout(), id: "card-context-lock-test" };
+    const onRequestCardHelp = vi.fn();
+    const first = render(<LayoutRenderer document={layout} bindings={SEED_DESKTOP_PROJECTION.bindings} onRequestCardHelp={onRequestCardHelp} />);
+    const card = screen.getByRole("group", { name: "卡片：今日早报" });
+    fireEvent.contextMenu(card);
+    fireEvent.click(screen.getByRole("menuitem", { name: "锁定位置" }));
+    expect(card).toHaveAttribute("data-card-locked", "true");
+    fireEvent.pointerDown(card, { button: 0, pointerId: 3, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(card, { pointerId: 3, clientX: 200, clientY: 100 });
+    fireEvent.pointerUp(card, { pointerId: 3 });
+    expect(card.style.translate).toBe("");
+    fireEvent.contextMenu(card);
+    expect(screen.getByRole("menuitem", { name: /调整大小/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: /让维度帮我改/ }));
+    expect(onRequestCardHelp).toHaveBeenCalledWith(expect.objectContaining({ cardId: "seed-feed", title: "今日早报", content: expect.stringContaining("客户 1 的日报模板") }));
+    expect(onRequestCardHelp).toHaveBeenCalledOnce();
+    first.unmount();
+    const second = render(<LayoutRenderer document={layout} bindings={SEED_DESKTOP_PROJECTION.bindings} />);
+    const restored = screen.getByRole("group", { name: "卡片：今日早报" });
+    expect(restored).toHaveAttribute("data-card-locked", "true");
+    fireEvent.keyDown(restored, { key: "ContextMenu" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "解锁位置" }));
+    expect(restored).not.toHaveAttribute("data-card-locked");
+    second.unmount();
+    for (const key of Object.keys(localStorage)) if (key.includes(layout.id)) localStorage.removeItem(key);
+  });
+
+  it("无直接编辑能力的派生卡提供查看与对话调整，不伪造保存", () => {
+    const help = vi.fn();
+    render(<LayoutRenderer document={SEED_LAYOUT_DOCUMENT} bindings={SEED_DESKTOP_PROJECTION.bindings} onRequestCardHelp={help} />);
+    fireEvent.contextMenu(screen.getByRole("group", { name: "卡片：核心记忆点" }));
+    expect(screen.queryByRole("menuitem", { name: "编辑内容" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看内容" }));
+    expect(screen.getByRole("dialog", { name: "卡片内容：核心记忆点" })).toHaveTextContent("内容随真实记录更新，可以让维度帮你调整。");
+    expect(screen.queryByRole("button", { name: "修改标题与内容" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "让维度帮我改" }));
+    expect(help).toHaveBeenCalledWith(expect.objectContaining({ cardId: "seed-flex", title: "核心记忆点" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("按布局文档渲染五区和稳定的 5+7 / 4+4+4 slot", () => {
     const { container } = render(
       <LayoutRenderer
@@ -99,6 +148,7 @@ describe("LayoutRenderer", () => {
       />
     );
 
+    openContent("今日早报");
     fireEvent.click(screen.getAllByRole("button", { name: "有新角度" })[0]);
     expect(onFeedFeedback).toHaveBeenCalledWith(
       "feed-daily-report-format",
@@ -110,6 +160,7 @@ describe("LayoutRenderer", () => {
       expect.objectContaining({ entityId: "seed-todo-daily-report" })
     );
 
+    openContent("核心记忆点");
     fireEvent.click(screen.getByRole("button", { name: "先这样试" }));
     expect(onAccept).toHaveBeenCalledWith(
       expect.objectContaining({ id: "seed-flex", kind: "proposal" })
@@ -120,9 +171,7 @@ describe("LayoutRenderer", () => {
     const onFeedFeedback = vi.fn();
     const onAnchorComplete = vi.fn();
     const onLineage = vi.fn();
-    const layout = cloneLayout();
-    layout.id = "latitude-browser-live";
-    layout.revision = 3;
+    const layout = structuredClone(BROWSER_PRODUCT_LAYOUT_DOCUMENT);
     const document = layoutV1ToUiSurfaceV2(layout);
     const registry = createBrowserCompositionRegistry();
     const { rerender } = render(
@@ -134,6 +183,7 @@ describe("LayoutRenderer", () => {
       />,
     );
 
+    openContent("今日早报");
     fireEvent.click(screen.getAllByRole("button", { name: "有新角度" })[0]);
     expect(onFeedFeedback).toHaveBeenCalledOnce();
 
@@ -159,6 +209,7 @@ describe("LayoutRenderer", () => {
     fireEvent.click(disabledFeedback);
     expect(onFeedFeedback).toHaveBeenCalledOnce();
 
+    openContent("今天的锚点");
     const disabledComplete = screen.getByRole("button", {
       name: "完成：给客户 1 准备日报",
     });
@@ -185,47 +236,21 @@ describe("LayoutRenderer", () => {
     expect(onLineage).not.toHaveBeenCalled();
   });
 
-  it("单击与拖拽不编辑，正文双击或卡片聚焦后 Enter/F2 才打开编辑器", () => {
+  it("卡面点击不编辑，键盘右键能打开设置并进入内容编辑", () => {
     const onCardEdit = vi.fn();
-    const { container } = render(
-      <LayoutRenderer
-        document={SEED_LAYOUT_DOCUMENT}
-        bindings={SEED_DESKTOP_PROJECTION.bindings}
-        handlers={{ onCardEdit }}
-      />
-    );
-    const card = container.querySelector<HTMLElement>(
-      "[data-layout-card-id='seed-flex'] .dim-drag"
-    );
-    if (!card) throw new Error("missing editable card");
-
-    expect(container.querySelector(".dim-card-edit-trigger")).not.toBeInTheDocument();
-    expect(card).toHaveAttribute("tabindex", "0");
-    expect(card).toHaveAttribute("aria-keyshortcuts", "Enter F2");
-
+    render(<LayoutRenderer document={SEED_LAYOUT_DOCUMENT} bindings={SEED_DESKTOP_PROJECTION.bindings} handlers={{ onCardEdit }} />);
+    const card = screen.getByRole("group", { name: "卡片：核心记忆点" });
     fireEvent.click(card);
-    expect(onCardEdit).not.toHaveBeenCalled();
-
-    fireEvent.pointerDown(card, {
-      button: 0,
-      pointerId: 1,
-      clientX: 100,
-      clientY: 100
-    });
-    fireEvent.pointerMove(card, { pointerId: 1, clientX: 150, clientY: 130 });
-    fireEvent.pointerUp(card, { pointerId: 1, clientX: 150, clientY: 130 });
-    fireEvent.click(card);
-    expect(onCardEdit).not.toHaveBeenCalled();
-
     fireEvent.doubleClick(card);
-    expect(onCardEdit).toHaveBeenCalledTimes(1);
-    expect(onCardEdit).toHaveBeenLastCalledWith(
-      expect.objectContaining({ cardId: "seed-flex", binding: "desktop.flex" })
-    );
-
     fireEvent.keyDown(card, { key: "Enter" });
-    fireEvent.keyDown(card, { key: "F2" });
-    expect(onCardEdit).toHaveBeenCalledTimes(3);
+    expect(onCardEdit).not.toHaveBeenCalled();
+    expect(card).toHaveAttribute("aria-keyshortcuts", "Shift+F10 ContextMenu");
+    card.focus();
+    fireEvent.keyDown(card, { key: "F10", shiftKey: true });
+    const menu = screen.getByRole("menu", { name: "卡片设置：核心记忆点" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "编辑内容" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改标题与内容" }));
+    expect(onCardEdit).toHaveBeenCalledWith(expect.objectContaining({ cardId: "seed-flex", binding: "desktop.flex" }));
   });
 
   it("内部按钮的双击不会冒泡成整卡编辑", () => {
@@ -239,6 +264,7 @@ describe("LayoutRenderer", () => {
       />
     );
 
+    openContent("今日早报");
     const feedback = screen.getAllByRole("button", { name: "有新角度" })[0];
     // 浏览器真实序列是 click(detail=1) → click(detail=2) → dblclick。
     fireEvent.click(feedback, { detail: 1 });
@@ -248,7 +274,7 @@ describe("LayoutRenderer", () => {
     expect(onFeedFeedback).toHaveBeenCalledTimes(1);
   });
 
-  it("认知卡单击仍翻开手帐，双击只进入整卡编辑", () => {
+  it("认知卡在内容弹窗中仍可翻开手帐，主页只呈现内容", () => {
     vi.useFakeTimers();
     const onOpen = vi.fn();
     const onCardEdit = vi.fn();
@@ -276,25 +302,17 @@ describe("LayoutRenderer", () => {
     const outer = container.querySelector<HTMLElement>(
       "[data-layout-card-id='seed-flex'] .dim-drag"
     );
-    const cognition = container.querySelector<HTMLElement>(
-      "[data-layout-card-id='seed-flex'] [data-card-primary-action]"
-    );
-    if (!outer || !cognition) throw new Error("missing cognition card");
-
-    fireEvent.click(cognition, { detail: 1 });
+    expect(container.querySelector("[data-card-primary-action]")).not.toBeInTheDocument();
+    if (!outer) throw new Error("missing cognition card");
+    fireEvent.click(outer);
     expect(onOpen).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(231));
-    expect(onOpen).toHaveBeenCalledOnce();
-
+    openContent("核心记忆点");
+    const cognition = screen.getByRole("dialog").querySelector<HTMLElement>("[data-card-primary-action]")!;
     fireEvent.click(cognition, { detail: 1 });
-    fireEvent.click(cognition, { detail: 2 });
-    fireEvent.doubleClick(cognition, { detail: 2 });
     act(() => vi.advanceTimersByTime(231));
     expect(onOpen).toHaveBeenCalledOnce();
-    expect(onCardEdit).toHaveBeenCalledOnce();
-    expect(onCardEdit).toHaveBeenCalledWith(
-      expect.objectContaining({ cardId: "seed-flex", binding: "desktop.flex" })
-    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(onCardEdit).not.toHaveBeenCalled();
 
     unmount();
     vi.useRealTimers();
@@ -325,6 +343,7 @@ describe("LayoutRenderer", () => {
     fireEvent.pointerCancel(card, { pointerId: 7, clientX: 80, clientY: 60 });
     expect(card.style.translate).toBe("");
 
+    openContent("今日早报");
     fireEvent.click(screen.getAllByRole("button", { name: "有新角度" })[0], {
       detail: 1
     });
@@ -387,5 +406,44 @@ describe("LayoutRenderer", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("桌面布局文档有问题");
     expect(screen.getByRole("alert")).toHaveTextContent("不存在的 card");
+  });
+
+  it("右键进入尺寸调整后才出现手柄，拉伸保持其他卡片与业务操作", () => {
+    const onCardEdit = vi.fn();
+    const onFeedFeedback = vi.fn();
+    const layout = { ...cloneLayout(), id: "resize-interaction-test" };
+    const { container, unmount } = render(
+      <LayoutRenderer
+        document={layout}
+        bindings={SEED_DESKTOP_PROJECTION.bindings}
+        handlers={{ onCardEdit, onFeedFeedback }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /^调整大小：/ })).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByRole("group", { name: "卡片：今日早报" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /调整大小/ }));
+    expect(screen.getAllByRole("button", { name: /^调整大小：/ })).toHaveLength(1);
+    const corner = screen.getByRole("button", { name: "调整大小：今日早报" });
+    const card = container.querySelector<HTMLElement>("[data-layout-card-id='seed-feed'] .dim-drag")!;
+    const slot = card.parentElement!;
+    const otherSlot = container.querySelector<HTMLElement>("[data-layout-card-id='seed-schedule']")!;
+    fireEvent.pointerDown(corner, { button: 0, pointerId: 1, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(corner, { pointerId: 1, clientX: 80, clientY: 60 });
+    fireEvent.pointerUp(corner, { pointerId: 1 });
+    fireEvent.click(corner);
+    expect(card).toHaveClass("is-sized");
+    expect(card.style.translate).toBe("");
+    // 放手后仍压在后一个槽位之上，避免入场动画的层叠上下文遮住重叠的手柄。
+    expect(Number(slot.style.zIndex)).toBeGreaterThan(Number(otherSlot.style.zIndex));
+    expect(slot.style.zIndex).toBe(card.style.zIndex);
+    expect(onCardEdit).not.toHaveBeenCalled();
+    openContent("今日早报");
+    fireEvent.click(screen.getAllByRole("button", { name: "有新角度" })[0]);
+    expect(onFeedFeedback).toHaveBeenCalledOnce();
+    fireEvent.doubleClick(corner);
+    expect(card).not.toHaveClass("is-sized");
+    expect(onCardEdit).not.toHaveBeenCalled();
+    unmount();
+    localStorage.removeItem("dim-desk-sizes-resize-interaction-test");
   });
 });

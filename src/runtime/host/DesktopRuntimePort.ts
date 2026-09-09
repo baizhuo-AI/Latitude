@@ -56,7 +56,10 @@ export interface KnowledgeContextQuery {
   query?: string;
   limit?: number;
   kinds?: string[];
+  /** 只约束 evidence_event；语义节点不受影响。 */
+  evidenceTypes?: Array<"message" | "activity">;
   includeRetracted?: boolean;
+  sensitivityCeiling?: "low" | "medium" | "high" | "highest";
 }
 
 export interface KnowledgeNode {
@@ -157,6 +160,20 @@ export interface MutationReceipt<T = RuntimeJson> {
 }
 
 export type ChangeReceipt = MutationReceipt<RuntimeJson>;
+
+export interface RecordActivityRequest {
+  content: string;
+  occurredAt: string;
+  sensitivity?: "low" | "medium" | "high" | "highest";
+  audit?: AuditContext;
+}
+
+export interface ActivityCaptureValue {
+  sourceRecordId: string;
+  evidenceRefId: string;
+  nodeId: string;
+  node: KnowledgeNode;
+}
 
 export interface ChangeSetRecord {
   id: string;
@@ -437,6 +454,11 @@ export interface DesktopRuntimePort {
     request: ApplyChangeRequest,
     options?: RuntimeRequestOptions
   ): Promise<ChangeReceipt>;
+  /** 把用户自己记下的已发生事项保存为带来源的 evidence_event。 */
+  recordActivity(
+    request: RecordActivityRequest,
+    options?: RuntimeRequestOptions
+  ): Promise<MutationReceipt<ActivityCaptureValue>>;
   listChangeSets(options?: RuntimeRequestOptions): Promise<ChangeSetRecord[]>;
   createAction(
     request: CreateActionRequest,

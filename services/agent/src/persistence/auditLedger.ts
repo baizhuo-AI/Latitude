@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type {
+  AgentResponseExplanation,
   AgentRunBudgets,
   AgentRunRequest,
   AgentSessionMessage,
@@ -30,13 +31,28 @@ interface SessionGenerationStart {
   generation: number;
   at: string;
   reason: "context_compaction";
+  historyBoundary?: string;
   /** Compact seed is committed in the same JSONL record as the generation edge. */
   seed: readonly SessionEvent[];
 }
 
-type PersistedSessionRecord = PersistedSessionEvent | SessionGenerationStart;
+interface PersistedAssistantPresentation {
+  kind: "assistant_presentation";
+  sessionId: string;
+  runId: string;
+  sourceMessageId: string;
+  assistantText: string;
+  explanation: AgentResponseExplanation;
+  at: string;
+}
+
+type PersistedSessionRecord =
+  | PersistedSessionEvent
+  | SessionGenerationStart
+  | PersistedAssistantPresentation;
 
 export interface PersistedSessionState {
+  historyBoundary?: string;
   generation: number;
   events: SessionEvent[];
 }
@@ -59,7 +75,7 @@ export interface SchedulerReceipt {
   runId: string;
   /** 1-based bounded execution attempt for this durable receipt key. */
   attempt?: number;
-  /** Persisted low-sensitivity request allows retry even if Domain no longer lists the item. */
+  /** Persisted task attribution allows retry even if Domain no longer lists the item. */
   request?: AgentRunRequest & { budgets: AgentRunBudgets };
   nextAttemptAt?: string;
   lastStatus?: "failed" | "cancelled";
@@ -107,6 +123,7 @@ export class AuditLedger {
 
   private readonly pending = new Map<string, Promise<void>>();
   private readonly writeFailures = new Map<string, unknown>();
+  private readonly activityCalls = new Set<string>();
   /**
    * One process-wide file-operation queue gives exports a real snapshot fence:
    * every ledger write registered before the fence finishes first, while every
@@ -225,6 +242,7 @@ export class AuditLedger {
       },
       requestFingerprint,
     };
+    if(persistedJob.result)persistedJob.result.events=persistedJob.result.events.map(event=>this.historySafeEvent(event));
     await this.enqueue(this.jobsPath, {
       kind: "job_snapshot",
       at: new Date().toISOString(),
@@ -263,14 +281,45 @@ export class AuditLedger {
       sessionId,
       generation,
       ...(runId ? { runId } : {}),
-      event,
+      event:this.historySafeEvent(event),
     } satisfies PersistedSessionEvent);
+  }
+
+  private historySafeEvent(event:SessionEvent):SessionEvent {
+    if(event.type==="assistant/message")for(const block of event.data.message.content){
+      if(block.type==="tool-call"&&["history_read","history_search"].includes(block.name))this.activityCalls.add(String(block.id));
+    }
+    if(event.type!=="tool/result")return event;
+    const result=structuredClone(event);
+    for(const block of result.data.message.content){
+      if(block.type==="tool-result"&&this.activityCalls.has(String(block.toolCallId)))block.content=[{type:"text",text:"活动原文不存入会话日志。请通过 history_read 重新读取仍有效的依据。"}];
+    }
+    return result;
+  }
+
+  appendAssistantPresentation(
+    sessionId: string,
+    runId: string,
+    sourceMessageId: string,
+    assistantText: string,
+    explanation: AgentResponseExplanation,
+  ): Promise<void> {
+    return this.enqueue(this.sessionPath(sessionId), {
+      kind: "assistant_presentation",
+      sessionId,
+      runId,
+      sourceMessageId,
+      assistantText,
+      explanation,
+      at: new Date().toISOString(),
+    } satisfies PersistedAssistantPresentation);
   }
 
   async startSessionGeneration(
     sessionId: string,
     generation: number,
     seed: readonly SessionEvent[],
+    historyBoundary?: string,
   ): Promise<void> {
     if (!Number.isInteger(generation) || generation < 1) {
       throw new TypeError("session generation must be a positive integer");
@@ -281,6 +330,7 @@ export class AuditLedger {
       generation,
       at: new Date().toISOString(),
       reason: "context_compaction",
+      ...(historyBoundary ? {historyBoundary} : {}),
       seed: structuredClone(seed),
     } satisfies SessionGenerationStart);
     await this.ensureSessionMetadata(sessionId, generation);
@@ -315,20 +365,23 @@ export class AuditLedger {
     }
     const records = parseJsonLines<PersistedSessionRecord>(raw, file);
     let generation = 0;
+    let historyBoundary: string | undefined;
     let events: SessionEvent[] = [];
     for (const record of records) {
       if (record.kind === "generation_start") {
         if (record.sessionId !== sessionId || record.generation <= generation) continue;
         generation = record.generation;
+        historyBoundary = record.historyBoundary ?? historyBoundary;
         events = structuredClone([...record.seed]);
         continue;
       }
+      if (record.kind === "assistant_presentation") continue;
       const recordGeneration = record.generation ?? 0;
       if (record.sessionId === sessionId && recordGeneration === generation) {
         events.push(record.event);
       }
     }
-    return { generation, events };
+    return { generation, events, ...(historyBoundary ? {historyBoundary} : {}) };
   }
 
   async readSessionEvents(
@@ -357,6 +410,48 @@ export class AuditLedger {
       .slice(0, Math.max(1, Math.min(limit, 2_000)));
   }
 
+  async listSessionArchives() {
+    await this.flushAll();
+    const entries = await readdir(this.sessionsDir);
+    const sessions: Array<{ sessionId: string; updatedAt?: string }> = [];
+    for (const entry of entries.filter((name) => name.endsWith(".meta.json"))) {
+      const metadata = JSON.parse(await readFile(path.join(this.sessionsDir, entry), "utf8"));
+      if (typeof metadata.sessionId === "string") {
+        sessions.push({ sessionId: metadata.sessionId, updatedAt: metadata.updatedAt });
+      }
+    }
+    return sessions;
+  }
+
+  /** Read original messages/results across all archived generations, not the compacted surface. */
+  async readSessionArchive(sessionId: string, offset = 0, limit = 100, boundary?: string) {
+    const file = this.sessionPath(sessionId);
+    await this.flushFile(file);
+    let raw: string;
+    try { raw = await readFile(file, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { sessionId, items: [], nextOffset: null };
+      throw error;
+    }
+    const items: Array<{ generation: number; seq: number; type: string; content: string }> = [];
+    const state=boundary?await this.loadSessionState(sessionId):undefined;
+    if(boundary&&state?.historyBoundary!==boundary)return {sessionId,items:[],nextOffset:null,reason:"记录权限或依据已改变，这份旧上下文不再供模型读取。"};
+    for (const record of parseJsonLines<PersistedSessionRecord>(raw, file)) {
+      if (record.kind === "generation_start" || record.kind === "assistant_presentation") continue;
+      if(boundary&&(record.generation??0)!==state?.generation)continue;
+      const event = record.event;
+      let content = "";
+      if (event.type === "user/message" && event.data.source.kind === "user") content = textContent(event.data.content);
+      if (event.type === "assistant/message") content = textContent(event.data.message.content);
+      if (event.type === "tool/result") content = event.data.message.content.flatMap((block) =>
+        block.type === "tool-result" ? [textContent(block.content)] : []
+      ).join("\n");
+      if (content) items.push({ generation: record.generation ?? 0, seq: event.seq, type: event.type, content });
+    }
+    const page = items.slice(offset, offset + limit);
+    return { sessionId, items: page, nextOffset: offset + page.length < items.length ? offset + page.length : null };
+  }
+
   /**
    * Browser conversation read model. It scans the append-only archive so a
    * reload can recover human-visible messages even after a context generation
@@ -378,10 +473,18 @@ export class AuditLedger {
     }
 
     const records = parseJsonLines<PersistedSessionRecord>(raw, file);
+    const presentations = new Map<string, PersistedAssistantPresentation>();
     const events: SessionEvent[] = [];
     for (const record of records) {
-      if (record.kind === "generation_start") events.push(...record.seed);
-      else if (record.sessionId === sessionId) events.push(record.event);
+      if (record.kind === "assistant_presentation") {
+        if (record.sessionId === sessionId) {
+          presentations.set(record.sourceMessageId, record);
+        }
+      } else if (record.kind === "generation_start") {
+        events.push(...record.seed);
+      } else if (record.sessionId === sessionId) {
+        events.push(record.event);
+      }
     }
 
     const seen = new Set<string>();
@@ -401,8 +504,16 @@ export class AuditLedger {
           seq: event.seq,
         });
       } else if (event.type === "assistant/message") {
-        const content = textContent(event.data.message.content);
         const id = String(event.data.message.id);
+        const presentation = presentations.get(id);
+        // Tool-call lead-ins are execution narration, not a completed reply.
+        // Keep them in the archive without resurrecting them after a reload.
+        if (
+          !presentation &&
+          event.data.message.content.some((block) => block.type === "tool-call")
+        ) continue;
+        const content = presentation?.assistantText
+          ?? textContent(event.data.message.content);
         if (!content || seen.has(id)) continue;
         seen.add(id);
         messages.push({
@@ -411,6 +522,9 @@ export class AuditLedger {
           content,
           createdAt: new Date(event.time).toISOString(),
           seq: event.seq,
+          ...(presentation?.explanation
+            ? { explanation: presentation.explanation }
+            : {}),
         });
       }
     }
@@ -423,6 +537,33 @@ export class AuditLedger {
       at: new Date().toISOString(),
       data,
     });
+  }
+
+  async readAuditData<T>(kind: string): Promise<T[]> {
+    await this.flushFile(this.auditPath);
+    let raw: string;
+    try { raw = await readFile(this.auditPath, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    return parseJsonLines<{ kind: string; data: T }>(raw, this.auditPath)
+      .filter((record) => record.kind === kind).map((record) => record.data);
+  }
+
+  async readRunEvents(sessionId: string, runId: string): Promise<SessionEvent[]> {
+    const file = this.sessionPath(sessionId);
+    await this.flushFile(file);
+    let raw: string;
+    try { raw = await readFile(file, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    return parseJsonLines<PersistedSessionRecord>(raw, file)
+      .filter((record): record is PersistedSessionEvent =>
+        record.kind === "session_event" && record.runId === runId)
+      .map((record) => record.event);
   }
 
   async appendSchedulerReceipt(receipt: SchedulerReceipt): Promise<void> {

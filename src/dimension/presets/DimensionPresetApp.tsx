@@ -10,10 +10,11 @@ import {
 import { SEED_LAYOUT_DOCUMENT } from "../../runtime/layout/seedLayout";
 import type { LayoutDocumentV1 } from "../../runtime/layout/types";
 import type { LayoutCompositionSurface } from "../../runtime/layout/LayoutRenderer";
-import { DimensionApp } from "../DimensionApp";
+import { DimensionApp, type DimensionAppProps, type DesktopWorkspaceHandle } from "../DimensionApp";
+import type { SendComposerMessage } from "../composer/MessageComposer";
 import { CardEditorDialog, type CardEditorValue } from "../CardEditorDialog";
 import { materializeDeskCard } from "../nativeRegistry";
-import { SecretaryRail } from "../Shell";
+import { SecretaryRail, type SecretaryRailProps } from "../Shell";
 import { SecretaryCompanion } from "../SecretaryCompanion";
 import type {
   AnchorRow,
@@ -36,13 +37,14 @@ import {
   ConstellationPreset,
   type ConstellationNode
 } from "./ConstellationPreset";
+import type { GoalChange } from "./GoalEditorDialog";
 import { DimensionDeck } from "./DimensionDeck";
 import {
   replaceDimensionPresetInUrl,
   resolveDimensionPreset,
   type DimensionPresetId
 } from "./presetQuery";
-import { deriveThreadDesktop } from "./threadDesktop";
+import { readDesktopWorkspace, type DesktopViewContext } from "../desktopWorkspace";
 
 /** 秘书栏收拢状态记在本地：她是常驻同伴，收不收起是用户的长期偏好。 */
 const RAIL_STORAGE_KEY = "dim-rail-collapsed";
@@ -156,20 +158,29 @@ export interface DimensionPresetAppProps {
   paperHandlers?: CardHandlers;
   /** Browser-only trusted V2 surface; all other shells keep their current path. */
   composition?: LayoutCompositionSurface;
-  onSendMessage?: (text: string) => void;
+  onSendMessage?: SendComposerMessage;
+  onDesktopContextChange?: (context: DesktopViewContext) => void;
+  composerSessionId?: string;
   /** 对话层节点，透传给纸面桌面。 */
   thread?: ReactNode;
   onOpenSettings?: () => void;
   onOpenReview?: () => void;
   onAdjustDesktop?: () => void;
+  onReconnect?: () => Promise<void>;
   /** User-owned card visibility commits through the host composition boundary. */
   onCardVisibilityChange?: (cardId: string, visible: boolean) => void;
+  onRequestCardHelp?: DimensionAppProps["onRequestCardHelp"];
   /** 点秘书立绘的出口（聊聊 / 看看有什么要定 / 回顾）。 */
   onSecretaryInteract?: (intent: SecretaryIntent) => void;
-  /** Browser product can detach her from the navigation rail without changing art. */
-  secretaryPresentation?: "rail" | "companion";
+  /** Browser product can place her in the rail, as a desk companion, or in the app header. */
+  secretaryPresentation?: "rail" | "companion" | "header";
+  secretaryPortrait?: SecretaryRailProps["portrait"];
+  /** Controlled state for the header launcher so it can announce the open chat window. */
+  secretaryChatOpen?: boolean;
   /** Event-clock delivery for the detached companion. */
   secretaryNotice?: string | null;
+  /** Co-creation stays next to the secretary until the user opens it. */
+  secretaryInvitation?: ReactNode;
   /** User visibility changes commit through the same Browser UiSurfaceV2 CAS engine. */
   onCompanionVisibilityChange?: (visible: boolean) => void;
   /**
@@ -189,6 +200,8 @@ export interface DimensionPresetAppProps {
     onRelationInspect?: (metric: RelationMetric) => void;
     onCompleteAnchor?: (row: AnchorRow) => void;
     onNodeOpen?: (node: ConstellationNode) => void;
+    onDiscussNode?: (node: ConstellationNode) => void;
+    onSaveGoal?: (change: GoalChange) => Promise<void>;
   };
 }
 
@@ -206,14 +219,21 @@ export function DimensionPresetApp({
   paperHandlers,
   composition,
   onSendMessage,
+  onDesktopContextChange,
+  composerSessionId,
   thread,
   onOpenSettings,
   onOpenReview,
   onAdjustDesktop,
+  onReconnect,
   onCardVisibilityChange,
+  onRequestCardHelp,
   onSecretaryInteract,
   secretaryPresentation = "rail",
+  secretaryPortrait,
+  secretaryChatOpen = false,
   secretaryNotice,
+  secretaryInvitation,
   onCompanionVisibilityChange,
   localCardEditing = "full",
   layerHandlers
@@ -274,12 +294,24 @@ export function DimensionPresetApp({
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
+  const [compactViewport, setCompactViewport] = useState(() => window.matchMedia?.("(max-width: 600px)").matches ?? false);
+  const [compactRailExpanded, setCompactRailExpanded] = useState(false);
+  const visibleRailCollapsed = compactViewport ? !compactRailExpanded : railCollapsed;
+  useEffect(() => {
+    const query = window.matchMedia?.("(max-width: 600px)");
+    if (!query) return;
+    const changed = () => { setCompactViewport(query.matches); setCompactRailExpanded(false); };
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
   const [deskEdits, setDeskEdits] = useState<DeskEdits>(() => readDeskEdits(layout.id));
   const [editingCard, setEditingCard] = useState<CardEditRequest | null>(null);
   /** 记录打开编辑器时所在的线索；null 表示编辑总桌面/线索板源卡。 */
   const [editingFocus, setEditingFocus] = useState<string | null>(null);
   /** 正在聚焦的线索节点；保存稳定 id，避免同名目标或 typed 主题重建失败。 */
-  const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
+  const [focusThreadId, setFocusThreadId] = useState<string | null>(() => readDesktopWorkspace(layout.id).activeAreaId);
+  const desktopWorkspace = useRef<DesktopWorkspaceHandle>(null);
+  const [visibleDesktopCards, setVisibleDesktopCards] = useState<string[]>([]);
 
   const editedProjection = useMemo<DesktopProjection>(
     () => ({
@@ -317,25 +349,16 @@ export function DimensionPresetApp({
       ...editedLayout,
       cards: editedLayout.cards.map((card) => ({
         ...card,
-        presentation: scopedPresentations[card.id] ?? card.presentation
+        presentation: scopedPresentations[card.id] ?? (card.kind === "anchors" && card.presentation
+          ? { ...card.presentation, title: `${targetThread.title} · 相关记录` }
+          : card.presentation)
       }))
     };
-    const derived = deriveThreadDesktop(
-      editedProjection,
-      scopedLayout,
-      targetThread,
-      { ...deskEdits.presentations, ...scopedPresentations }
-    );
-    const scopedBindings =
-      localCardEditing === "full"
-        ? deskEdits.threadBindings[targetThread.title] ?? {}
-        : {};
+    const bindings = Object.fromEntries(Object.entries(editedProjection.bindings).map(([id, payload]) =>
+      [id, payload?.kind === "anchors" ? { ...payload, rows: targetThread.rows } : payload]));
     return {
-      ...derived,
-      projection: {
-        ...derived.projection,
-        bindings: { ...derived.projection.bindings, ...scopedBindings }
-      }
+      layout: scopedLayout,
+      projection: { ...editedProjection, bindings }
     };
   }, [
     deskEdits.presentations,
@@ -356,23 +379,12 @@ export function DimensionPresetApp({
     (candidate) => candidate.id === focusThreadId
   ) ?? null;
   const focusThread = focusedThread?.title ?? null;
-  const focusedDesktop = useMemo(
-    () => focusedThread ? desktopForThread(focusedThread) : null,
-    [desktopForThread, focusedThread]
-  );
-  const renderedComposition = useMemo(() => {
-    if (!composition || !focusedDesktop) return composition;
-    // 专属桌面沿用同一份可信组件与动作绑定，只派生 surface 身份来匹配
-    // 线索桌面 Layout；不创建第二套配置，也不放宽 Browser action gate。
-    return {
-      registry: composition.registry,
-      document: {
-        ...composition.document,
-        id: focusedDesktop.layout.id,
-        revision: focusedDesktop.layout.revision
-      }
-    };
-  }, [composition, focusedDesktop]);
+  useEffect(() => {
+    onDesktopContextChange?.({ view: preset,
+      area: focusedThread ? { id: focusedThread.id, title: focusedThread.title } : null,
+      visibleCardIds: preset === "paper" ? visibleDesktopCards : [],
+    });
+  }, [preset, focusedThread, visibleDesktopCards, onDesktopContextChange]);
 
   const say = useCallback((message: string) => {
     setToast(message);
@@ -395,6 +407,7 @@ export function DimensionPresetApp({
   }
 
   function toggleRail() {
+    if (compactViewport) { setCompactRailExpanded(current => !current); return; }
     setRailCollapsed((prev) => {
       try {
         window.localStorage.setItem(RAIL_STORAGE_KEY, prev ? "0" : "1");
@@ -455,7 +468,7 @@ export function DimensionPresetApp({
       resolved.onCardEdit =
         paperHandlers?.onCardEdit ??
         ((request) => {
-          setEditingFocus(focusThread);
+          setEditingFocus(null);
           setEditingCard(request);
         });
     } else {
@@ -587,7 +600,7 @@ export function DimensionPresetApp({
       savingFocusedAnchors
         ? "锚点修改已按来源合回；其他线索仍然保留。"
         : editingFocus
-          ? "内容已留在这条线索自己的桌面；总桌面来源保持不变。"
+          ? "内容已留在这条线索对应的桌面板块。"
         : "这张卡已经按你的版本留在桌面和线索板上。"
     );
   }
@@ -667,6 +680,8 @@ export function DimensionPresetApp({
         <div className="dim-global-rail">
           <SecretaryRail
             secretary={editedProjection.secretary}
+            portrait={secretaryPortrait}
+            invitation={secretaryInvitation}
             notice={secretaryNotice}
             onReview={railReview}
             onRelationInspect={layerHandlers?.onRelationInspect}
@@ -675,14 +690,14 @@ export function DimensionPresetApp({
               browserModules.diagnostics.actions.close === true))
               ? (onOpenSettings ?? (() => say("演示模式：设置页暂未接入")))
               : undefined}
-            collapsed={railCollapsed}
+            collapsed={visibleRailCollapsed}
             onToggleCollapse={toggleRail}
             visible={browserModules?.companion?.visible}
             onVisibilityChange={onCompanionVisibilityChange}
             actionAvailability={browserModules?.companion?.actionAvailability}
           />
         </div>
-      ) : (
+      ) : secretaryPresentation === "companion" ? (
         <SecretaryCompanion
           secretary={editedProjection.secretary}
           notice={secretaryNotice}
@@ -696,15 +711,15 @@ export function DimensionPresetApp({
           onVisibilityChange={onCompanionVisibilityChange}
           actionAvailability={browserModules?.companion?.actionAvailability}
         />
-      )}
+      ) : null}
 
       <div
         className="dim-deck-wrap"
         style={{
           paddingLeft:
-            secretaryPresentation === "companion"
+            secretaryPresentation !== "rail"
               ? 0
-              : railCollapsed || browserModules?.companion?.visible === false
+              : compactViewport || visibleRailCollapsed || browserModules?.companion?.visible === false
                 ? 44
                 : 176,
         }}
@@ -712,34 +727,63 @@ export function DimensionPresetApp({
         <DimensionDeck
           active={preset}
           onChange={choosePreset}
+          onSetHome={() => { desktopWorkspace.current?.setHome(); setFocusThreadId(null); }}
+          onGoHome={() => {
+            desktopWorkspace.current?.goHome();
+            setFocusThreadId(null);
+            choosePreset("paper");
+          }}
           desk={
             <DimensionApp
-              key={focusedDesktop?.layout.id ?? editedLayout.id}
-              layout={focusedDesktop?.layout ?? editedLayout}
-              projection={focusedDesktop?.projection ?? editedProjection}
+              ref={desktopWorkspace}
+              key={editedLayout.id}
+              layout={editedLayout}
+              projection={editedProjection}
               handlers={resolvedPaperHandlers}
-              composition={renderedComposition}
+              composition={composition}
+              workspaceThreads={availableClueThreads}
+              activeAreaId={focusThreadId}
+              onActiveAreaChange={setFocusThreadId}
+              onVisibleCardsChange={setVisibleDesktopCards}
+              onCompleteAreaAnchor={layerHandlers?.onCompleteAnchor ?? demoComplete}
+              onAreaLineage={layerHandlers?.onLineage ?? paperHandlers?.onLineage}
+              areaPresentations={localCardEditing === "full" ? deskEdits.threadPresentations : undefined}
+              areaBindings={localCardEditing === "full" ? deskEdits.threadBindings : undefined}
               onSendMessage={onSendMessage}
-              commandBarVisible={browserModules?.commandBar?.visible}
+              composerSessionId={composerSessionId}
+              commandBarVisible={false}
               commandBarSendEnabled={browserModules?.commandBar?.actions.send}
               thread={thread}
               onOpenSettings={(!composition || (browserModules?.diagnostics?.visible === true &&
                 browserModules.diagnostics.actions.close === true))
                 ? onOpenSettings
                 : undefined}
+              onSecretaryInteract={railInteract}
+              headerSecretary={secretaryPresentation === "header" ? {
+                notice: secretaryNotice,
+                open: secretaryChatOpen,
+                visible: browserModules?.companion?.visible !== false,
+                chatEnabled: browserModules?.companion?.actionAvailability.chat !== false,
+                outcomeEnabled: browserModules?.companion?.actionAvailability.outcome !== false,
+                onRestore: onCompanionVisibilityChange
+                  ? () => onCompanionVisibilityChange(true)
+                  : undefined,
+              } : undefined}
               onOpenReview={onOpenReview}
               onAdjustDesktop={onAdjustDesktop}
+              onReconnect={onReconnect}
               onCardVisibilityChange={onCardVisibilityChange}
+              onRequestCardHelp={onRequestCardHelp}
               railMode="none"
-              focusTag={focusThread}
-              onExitFocus={() => setFocusThreadId(null)}
             />
           }
           clueBoard={
             <ClueBoardPreset
               projection={editedProjection}
+              selectedThreadId={focusThreadId}
               onEnterThread={(thread) => {
-                // 线索与桌面是层级关系：点按线索 = 低头进这条线的桌面
+                // Prepare the camera before the deck reveals the single shared canvas.
+                desktopWorkspace.current?.focusArea(thread.id);
                 setFocusThreadId(thread.id);
                 choosePreset("paper");
               }}
@@ -751,25 +795,15 @@ export function DimensionPresetApp({
                 layerHandlers?.onVerdict ??
                 (() => say("演示模式：已收到裁决，本次不会保存"))
               }
-              onFeedFeedback={
-                layerHandlers?.onFeedFeedback ??
-                ((_itemId, feedback) =>
-                  say(
-                    `演示模式：已看到“${
-                      {
-                        "new-angle": "有新角度",
-                        known: "已经知道",
-                        "not-useful": "这次没用"
-                      }[feedback]
-                    }”，本次不会保存`
-                  ))
-              }
               onCompleteAnchor={layerHandlers?.onCompleteAnchor ?? demoComplete}
               onEditBinding={localCardEditing === "full" ? openBindingEditor : undefined}
+              onSaveGoal={layerHandlers?.onSaveGoal}
               onEditThread={localCardEditing === "full" ? openThreadEditor : undefined}
-              onOpenThesis={() =>
-                say(editedLayout.arrangement.rationale.join("；"))
-              }
+              onOpenThesis={() => {
+                desktopWorkspace.current?.goHome();
+                setFocusThreadId(null);
+                choosePreset("paper");
+              }}
             />
           }
           constellation={
@@ -783,6 +817,7 @@ export function DimensionPresetApp({
                 if (layerHandlers?.onNodeOpen) layerHandlers.onNodeOpen(node);
                 else say(`星图：正在靠近“${node.label}”，详情下钻还在接`);
               }}
+              onDiscussNode={layerHandlers?.onDiscussNode ?? (() => railInteract("chat"))}
             />
           }
           navigationVisible={browserModules?.navigation?.visible}

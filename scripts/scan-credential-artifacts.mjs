@@ -8,7 +8,8 @@ const REQUIRED_ROOTS = new Set(["dist"]);
 const DETECTORS = [
   {
     id: "sk-prefixed-credential",
-    pattern: /sk-[A-Za-z0-9][A-Za-z0-9_-]{15,}/gu,
+    // Match a credential token, not the suffix of identifiers such as dim-desk-arranged-undo.
+    pattern: /(?<![A-Za-z0-9_])sk-[A-Za-z0-9][A-Za-z0-9_-]{15,}/gu,
   },
 ];
 

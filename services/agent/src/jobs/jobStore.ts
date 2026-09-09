@@ -71,6 +71,7 @@ export class RunJobStore {
     idempotencyKey?: string,
   ): Promise<{ job: PublicRunJob; created: boolean }> {
     await this.init();
+    if(request.useHistory===undefined){const prior=this.latestForSession(request.sessionId)?.request.useHistory;if(prior!==undefined)request={...request,useHistory:prior};}
     const effectiveKey = idempotencyKey?.trim() || request.clientRequestId?.trim();
     if (effectiveKey && (effectiveKey.length > 200 || effectiveKey.length === 0)) {
       throw new TypeError("Idempotency-Key must be from 1 to 200 characters");
@@ -110,6 +111,12 @@ export class RunJobStore {
     return job ? structuredClone(job) : undefined;
   }
 
+  latestForSession(sessionId: string): PublicRunJob | undefined {
+    const jobs = [...this.jobs.values()].filter(({ public: job }) => job.request.sessionId === sessionId);
+    const latest = jobs.findLast(({ public: job }) => job.status === "queued" || job.status === "running") ?? jobs.at(-1);
+    return latest ? structuredClone(latest.public) : undefined;
+  }
+
   hasActiveJobs(): boolean {
     return [...this.jobs.values()].some(({ public: job }) =>
       job.status === "queued" || job.status === "running"
@@ -145,7 +152,7 @@ export class RunJobStore {
         live.controller.signal,
       );
       live.public.result = result;
-      live.public.status = result.status === "cancelled" ? "cancelled" : "completed";
+      live.public.status = result.status;
       live.public.finishedAt = result.finishedAt;
       await this.ledger.appendJobSnapshot(live.public);
     } catch (error) {

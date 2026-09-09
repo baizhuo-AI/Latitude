@@ -68,6 +68,47 @@ describe("RunJobStore", () => {
     expect(jobs.get(first.job.runId)?.result?.assistantText).toBe("reply:hello");
   });
 
+  it("publishes budget exhaustion honestly instead of relabeling it completed", async () => {
+    const budgetRunner: RunExecutor = {
+      async runTurn(request) {
+        const now = new Date().toISOString();
+        return {
+          runId: request.runId,
+          sessionId: request.sessionId,
+          status: "budget_exhausted",
+          assistantText: "",
+          budgetStopReason: "wall_clock",
+          stepsUsed: 3,
+          toolCallsUsed: 4,
+          startedAt: now,
+          finishedAt: now,
+          usage: {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            reasoningTokens: 50,
+          },
+          events: [],
+        };
+      },
+    };
+    const { jobs } = await storeWith(budgetRunner);
+    const created = await jobs.create(normalizeRunRequest({
+      sessionId: "session-budget",
+      text: "what have I been doing recently?",
+    }));
+    await waitUntil(() => jobs.get(created.job.runId)?.status === "budget_exhausted");
+    expect(jobs.get(created.job.runId)).toMatchObject({
+      status: "budget_exhausted",
+      result: {
+        status: "budget_exhausted",
+        budgetStopReason: "wall_clock",
+        assistantText: "",
+      },
+    });
+  });
+
   it("marks non-terminal persisted jobs failed after a host restart instead of replaying side effects", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "latitude-jobs-restart-"));
     roots.push(root);

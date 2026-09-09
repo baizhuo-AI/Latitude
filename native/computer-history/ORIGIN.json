@@ -1,0 +1,21 @@
+{
+  "source": "open computer history (local source project)",
+  "files": [
+    {
+      "file": "HistoryEvent.swift",
+      "sha256": "40d99f34bcc4175e908e92cafca6e6ee98b6546bcb12c76513770d97b82ae21f"
+    },
+    {
+      "file": "HistoryConfiguration.swift",
+      "sha256": "c8af68d7558bea269f7bee27e373307ed947cdd60bbb892d8dab119e8d631d54"
+    },
+    {
+      "file": "PrivacyPolicy.swift",
+      "sha256": "e9a4bfc2b152b6335397ea150eb8193f9356dbabebe1939ce6c6fa4e6e550d15"
+    },
+    {
+      "file": "AccessibilityCaptureEngine.swift",
+      "sha256": "fe291dffdf9dc4b0f1a14a1a6b4b5d44ffe5e87be70a5004e105775e2fcd5c84"
+    }
+  ]
+}

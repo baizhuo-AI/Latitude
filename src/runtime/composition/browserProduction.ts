@@ -4,6 +4,7 @@ import type {
   LayoutRegion,
   LayoutSpan,
 } from "../layout/types";
+import { SEED_LAYOUT_DOCUMENT } from "../layout/seedLayout";
 import { CompositionRegistry } from "./registry";
 import type {
   JsonObject,
@@ -15,8 +16,40 @@ import type {
 
 export const BROWSER_COMPOSITION_MODULE_ID = "latitude.browser.desktop";
 
+/** Browser 产品沿用原来的五纸骨架，并在最前面加一张真实活动记录纸。 */
+export const BROWSER_PRODUCT_LAYOUT_DOCUMENT = (() => {
+  const layout = structuredClone(
+    SEED_LAYOUT_DOCUMENT,
+  ) as LayoutDocumentV1<NativeCardKind, CardPresentation>;
+  layout.id = "latitude-browser-live";
+  layout.revision += 1;
+  layout.cards.unshift({
+    id: "seed-activity",
+    region: "activity",
+    renderer: "native",
+    kind: "activity",
+    span: 12,
+    binding: "desktop.activity",
+    presentation: {
+      eyebrow: "真实记录",
+      title: "今天做过",
+      tilt: -0.25,
+      offsetY: 0,
+      paper: "plain",
+      clip: true,
+    },
+  });
+  layout.arrangement.orderedCardIds.unshift("seed-activity");
+  layout.arrangement.rationale.unshift("今天做过置顶：先看真实发生，再谈计划与判断");
+  return layout;
+})();
+
 export const BROWSER_COMMAND_IDS = {
   feedFeedback: "latitude.feed.feedback",
+  activityCapture: "latitude.activity.capture",
+  activityEdit: "latitude.activity.edit",
+  activityRetract: "latitude.activity.retract",
+  activityReflect: "latitude.activity.reflect",
   lineageOpen: "latitude.lineage.open",
   anchorComplete: "latitude.anchor.complete",
   anchorEdit: "latitude.anchor.edit",
@@ -64,6 +97,28 @@ export interface BrowserComponentSpec {
 }
 
 export const BROWSER_LAYOUT_COMPONENT_SPECS = [
+  {
+    id: "seed-activity",
+    type: "latitude.activity",
+    slot: "activity",
+    kind: "activity",
+    surface: "layout-card",
+    bindingRef: "desktop.activity",
+    events: {
+      capture: [BROWSER_COMMAND_IDS.activityCapture],
+      edit: [BROWSER_COMMAND_IDS.activityEdit],
+      retract: [BROWSER_COMMAND_IDS.activityRetract],
+      reflect: [BROWSER_COMMAND_IDS.activityReflect],
+      lineage: [BROWSER_COMMAND_IDS.lineageOpen],
+    },
+    defaultActions: {
+      capture: BROWSER_COMMAND_IDS.activityCapture,
+      edit: BROWSER_COMMAND_IDS.activityEdit,
+      retract: BROWSER_COMMAND_IDS.activityRetract,
+      reflect: BROWSER_COMMAND_IDS.activityReflect,
+      lineage: BROWSER_COMMAND_IDS.lineageOpen,
+    },
+  },
   {
     id: "seed-feed",
     type: "latitude.feed",
@@ -310,6 +365,14 @@ export const BROWSER_LAYOUT_COMPONENT_IDS = BROWSER_LAYOUT_COMPONENT_SPECS.map(
   (component) => component.id,
 );
 
+const LEGACY_BROWSER_LAYOUT_COMPONENT_IDS = [
+  "seed-feed",
+  "seed-schedule",
+  "seed-review-plan",
+  "seed-rhythm",
+  "seed-flex",
+] as const;
+
 export const BROWSER_COMPANION_COMPONENT_ID = BROWSER_COMPANION_SPEC.id;
 
 export const BROWSER_FIXED_COMPONENT_IDS = [
@@ -345,6 +408,30 @@ export function createBrowserCompositionRegistry(): CompositionRegistry {
     moduleId: BROWSER_COMPOSITION_MODULE_ID,
     risk: "reversible-write",
     description: "Record typed curator feedback for one persisted feed resource",
+  });
+  registry.registerCommand({
+    id: BROWSER_COMMAND_IDS.activityCapture,
+    moduleId: BROWSER_COMPOSITION_MODULE_ID,
+    risk: "reversible-write",
+    description: "Capture one user-authored activity as source-linked Domain evidence",
+  });
+  registry.registerCommand({
+    id: BROWSER_COMMAND_IDS.activityEdit,
+    moduleId: BROWSER_COMPOSITION_MODULE_ID,
+    risk: "reversible-write",
+    description: "Correct one user-authored activity record",
+  });
+  registry.registerCommand({
+    id: BROWSER_COMMAND_IDS.activityRetract,
+    moduleId: BROWSER_COMPOSITION_MODULE_ID,
+    risk: "reversible-write",
+    description: "Retract one activity record while preserving change history",
+  });
+  registry.registerCommand({
+    id: BROWSER_COMMAND_IDS.activityReflect,
+    moduleId: BROWSER_COMPOSITION_MODULE_ID,
+    risk: "read",
+    description: "Ask the local assistant for explicitly unconfirmed observations",
   });
   registry.registerCommand({
     id: BROWSER_COMMAND_IDS.lineageOpen,
@@ -508,11 +595,10 @@ function createBrowserFixedComponent(
 }
 
 /**
- * Deterministic schema normalization for the production five-card V2 and the
- * later six-component V2 that only knew the detached companion. It deliberately
- * keeps the same revision: adding host-owned fixed modules is not a user/Agent
- * mutation. Partially forged seven-to-fourteen component documents are rejected
- * instead of being silently repaired.
+ * Deterministic schema normalization for the original five-card Browser surface,
+ * the detached-companion variant, and the previous full production surface.
+ * Adding the host-owned activity paper keeps the same revision: this is a product
+ * schema migration, not a user/Agent mutation.
  */
 export function migrateLegacyBrowserSurface(
   document: UiSurfaceDocumentV2,
@@ -525,30 +611,62 @@ export function migrateLegacyBrowserSurface(
   ) {
     return structuredClone(document);
   }
-  const hasFiveCards = BROWSER_LAYOUT_COMPONENT_IDS.every((id) => ids.has(id));
+  const hasFiveCards = LEGACY_BROWSER_LAYOUT_COMPONENT_IDS.every((id) => ids.has(id));
   const isFiveCardLegacy =
-    document.components.length === BROWSER_LAYOUT_COMPONENT_IDS.length && hasFiveCards;
+    document.components.length === LEGACY_BROWSER_LAYOUT_COMPONENT_IDS.length && hasFiveCards;
   const isSixComponentLegacy =
-    document.components.length === BROWSER_LAYOUT_COMPONENT_IDS.length + 1 &&
+    document.components.length === LEGACY_BROWSER_LAYOUT_COMPONENT_IDS.length + 1 &&
     hasFiveCards &&
     ids.has(BROWSER_COMPANION_COMPONENT_ID);
-  if (!isFiveCardLegacy && !isSixComponentLegacy) {
+  const isPreviousProduction =
+    document.components.length === BROWSER_COMPONENT_SPECS.length - 1 &&
+    hasFiveCards &&
+    BROWSER_FIXED_COMPONENT_IDS.every((id) => ids.has(id));
+  if (!isFiveCardLegacy && !isSixComponentLegacy && !isPreviousProduction) {
     throw new TypeError(
-      "Browser UiSurfaceV2 must be the trusted 5-card, 6-component, or current production surface",
+      "Browser UiSurfaceV2 must be a trusted legacy or current production surface",
     );
   }
+  const migrated = structuredClone(document);
+  for (const component of migrated.components) {
+    if (LEGACY_BROWSER_LAYOUT_COMPONENT_IDS.includes(
+      component.id as (typeof LEGACY_BROWSER_LAYOUT_COMPONENT_IDS)[number],
+    )) {
+      component.order += 1;
+    }
+  }
   return {
-    ...structuredClone(document),
+    ...migrated,
     components: [
-      ...structuredClone(document.components),
+      createBrowserActivityComponent(),
+      ...migrated.components,
       ...(isFiveCardLegacy ? [createBrowserCompanionComponent(companionVisible)] : []),
-      ...createBrowserSystemComponents(),
+      ...(isPreviousProduction ? [] : createBrowserSystemComponents()),
     ],
   };
 }
 
 /** Compatibility export for callers written before the system-module closure. */
 export const migrateFiveCardBrowserSurface = migrateLegacyBrowserSurface;
+
+function createBrowserActivityComponent(): UiComponentInstance {
+  const spec = BROWSER_LAYOUT_COMPONENT_SPECS.find((candidate) => candidate.id === "seed-activity");
+  const card = BROWSER_PRODUCT_LAYOUT_DOCUMENT.cards.find((candidate) => candidate.id === "seed-activity");
+  if (!spec || !card?.presentation) {
+    throw new TypeError("Browser activity component is not registered");
+  }
+  return {
+    id: spec.id,
+    type: spec.type,
+    moduleId: BROWSER_COMPOSITION_MODULE_ID,
+    slot: spec.slot,
+    order: 0,
+    visible: true,
+    grid: { columnSpan: card.span, rowSpan: 1 },
+    props: componentProps(spec.bindingRef, card.presentation),
+    actions: { ...spec.defaultActions },
+  };
+}
 
 export function layoutV1ToUiSurfaceV2(
   layout: LayoutDocumentV1<string, CardPresentation>,
@@ -563,7 +681,7 @@ export function layoutV1ToUiSurfaceV2(
     layout.cards.length !== BROWSER_LAYOUT_COMPONENT_SPECS.length ||
     layout.arrangement.orderedCardIds.length !== BROWSER_LAYOUT_COMPONENT_SPECS.length
   ) {
-    throw new TypeError("Browser production surface must contain the five registered cards");
+    throw new TypeError("Browser production surface must contain the six registered cards");
   }
   const components = BROWSER_LAYOUT_COMPONENT_SPECS.map((spec) => {
     const card = cardById.get(spec.id);

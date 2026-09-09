@@ -5,6 +5,7 @@ import {
   type FeedFeedback,
   type LineageRef
 } from "../types";
+import { presentFeedTitle } from "./feedTitle";
 
 const FEEDBACK_ACTIONS: readonly {
   value: FeedFeedback;
@@ -52,10 +53,13 @@ export function FeedCard({
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 14 }}>
           {items.map((item) => {
             const lineage = item.lineage;
+            const presentedTitle = presentFeedTitle(item);
 
             return (
               <article key={item.id}>
                 <h4
+                  className="dim-feed-item-title"
+                  title={item.title}
                   style={{
                     margin: 0,
                     fontSize: 12.5,
@@ -64,11 +68,24 @@ export function FeedCard({
                     color: "var(--dim-ink)"
                   }}
                 >
-                  {item.title}
+                  {presentedTitle.text}
                 </h4>
-                <p className="dim-body" style={{ marginTop: 5 }}>
+                {presentedTitle.needsDisclosure && (
+                  <details className="dim-feed-original-title" data-no-drag data-no-card-edit>
+                    <summary aria-label={`展开完整原标题：${presentedTitle.text}`}>
+                      原标题
+                    </summary>
+                    <p>{item.title}</p>
+                  </details>
+                )}
+                {lineage?.entityType === "digest" ? (
+                  <details data-no-drag data-no-card-edit>
+                    <summary className="dim-body">阅读全文 · {item.why.slice(0, 60)}{item.why.length > 60 ? "…" : ""}</summary>
+                    <p className="dim-body" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.why}</p>
+                  </details>
+                ) : <p className="dim-body dim-feed-item-summary" title={item.why} style={{ marginTop: 5 }}>
                   {item.why}
-                </p>
+                </p>}
                 <div
                   style={{
                     marginTop: 7,
@@ -114,7 +131,7 @@ export function FeedCard({
                     </button>
                   )}
                 </div>
-                <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {lineage?.entityType !== "digest" && <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {FEEDBACK_ACTIONS.map((action) => (
                     <button
                       key={action.value}
@@ -133,7 +150,7 @@ export function FeedCard({
                       {action.label}
                     </button>
                   ))}
-                </div>
+                </div>}
               </article>
             );
           })}

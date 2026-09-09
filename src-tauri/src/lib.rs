@@ -3,17 +3,21 @@ use tauri::Manager;
 /// 开 / 收对话悬浮条:可见就藏,藏着就显示并聚焦。
 /// 菜单栏图标、全局快捷键、桌面悬浮按钮(Launcher)三处都走这一套(单一真相源)。
 fn toggle_chatbar_window(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("chatbar") {
-        match win.is_visible() {
-            Ok(true) => {
-                let _ = win.hide();
-            }
-            _ => {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
+    let visible = app
+        .get_webview_window("chatbar")
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = if visible {
+            pet::pet_hide_chat(app).await
+        } else {
+            pet::pet_show_chat(app).await
+        };
+        if let Err(error) = result {
+            eprintln!("[pet] conversation window: {error}");
         }
-    }
+    });
 }
 
 /// 前端可调用的开 / 收对话条命令(仅对话条;桌面按钮改用 toggle_floaters 同时控制两个悬浮窗)。
@@ -104,7 +108,13 @@ pub mod cli_agent;
 // 飞书 / Lark 日历同步（OAuth + 增量拉取 + 双向回写）
 pub mod feishu;
 // AI 秘书原生后台能力（目前：活动记录的常驻调度引擎，绕开藏窗冻结 JS 定时器）
+pub mod attachments;
+pub mod desktop_http;
+pub mod pet;
 pub mod secretary;
+pub mod speech;
+pub mod computer_history;
+pub mod local_services;
 // 跨模块共享小工具（id 生成 / ISO 时间戳）
 pub mod util;
 
@@ -155,102 +165,108 @@ pub fn run() {
                 .build(),
         )
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                if matches!(window.label(), "main" | "chatbar") {
+                    attachments::authorize_dropped_files(window.app_handle(), paths);
+                }
+            }
             // 工作台主窗"关闭"= 隐藏而非销毁:点红叉只是藏起来,Dock 图标 / 菜单栏 / 全局快捷键都能再拉回来。
-            // 真正退出走 ⌘Q 或菜单栏"退出 Latitude"。其它窗口(悬浮窗)不拦,保持默认。
+            // 真正退出走 ⌘Q 或菜单栏"退出 Latitude"。
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
                 }
             }
+            if window.label() == "chatbar" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let app = window.app_handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = pet::pet_hide_chat(app).await;
+                    });
+                }
+            }
         })
         .setup(|app| {
             // 全局快捷键 → 动作 的映射表(with_handler 查它分发);set_global_shortcuts 维护。
             app.manage(ShortcutActions::default());
+            app.manage(desktop_http::DesktopHttpClient::new()?);
+            pet::setup(app)?;
+            local_services::setup(app)?;
+            computer_history::setup(app)?;
 
-            // 内嵌 MCP server：进程内后台任务，连同一个 latitude.db。
-            // - token 持久化在 app config 目录，供鉴权和前端接入页共用
-            // - 写操作通过 Tauri 事件 latitude://data-changed 通知前端刷新
-            // - start() 内部自行兜底（连库 / 端口失败只记日志），不会让主应用崩溃
-            use tauri::Emitter;
-            let config_dir = app
-                .path()
-                .app_config_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let db_path = config_dir.join("latitude.db");
-            let token = mcp::load_or_create_token(&config_dir);
-            let handle = app.handle().clone();
-            let notify: mcp::Notifier = std::sync::Arc::new(move |topic: &str| {
-                let _ = handle.emit("latitude://data-changed", topic.to_string());
-            });
-            tauri::async_runtime::spawn(mcp::start(db_path.clone(), token, notify));
-
-            // 飞书/Lark 日历后台同步调度（P2-4）：启动跑一次 + 每 5min + 可手动唤醒。
-            // - 复用同一个 latitude.db（WAL 并发安全），与 mcp / 前端共享。
-            // - 写库后通过 latitude://data-changed 事件（topic "calendar_events"）通知前端刷新，
-            //   与上面 mcp 的 notify 同款闭包形态。
-            // - SyncHandle 既是手动唤醒句柄、又持「同一时刻一轮」的全局串行锁；manage 进 Tauri
-            //   状态，供 feishu_sync_now 命令拿到同一把锁（手动同步与定时同步互斥）。
-            // - run_scheduler 内部自兜底（连库失败只记日志、单点同步失败不中断），不会让主应用崩。
-            let sync_handle = feishu::engine::SyncHandle::default();
-            app.manage(sync_handle.clone());
-            let feishu_handle = app.handle().clone();
-            let feishu_notify: feishu::engine::Notifier = std::sync::Arc::new(move |topic: &str| {
-                let _ = feishu_handle.emit("latitude://data-changed", topic.to_string());
-            });
-            tauri::async_runtime::spawn(feishu::engine::run_scheduler(
-                db_path.clone(),
-                feishu_notify,
-                sync_handle,
-            ));
-
-            // AI 秘书「活动记录」原生调度（替代主窗渲染进程里会被 macOS 冻结的 setInterval）：
-            // - 主动配置只在前端 localStorage，Rust 读不到 → 前端通过 set_proactive_config 命令推过来，
-            //   这里 manage 一个 ProactiveConfigState（Mutex<Option<_>>）承接（前端没推时引擎跳过）。
-            // - run_scheduler 内部每 60s tick、闸判定到点则写库 + 发系统通知 + notify 前端刷新；
-            //   连库失败只记日志退出本任务、单 tick 失败不中断，与 feishu 引擎同款长命兜底。
-            // - 复用同一个 latitude.db（WAL 并发安全）与同款 notify 闭包（emit data-changed）。
+            // NativeDesktopApp now shares the Browser + DSH Agent/Domain runtime.
+            // Legacy MCP, Feishu inbound/sync, and activity-capture schedulers
+            // are not started here: they own a different database and would
+            // otherwise produce duplicate reminders beside the new secretary.
+            // Keep their modules/commands for explicit migration tooling.
+            app.manage(feishu::engine::SyncHandle::default());
             app.manage(secretary::config::ProactiveConfigState::default());
-            let secretary_app = app.handle().clone();
-            let secretary_handle = app.handle().clone();
-            let secretary_notify: secretary::engine::Notifier =
-                std::sync::Arc::new(move |topic: &str| {
-                    let _ = secretary_handle.emit("latitude://data-changed", topic.to_string());
-                });
-            tauri::async_runtime::spawn(secretary::engine::run_scheduler(
-                db_path,
-                secretary_app,
-                secretary_notify,
-            ));
-
-            // 飞书入站消费端（飞书对话入口）：监督 lark-cli event consume 收 IM 消息 → emit 给
-            // 主窗前端飞书桥（feishuChat.ts）→ 跑秘书核心 → feishu_send_reply 发回飞书。
-            // 自兜底：lark-cli 没装就只记日志退出、不影响主应用；进程掉了指数退避自动重连。
-            tauri::async_runtime::spawn(feishu::inbound::run_inbound(app.handle().clone()));
 
             // 菜单栏(托盘)图标:菜单可开 / 收对话条、打开 todo 悬浮窗、退出。
             {
                 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
                 use tauri::tray::TrayIconBuilder;
-                let toggle_i =
-                    MenuItem::with_id(app, "toggle_chatbar", "打开 / 收起对话条", true, None::<&str>)?;
-                let todo_i =
-                    MenuItem::with_id(app, "open_todo", "打开 todo 悬浮窗", true, None::<&str>)?;
+                let toggle_i = MenuItem::with_id(
+                    app,
+                    "toggle_chatbar",
+                    "打开 / 收起对话条",
+                    true,
+                    None::<&str>,
+                )?;
+                let show_pet_i =
+                    MenuItem::with_id(app, "show_pet", "叫出桌宠", true, None::<&str>)?;
+                let dock_pet_i =
+                    MenuItem::with_id(app, "dock_pet", "秘书回到框里", true, None::<&str>)?;
+                let hide_pet_i =
+                    MenuItem::with_id(app, "hide_pet", "暂时隐藏桌宠", true, None::<&str>)?;
+                let main_i = MenuItem::with_id(app, "show_main", "打开维度", true, None::<&str>)?;
+                let history_i = MenuItem::with_id(app, "history_settings", "电脑操作行为记录…", true, None::<&str>)?;
+                let history_pause_i = MenuItem::with_id(app, "history_pause", "暂停 / 恢复记录", true, None::<&str>)?;
+                let history_clear_i = MenuItem::with_id(app, "history_clear_latest", "清理最近一次应用活动…", true, None::<&str>)?;
+                app.manage(computer_history::HistoryTray { status:history_i.clone(),pause:history_pause_i.clone() });
                 let quit_i = MenuItem::with_id(app, "quit", "退出 Latitude", true, None::<&str>)?;
                 let sep = PredefinedMenuItem::separator(app)?;
-                let menu = Menu::with_items(app, &[&toggle_i, &todo_i, &sep, &quit_i])?;
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &toggle_i,
+                        &show_pet_i,
+                        &dock_pet_i,
+                        &hide_pet_i,
+                        &main_i,
+                        &history_i,
+                        &history_pause_i,
+                        &history_clear_i,
+                        &sep,
+                        &quit_i,
+                    ],
+                )?;
                 if let Some(icon) = app.default_window_icon().cloned() {
                     let _ = TrayIconBuilder::new()
                         .icon(icon)
                         .menu(&menu)
                         .on_menu_event(|app, event| match event.id.as_ref() {
                             "toggle_chatbar" => toggle_chatbar_window(app),
-                            "open_todo" => {
-                                if let Some(w) = app.get_webview_window("todo") {
-                                    let _ = w.show();
-                                    let _ = w.set_focus();
-                                }
+                            "show_pet" | "dock_pet" | "hide_pet" => {
+                                let app = app.clone();
+                                let action = event.id.as_ref().to_string();
+                                tauri::async_runtime::spawn(async move {
+                                    let result = match action.as_str() {
+                                        "show_pet" => pet::pet_show(app).await,
+                                        "dock_pet" => pet::pet_dock(app).await,
+                                        _ => pet::pet_hide(app).await,
+                                    };
+                                    if let Err(error) = result {
+                                        eprintln!("[pet] menu action: {error}");
+                                    }
+                                });
                             }
+                            "history_settings" => computer_history::open_settings(app),
+                            "history_pause" => computer_history::toggle_pause(app),
+                            "history_clear_latest" => computer_history::request_clear_latest(app),
+                            "show_main" => show_main_window(app),
                             "quit" => app.exit(0),
                             _ => {}
                         })
@@ -258,16 +274,50 @@ pub fn run() {
                 }
             }
 
-            // 全局快捷键不在这里注册:由前端启动时按设置里保存的 accelerator 调 set_global_shortcut 注册,
-            // 用户改快捷键时也走同一命令。响应逻辑在上面 global-shortcut 插件的 with_handler。
+            // Browser + DSH has no legacy settings effect. Keep the existing
+            // Alt+Space default available even while the main window is hidden.
+            set_global_shortcuts(
+                app.handle().clone(),
+                "Alt+Space".into(),
+                String::new(),
+                String::new(),
+            )?;
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            computer_history::history_native_status,
+            computer_history::history_apply_settings,
+            computer_history::history_open_source,
+            computer_history::history_request_permission,
+            computer_history::history_take_clear_request,
+            computer_history::history_reveal_memory,
             toggle_chatbar,
             toggle_todo,
             show_main,
             set_global_shortcuts,
+            desktop_http::desktop_http_request,
+            pet::pet_get_state,
+            pet::pet_set_dock_rect,
+            pet::pet_begin_drag,
+            pet::pet_cancel_drag,
+            pet::pet_dock,
+            pet::pet_hide,
+            pet::pet_show,
+            pet::pet_show_chat,
+            pet::pet_hide_chat,
+            pet::pet_show_notice,
+            pet::pet_hide_notice,
+            pet::pet_set_hit_mask,
+            pet::pet_sync,
+            pet::pet_get_snapshot,
+            pet::pet_action,
+            speech::pet_speech_start,
+            speech::pet_speech_stop,
+            speech::pet_speech_cancel,
+            speech::pet_ocr_attachment,
+            attachments::pet_pick_attachments,
+            attachments::pet_read_attachment,
             mcp::connect::mcp_connection_info,
             cli_agent::cli_agent_send,
             cli_agent::cli_agent_detect,
@@ -286,6 +336,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) { local_services::stop(app_handle); }
             // 点 Dock 图标(macOS reopen):强制把工作台主窗拉回前台。
             // 不依赖 macOS 默认行为——常驻的 launcher 悬浮窗会让默认逻辑以为"已有可见窗口"而不恢复主窗。
             if let tauri::RunEvent::Reopen { .. } = event {

@@ -1,5 +1,7 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+import { clampCardTitleToBounds, cardViewportBounds, desktopZoomFor } from "./cardSpatialGeometry";
+import { BROWSER_UI_PROFILE_RESTORED_EVENT } from "../../projections/desktop/browserUiComposition";
 
 /**
  * 纸片拖拽（表现层）：拖动只改变纸片的视觉偏移，不动骨架、不落领域数据。
@@ -23,6 +25,7 @@ export interface DragBinding {
   onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
   onClickCapture: (event: ReactMouseEvent<HTMLElement>) => void;
   onDoubleClick: (event: ReactMouseEvent<HTMLElement>) => void;
 }
@@ -41,12 +44,31 @@ function fromInteractive(target: EventTarget | null): boolean {
   );
 }
 
+/** 固定尺寸卡片的原生滚动条仍负责滚动，不把这次按下变成拿起整张纸。 */
+function fromScrollbar(event: ReactPointerEvent<HTMLElement>): boolean {
+  let target = event.target instanceof HTMLElement ? event.target : null;
+  while (target && target !== event.currentTarget) {
+    const rect = target.getBoundingClientRect();
+    const zoom = desktopZoomFor(target);
+    const vertical = target.scrollHeight > target.clientHeight &&
+      event.clientX >= rect.left + target.clientWidth * zoom;
+    const horizontal = target.scrollWidth > target.clientWidth &&
+      event.clientY >= rect.top + target.clientHeight * zoom;
+    if (vertical || horizontal) return true;
+    target = target.parentElement;
+  }
+  return false;
+}
+
 function readOffsets(key: string): Record<string, DragOffset> {
   try {
     const raw = window.localStorage.getItem(key);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, DragOffset>;
-    return typeof parsed === "object" && parsed !== null ? parsed : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, point]) =>
+      point && Number.isFinite(point.x) && Number.isFinite(point.y)
+    ));
   } catch {
     return {};
   }
@@ -67,26 +89,96 @@ interface DragSession {
   startY: number;
   baseX: number;
   baseY: number;
+  nextX: number;
+  nextY: number;
+  baseZ: number;
+  nextZ: number;
+  target: HTMLElement;
   moved: boolean;
+  zoom: number;
+}
+
+function applyOffset(target: HTMLElement, x: number, y: number) {
+  target.style.translate = x || y ? `${x}px ${y}px` : "";
+}
+
+function applyZOrder(target: HTMLElement, zIndex: number) {
+  target.style.zIndex = String(zIndex);
+  const slot = target.parentElement;
+  if (slot?.hasAttribute("data-layout-card-id")) {
+    slot.style.zIndex = String(zIndex);
+  }
+}
+
+function releasePointer(active: DragSession) {
+  try {
+    if (active.target.hasPointerCapture(active.pointerId)) {
+      active.target.releasePointerCapture(active.pointerId);
+    }
+  } catch {
+    /* 系统取消或测试环境没有指针捕获时无需再释放 */
+  }
 }
 
 export function useCardDrag(storageKey: string) {
   const [offsets, setOffsets] = useState<Record<string, DragOffset>>(() =>
     readOffsets(storageKey)
   );
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [zOrder, setZOrder] = useState<Record<string, number>>({});
+  const zOrderRef = useRef(zOrder);
+  zOrderRef.current = zOrder;
+  const offsetsRef = useRef(offsets);
+  offsetsRef.current = offsets;
   const topZ = useRef(10);
   const session = useRef<DragSession | null>(null);
   const suppressClick = useRef(false);
 
+  useEffect(() => {
+    const reload = () => {
+      const next = readOffsets(storageKey);
+      const active = session.current;
+      session.current = null;
+      suppressClick.current = false;
+      if (active) {
+        releasePointer(active);
+        active.target.classList.remove("is-dragging");
+        const offset = next[active.id] ?? { x: 0, y: 0 };
+        applyOffset(active.target, offset.x, offset.y);
+        applyZOrder(active.target, 1);
+      }
+      offsetsRef.current = next;
+      setOffsets(next);
+      zOrderRef.current = {};
+      setZOrder({});
+    };
+    reload();
+    window.addEventListener(BROWSER_UI_PROFILE_RESTORED_EVENT, reload);
+    return () => {
+      window.removeEventListener(BROWSER_UI_PROFILE_RESTORED_EVENT, reload);
+      const active = session.current;
+      session.current = null;
+      if (active) releasePointer(active);
+    };
+  }, [storageKey]);
+
+  const replaceOffsets = useCallback((next: Record<string, DragOffset>) => {
+    offsetsRef.current = next;
+    setOffsets(next);
+    writeOffsets(storageKey, next);
+  }, [storageKey]);
+
+  const bringToFront = useCallback((id: string) => {
+    const zIndex = ++topZ.current;
+    const next = { ...zOrderRef.current, [id]: zIndex };
+    zOrderRef.current = next;
+    setZOrder(next);
+  }, []);
+
   const onPointerDown = useCallback(
     (id: string) => (event: ReactPointerEvent<HTMLElement>) => {
       if (event.button !== 0 || event.pointerType === "touch") return;
-      if (fromInteractive(event.target)) return;
-      topZ.current += 1;
-      setZOrder((current) => ({ ...current, [id]: topZ.current }));
-      const base = offsets[id] ?? { x: 0, y: 0 };
+      if (fromInteractive(event.target) || fromScrollbar(event)) return;
+      const base = offsetsRef.current[id] ?? { x: 0, y: 0 };
       session.current = {
         id,
         pointerId: event.pointerId,
@@ -94,7 +186,13 @@ export function useCardDrag(storageKey: string) {
         startY: event.clientY,
         baseX: base.x,
         baseY: base.y,
-        moved: false
+        nextX: base.x,
+        nextY: base.y,
+        baseZ: zOrderRef.current[id] ?? 1,
+        nextZ: zOrderRef.current[id] ?? 1,
+        target: event.currentTarget,
+        moved: false,
+        zoom: desktopZoomFor(event.currentTarget),
       };
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -102,7 +200,7 @@ export function useCardDrag(storageKey: string) {
         /* jsdom 等环境没有指针捕获，拖动在本次按下内仍然成立 */
       }
     },
-    [offsets]
+    []
   );
 
   const onPointerMove = useCallback(
@@ -111,18 +209,17 @@ export function useCardDrag(storageKey: string) {
       if (!active || active.id !== id || active.pointerId !== event.pointerId) return;
       const dx = event.clientX - active.startX;
       const dy = event.clientY - active.startY;
+      active.nextX = active.baseX + dx / active.zoom;
+      active.nextY = active.baseY + dy / active.zoom;
       if (!active.moved) {
         if (Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD_PX) return;
         active.moved = true;
-        setDraggingId(id);
+        active.target.classList.add("is-dragging");
+        active.nextZ = ++topZ.current;
+        applyZOrder(active.target, active.nextZ);
       }
-      setOffsets((prev) => ({
-        ...prev,
-        [id]: {
-          x: active.baseX + dx,
-          y: active.baseY + dy
-        }
-      }));
+      // 直接操作只改当前纸片的合成属性；整棵桌面在放手前不重渲染。
+      applyOffset(active.target, active.nextX, active.nextY);
     },
     []
   );
@@ -132,20 +229,28 @@ export function useCardDrag(storageKey: string) {
       const active = session.current;
       if (!active || active.id !== id || active.pointerId !== event.pointerId) return;
       session.current = null;
-      try {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-      } catch {
-        /* 同上：没有捕获环境时无需释放 */
-      }
+      releasePointer(active);
       if (active.moved) {
+        active.target.classList.remove("is-dragging");
         suppressClick.current = true;
-        setDraggingId(null);
-        setOffsets((prev) => {
-          writeOffsets(storageKey, prev);
-          return prev;
-        });
+        const bounds = cardViewportBounds(active.target);
+        if (bounds) {
+          const correction = clampCardTitleToBounds(active.target.getBoundingClientRect(), bounds);
+          const zoom = desktopZoomFor(active.target);
+          active.nextX += correction.x / zoom;
+          active.nextY += correction.y / zoom;
+          applyOffset(active.target, active.nextX, active.nextY);
+        }
+        const next = {
+          ...offsetsRef.current,
+          [id]: { x: active.nextX, y: active.nextY }
+        };
+        offsetsRef.current = next;
+        setOffsets(next);
+        const nextZOrder = { ...zOrderRef.current, [id]: active.nextZ };
+        zOrderRef.current = nextZOrder;
+        setZOrder(nextZOrder);
+        writeOffsets(storageKey, next);
       }
     },
     [storageKey]
@@ -156,25 +261,25 @@ export function useCardDrag(storageKey: string) {
       const active = session.current;
       if (!active || active.id !== id || active.pointerId !== event.pointerId) return;
       session.current = null;
-      try {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-      } catch {
-        /* 指针已被系统取消时，捕获也可能已经自动释放 */
-      }
-      setDraggingId(null);
+      releasePointer(active);
       if (!active.moved) return;
       // cancel 不是“放下”：恢复拖动前的位置，也不要留下吞下一次 click 的标记。
-      setOffsets((prev) => {
-        const next = { ...prev };
-        if (active.baseX || active.baseY) {
-          next[id] = { x: active.baseX, y: active.baseY };
-        } else {
-          delete next[id];
-        }
-        return next;
-      });
+      active.target.classList.remove("is-dragging");
+      applyOffset(active.target, active.baseX, active.baseY);
+      applyZOrder(active.target, active.baseZ);
+    },
+    []
+  );
+
+  const onLostPointerCapture = useCallback(
+    (id: string) => (event: ReactPointerEvent<HTMLElement>) => {
+      const active = session.current;
+      if (!active || active.id !== id || active.pointerId !== event.pointerId) return;
+      session.current = null;
+      if (!active.moved) return;
+      active.target.classList.remove("is-dragging");
+      applyOffset(active.target, active.baseX, active.baseY);
+      applyZOrder(active.target, active.baseZ);
     },
     []
   );
@@ -194,13 +299,13 @@ export function useCardDrag(storageKey: string) {
       if (!event.shiftKey || fromInteractive(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
-      setOffsets((prev) => {
-        if (!prev[id]) return prev;
-        const next = { ...prev };
-        delete next[id];
-        writeOffsets(storageKey, next);
-        return next;
-      });
+      if (!offsetsRef.current[id]) return;
+      const next = { ...offsetsRef.current };
+      delete next[id];
+      offsetsRef.current = next;
+      applyOffset(event.currentTarget, 0, 0);
+      setOffsets(next);
+      writeOffsets(storageKey, next);
     },
     [storageKey]
   );
@@ -211,21 +316,39 @@ export function useCardDrag(storageKey: string) {
       onPointerMove: onPointerMove(id),
       onPointerUp: endSession(id),
       onPointerCancel: cancelSession(id),
+      onLostPointerCapture: onLostPointerCapture(id),
       onClickCapture: onClickCapture(),
       onDoubleClick: onDoubleClick(id)
     }),
-    [onPointerDown, onPointerMove, endSession, cancelSession, onClickCapture, onDoubleClick]
+    [onPointerDown, onPointerMove, endSession, cancelSession, onLostPointerCapture, onClickCapture, onDoubleClick]
   );
 
   const offsetFor = useCallback(
-    (id: string): DragOffset => offsets[id] ?? { x: 0, y: 0 },
+    (id: string): DragOffset => {
+      const active = session.current;
+      return active?.id === id
+        ? { x: active.nextX, y: active.nextY }
+        : offsets[id] ?? { x: 0, y: 0 };
+    },
     [offsets]
   );
 
   const zIndexFor = useCallback(
-    (id: string): number => zOrder[id] ?? 1,
+    (id: string): number => {
+      const active = session.current;
+      return active?.id === id ? active.nextZ : zOrder[id] ?? 1;
+    },
     [zOrder]
   );
 
-  return { bind, offsetFor, zIndexFor, draggingId };
+  return {
+    bind,
+    offsetFor,
+    zIndexFor,
+    draggingId: session.current?.moved ? session.current.id : null,
+    bringToFront,
+    replaceOffsets,
+    getOffsets: () => ({ ...offsetsRef.current }),
+    offsets,
+  };
 }

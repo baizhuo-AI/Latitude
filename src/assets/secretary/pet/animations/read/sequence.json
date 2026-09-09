@@ -1,0 +1,55 @@
+{
+  "id": "read",
+  "title": "翻资料",
+  "description": "读一会儿，捻起书页，轻轻翻过去。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "安静阅读",
+    "找到页角",
+    "捻起一页",
+    "书页抬起",
+    "翻过书脊",
+    "书页落下",
+    "轻轻抚平",
+    "继续读"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 2500
+    },
+    {
+      "frame": 1,
+      "ms": 250
+    },
+    {
+      "frame": 2,
+      "ms": 300
+    },
+    {
+      "frame": 3,
+      "ms": 350
+    },
+    {
+      "frame": 4,
+      "ms": 350
+    },
+    {
+      "frame": 5,
+      "ms": 400
+    },
+    {
+      "frame": 6,
+      "ms": 450
+    },
+    {
+      "frame": 7,
+      "ms": 2400
+    }
+  ],
+  "duration": 7000
+}

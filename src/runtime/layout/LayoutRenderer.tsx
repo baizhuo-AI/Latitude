@@ -1,4 +1,9 @@
-import type { ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { ReactNode, KeyboardEvent, MouseEvent } from "react";
+import { createPortal } from "react-dom";
+import { CardContextMenu } from "../../dimension/CardContextMenu";
+import { useCardLocks } from "./useCardLocks";
+import { CardReadingContext } from "../../dimension/cards/CardShell";
 import {
   NATIVE_CARD_REGISTRY,
   materializeDeskCard,
@@ -18,11 +23,35 @@ import type { UiSurfaceDocumentV2 } from "../composition/types";
 import "../../dimension/cards/card-interactions.css";
 import type { LayoutCardDefinition, LayoutDocumentV1 } from "./types";
 import { useCardDrag } from "./useCardDrag";
+import { useCardResize } from "./useCardResize";
+import type { DesktopCardFrames } from "./desktopFrameStorage";
+import { useCardSpatial } from "./useCardSpatial";
+import type { CardSpatialState } from "./useCardSpatial";
+import "./cardResize.css";
 import { resolveLayoutCards, validateLayoutDocument } from "./validate";
 
 export interface LayoutCompositionSurface {
   document: UiSurfaceDocumentV2;
   registry: CompositionRegistry;
+}
+
+export interface LayoutRendererHandle {
+  locateCard(id: string): void;
+  arrangeCards(cardIds?: string[]): void;
+  undoArrangement(): void;
+}
+
+export type LayoutSpatialState = CardSpatialState;
+
+export interface ExtraDeskCard {
+  id: string;
+  title: string;
+  content: ReactNode;
+  hidden?: boolean;
+  onEdit?: () => void;
+  context?: string;
+  kind?: string;
+  editableContent?: boolean;
 }
 
 export interface LayoutRendererProps {
@@ -39,6 +68,13 @@ export interface LayoutRendererProps {
   composition?: LayoutCompositionSurface;
   /** 从当前桌面移走一张卡；只改变桌面组成，不删除绑定的数据。 */
   onCardRemove?: (cardId: string) => void;
+  /** 本机创建的内容卡独立于可信的业务组件注册表。 */
+  extraCards?: ExtraDeskCard[];
+  onSpatialChange?: (state: CardSpatialState) => void;
+  /** Initial placement for new papers only; persisted frames always win. */
+  initialFrames?: DesktopCardFrames;
+  arrangementGroups?: string[][];
+  onRequestCardHelp?: (context: { cardId: string; title: string; content: string }) => void;
 }
 
 function isNativeCardKind(value: string): value is NativeCardKind {
@@ -190,6 +226,31 @@ function boundHandlersFor(
       handlers.onFeedFeedback?.(itemId, feedback);
   }
   if (
+    commandFor("capture") === BROWSER_COMMAND_IDS.activityCapture &&
+    handlers.onActivityCapture
+  ) {
+    result.onActivityCapture = (text) => handlers.onActivityCapture?.(text);
+  }
+  if (
+    commandFor("edit") === BROWSER_COMMAND_IDS.activityEdit &&
+    handlers.onActivityEdit
+  ) {
+    result.onActivityEdit = (entry, nextText) =>
+      handlers.onActivityEdit?.(entry, nextText);
+  }
+  if (
+    commandFor("retract") === BROWSER_COMMAND_IDS.activityRetract &&
+    handlers.onActivityRetract
+  ) {
+    result.onActivityRetract = (entry) => handlers.onActivityRetract?.(entry);
+  }
+  if (
+    commandFor("reflect") === BROWSER_COMMAND_IDS.activityReflect &&
+    handlers.onActivityReflect
+  ) {
+    result.onActivityReflect = () => handlers.onActivityReflect?.();
+  }
+  if (
     commandFor("lineage") === BROWSER_COMMAND_IDS.lineageOpen &&
     handlers.onLineage
   ) {
@@ -216,17 +277,66 @@ function boundHandlersFor(
  * 实验期只点亮 native。declarative / html 是 schema 承诺，不是可执行能力；
  * 遇到它们必须显示安全降级，绝不静默为空，也绝不运行任意 HTML。
  */
-export function LayoutRenderer({
+export const LayoutRenderer = forwardRef<LayoutRendererHandle, LayoutRendererProps>(function LayoutRenderer({
   document,
   bindings,
   handlers = {},
   composition,
   onCardRemove,
-}: LayoutRendererProps) {
+  extraCards = [],
+  onSpatialChange,
+  initialFrames,
+  arrangementGroups,
+  onRequestCardHelp,
+}, ref) {
   const { issues } = validateLayoutDocument(document);
+  const locks = useCardLocks(document.id);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [resizingCard, setResizingCard] = useState<string | null>(null);
+  const [editingCard, setEditingCard] = useState<string | null>(null);
+  useEffect(() => { setMenu(null); setResizingCard(null); setEditingCard(null); }, [document.id]);
+  useEffect(() => {
+    if (!resizingCard) return;
+    const outside = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest<HTMLElement>("[data-spatial-card-id]")?.dataset.spatialCardId !== resizingCard) setResizingCard(null);
+    };
+    window.document.addEventListener("pointerdown", outside);
+    return () => window.document.removeEventListener("pointerdown", outside);
+  }, [resizingCard]);
   // 便签可以拖散在桌面上：偏移只写在表现层（localStorage），骨架与数据不动。
   // hook 必须在提前 return 之前调用。
   const drag = useCardDrag(`dim-desk-offsets-${document.id}`);
+  const resize = useCardResize(`dim-desk-sizes-${document.id}`);
+  const gridRef = useRef<HTMLDivElement>(null);
+  // 用户内容不能覆盖内置业务卡的身份或命令绑定。
+  const fixedIds = new Set(document.cards.map((card) => card.id));
+  const extraIds = new Set<string>();
+  const safeExtraCards = extraCards.filter((card) => {
+    if (!card.id || fixedIds.has(card.id) || extraIds.has(card.id)) return false;
+    extraIds.add(card.id);
+    return !card.hidden;
+  });
+  const spatial = useCardSpatial({
+    storageKey: `dim-desk-arranged-${document.id}`,
+    gridRef,
+    ids: [...document.cards.filter((card) => !card.hidden).map((card) => card.id), ...safeExtraCards.map((card) => card.id)],
+    drag,
+    resize,
+    onChange: onSpatialChange,
+    initialFrames,
+    arrangementGroups,
+    lockedIds: locks.ids,
+    initiallyCompact: Boolean(onSpatialChange && !document.composition && !Object.keys(drag.offsets).length && !Object.keys(resize.sizes).length),
+    kinds: Object.fromEntries([
+      ...document.cards.map((card) => [card.id, card.kind]),
+      ...safeExtraCards.map((card) => [card.id, card.kind ?? "note"]),
+    ]),
+  });
+  useImperativeHandle(ref, () => ({
+    locateCard: spatial.locateCard,
+    arrangeCards: spatial.arrangeCards,
+    undoArrangement: spatial.undoArrangement,
+  }), [spatial.locateCard, spatial.arrangeCards, spatial.undoArrangement]);
 
   const compositionIssues = composition
     ? composition.registry.validateDocument(composition.document)
@@ -260,94 +370,128 @@ export function LayoutRenderer({
 
   const orderedCards = resolveLayoutCards(document);
 
+  const papers = [
+    ...orderedCards.filter(definition => !definition.hidden).map(definition => {
+      const request = editRequestFor(definition, bindings);
+      const bound = composition ? boundHandlersFor(definition, handlers, composition) : handlers;
+      const permitted = { ...bound,
+        onOpen: bound.onOpen ? (card: CardEditRequest["card"]) => { setEditingCard(null); bound.onOpen?.(card); } : undefined,
+        onLineage: bound.onLineage ? (lineage: Parameters<NonNullable<CardHandlers["onLineage"]>>[0]) => { setEditingCard(null); bound.onLineage?.(lineage); } : undefined,
+        onActivityReflect: bound.onActivityReflect ? () => { setEditingCard(null); bound.onActivityReflect?.(); } : undefined,
+      };
+      const businessEditing = definition.kind === "activity" ? Boolean(bound.onActivityCapture || bound.onActivityEdit || bound.onActivityRetract)
+        : definition.kind === "anchors" ? Boolean(bound.onAnchorEdit || bound.onAnchorComplete)
+          : definition.kind === "feed" ? Boolean(bound.onFeedFeedback)
+            : definition.kind === "proposal" ? Boolean(bound.onAccept || bound.onReject || bound.onVerdict) : false;
+      return { id: definition.id, title: presentationTitle(definition), span: definition.span, region: definition.region,
+        content: renderCard(definition, bindings, permitted),
+        onEdit: undefined as (() => void) | undefined,
+        onEditPresentation: request && handlers.onCardEdit ? () => handlers.onCardEdit?.(request) : undefined,
+        editableContent: Boolean(request && handlers.onCardEdit) || businessEditing,
+        context: request ? JSON.stringify(request.card) : presentationTitle(definition) };
+    }),
+    ...safeExtraCards.map(card => ({ ...card, span: 4, region: "custom", onEditPresentation: undefined })),
+  ];
+  const selected = papers.find(card => card.id === menu?.id);
+  const editing = papers.find(card => card.id === editingCard);
+  const openMenu = (id: string, event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) => {
+    event.preventDefault(); event.stopPropagation();
+    event.currentTarget.focus({ preventScroll: true });
+    const box = event.currentTarget.getBoundingClientRect();
+    setMenu({ id, x: "clientX" in event ? event.clientX : box.left + 24,
+      y: "clientY" in event ? event.clientY : box.top + 32 });
+  };
   return (
     <div className="dim-grid-wrap">
-      <div className="dim-grid" aria-label="桌面卡片布局">
-        {orderedCards.filter((definition) => !definition.hidden).map((definition) => {
-          const offset = drag.offsetFor(definition.id);
-          const editRequest = editRequestFor(definition, bindings);
-          const cardHandlers = composition
-            ? boundHandlersFor(definition, handlers, composition)
-            : handlers;
-          const canEdit = Boolean(!composition && editRequest && cardHandlers.onCardEdit);
-          const dragBinding = drag.bind(definition.id);
-          return (
-            <div
-              key={definition.id}
-              data-span={definition.span}
-              data-region={definition.region}
-              data-layout-card-id={definition.id}
-            >
-              <div
-                className={`dim-drag${
-                  drag.draggingId === definition.id ? " is-dragging" : ""
-                }`}
-                style={{
-                  ...(offset.x || offset.y
-                    ? { translate: `${offset.x}px ${offset.y}px` }
-                    : {}),
-                  zIndex: drag.zIndexFor(definition.id)
-                }}
-                {...dragBinding}
-                data-card-editable={canEdit ? "true" : undefined}
-                role={canEdit ? "group" : undefined}
-                tabIndex={canEdit ? 0 : undefined}
-                aria-label={
-                  canEdit && editRequest
-                    ? `卡片：${editRequest.card.title}。双击或按 Enter 编辑`
-                    : undefined
-                }
-                aria-keyshortcuts={canEdit ? "Enter F2" : undefined}
-                title={canEdit ? "双击编辑卡片；Shift + 双击归位" : undefined}
-                onDoubleClick={(event) => {
-                  dragBinding.onDoubleClick(event);
-                  if (
-                    event.defaultPrevented ||
-                    !editRequest ||
-                    !cardHandlers.onCardEdit ||
-                    isNestedInteraction(event.target)
-                  ) {
-                    return;
-                  }
-                  cardHandlers.onCardEdit(editRequest);
-                }}
-                onKeyDown={(event) => {
-                  if (
-                    (event.key !== "Enter" && event.key !== "F2") ||
-                    event.target !== event.currentTarget ||
-                    !editRequest ||
-                    !cardHandlers.onCardEdit
-                  ) {
-                    return;
-                  }
-                  event.preventDefault();
-                  cardHandlers.onCardEdit(editRequest);
-                }}
-              >
-                {onCardRemove && (
-                  <button
-                    type="button"
-                    className="dim-card-remove"
-                    data-no-drag
-                    aria-label={`从桌面移除：${presentationTitle(definition)}`}
-                    title="从桌面移除"
-                    onClick={() => onCardRemove(definition.id)}
-                  >
-                    ×
-                  </button>
-                )}
-                {renderCard(definition, bindings, cardHandlers)}
-              </div>
+      <div ref={gridRef} className="dim-grid" data-arranged={spatial.arranged || undefined}
+        data-free-desktop={spatial.frames ? "true" : undefined}
+        style={spatial.frames ? { height: Math.max(140, spatial.canvasHeight) } : undefined} aria-label="桌面卡片布局">
+        {papers.map(card => {
+          const offset = drag.offsetFor(card.id);
+          const size = resize.sizeFor(card.id);
+          const frame = spatial.frames?.[card.id];
+          const zIndex = resize.resizingId === card.id ? 1000 : drag.zIndexFor(card.id);
+          const locked = locks.isLocked(card.id);
+          const sizing = resizingCard === card.id && !locked;
+          return <div key={card.id} data-span={card.span} data-region={card.region} data-layout-card-id={card.id}
+            style={{ zIndex, ...(frame ? { left: frame.x, top: frame.y, width: frame.width } : {}) }}>
+            <div className={`dim-drag dim-resizable${size ? " is-sized" : ""}${sizing ? " is-size-editing" : ""}`}
+              style={{ translate: offset.x || offset.y ? `${offset.x}px ${offset.y}px` : undefined,
+                ...(size || frame ? { width: size?.width ?? frame?.width, height: size?.height ?? frame?.height } : {}), zIndex }}
+              {...(!locked && !sizing ? drag.bind(card.id) : {})}
+              data-card-resizable data-default-width={frame?.width} data-default-height={frame?.height}
+              data-spatial-card-id={card.id} data-card-locked={locked || undefined}
+              role="group" tabIndex={0} aria-label={`卡片：${card.title}`} aria-keyshortcuts="Shift+F10 ContextMenu"
+              title="右键打开卡片设置" onContextMenu={event => openMenu(card.id, event)}
+              onKeyDown={event => {
+                if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) openMenu(card.id, event);
+                else if (event.key === "Escape" && sizing) { event.preventDefault(); setResizingCard(null); }
+              }}>
+              <CardReadingContext.Provider value={true}><div className="dim-card-reading">{card.content}</div></CardReadingContext.Provider>
+              {sizing && <>
+                <button type="button" className="dim-card-resize-done" data-no-drag onClick={() => setResizingCard(null)}>完成调整</button>
+                {(["right", "bottom", "corner"] as const).map(direction => <button key={direction}
+                  type="button" className="dim-card-resize" data-no-drag data-resize-direction={direction}
+                  aria-label={`调整${direction === "right" ? "宽度" : direction === "bottom" ? "高度" : "大小"}：${card.title}`}
+                  title="拖动调整大小；方向键微调，Shift 加速；Home 恢复原大小"
+                  aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Home" {...resize.bind(card.id, direction)} />)}
+              </>}
             </div>
-          );
+          </div>;
         })}
       </div>
+      <CardContextMenu title={selected?.title ?? ""} anchor={menu} onClose={() => setMenu(null)} items={selected ? [
+        { id: "resize", label: "调整大小", disabled: locks.isLocked(selected.id), hint: "拖动边缘", onSelect: () => { setResizingCard(selected.id); drag.bringToFront(selected.id); } },
+        { id: "edit", label: selected.onEdit || selected.editableContent ? "编辑内容" : "查看内容", onSelect: () => selected.onEdit ? selected.onEdit() : setEditingCard(selected.id) },
+        { id: "help", label: "让维度帮我改", disabled: !onRequestCardHelp, hint: "打开对话", onSelect: () => onRequestCardHelp?.({ cardId: selected.id, title: selected.title, content: selected.context ?? selected.title }) },
+        { id: "lock", label: locks.isLocked(selected.id) ? "解锁位置" : "锁定位置", onSelect: () => { setResizingCard(null); locks.toggle(selected.id); } },
+        { id: "remove", label: "移除卡片", danger: true, disabled: !onCardRemove, hint: "可撤销", onSelect: () => { setResizingCard(null); onCardRemove?.(selected.id); } },
+      ] : []} />
+      {editing && <CardContentDialog title={editing.title} onClose={() => setEditingCard(null)}
+        editable={editing.editableContent}
+        onRequestHelp={onRequestCardHelp ? () => { setEditingCard(null); onRequestCardHelp({ cardId: editing.id, title: editing.title, content: editing.context ?? editing.title }); } : undefined}
+        onEditPresentation={editing.onEditPresentation ? () => { setEditingCard(null); editing.onEditPresentation?.(); } : undefined}>
+        {editing.content}
+      </CardContentDialog>}
     </div>
   );
-}
+});
 
 function presentationTitle(
   definition: LayoutCardDefinition<string, CardPresentation>
 ): string {
   return definition.presentation?.title?.trim() || definition.id;
+}
+
+function CardContentDialog({ title, children, onClose, onEditPresentation, onRequestHelp, editable }: {
+  title: string; children: ReactNode; onClose: () => void; onEditPresentation?: () => void; onRequestHelp?: () => void; editable?: boolean;
+}) {
+  const root = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previous = window.document.activeElement as HTMLElement | null;
+    root.current?.querySelector<HTMLElement>("button, input")?.focus();
+    const keydown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
+      if (event.key !== "Tab") return;
+      const elements = Array.from(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]') ?? []);
+      const first = elements[0]; const last = elements[elements.length - 1];
+      if (event.shiftKey && window.document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && window.document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    window.document.addEventListener("keydown", keydown, true);
+    return () => { window.document.removeEventListener("keydown", keydown, true); previous?.focus({ preventScroll: true }); };
+  }, []);
+  return createPortal(<div className="dimension-root dim-card-content-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section ref={root} className="dim-card-content-dialog" role="dialog" aria-modal="true" aria-label={`${editable ? "编辑内容" : "卡片内容"}：${title}`}>
+      <header><div><span>卡片内容</span><h2>{title}</h2></div><button type="button" className="dim-btn dim-btn--quiet" aria-label="关闭卡片内容" onClick={onClose}>×</button></header>
+      <div className="dim-card-content-body">{children}</div>
+      {(onEditPresentation || onRequestHelp) && <footer>
+        {!onEditPresentation && <p>内容随真实记录更新，可以让维度帮你调整。</p>}
+        <div>{onEditPresentation && <button type="button" className="dim-btn" onClick={onEditPresentation}>修改标题与内容</button>}
+        {onRequestHelp && <button type="button" className="dim-btn" onClick={onRequestHelp}>让维度帮我改</button>}</div>
+      </footer>}
+    </section>
+  </div>, window.document.body);
 }

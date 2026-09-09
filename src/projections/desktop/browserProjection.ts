@@ -4,9 +4,10 @@ import type {
   KnowledgeNode,
   RuntimeServiceState,
 } from "../../runtime/host/DesktopRuntimePort";
-import { SEED_LAYOUT_DOCUMENT } from "../../runtime/layout/seedLayout";
+import { BROWSER_PRODUCT_LAYOUT_DOCUMENT } from "../../runtime/composition/browserProduction";
 import type { LayoutDocumentV1 } from "../../runtime/layout/types";
 import type {
+  ActivityEntry,
   AnchorRow,
   CardPresentation,
   FeedItem,
@@ -18,6 +19,10 @@ import type { DesktopProjection } from "./types";
 export interface BrowserProjectionInput {
   context: KnowledgeContext;
   runtimeState: RuntimeServiceState;
+  /** Domain 可单独支撑记录；不因 Agent 暂时离线而把真实记录显示成不可用。 */
+  domainState?: RuntimeServiceState;
+  /** 只有 Agent 就绪时才开放“帮我看看今天”。 */
+  agentState?: RuntimeServiceState;
   now: Date;
   webResults?: readonly WebSearchItem[];
   /** Retained for feedback/audit callers; feed reasons come only from the
@@ -31,11 +36,12 @@ export interface BrowserProjectionResult {
 }
 
 /**
- * Project the unified graph into the existing five-paper Latitude desktop.
+ * Project the unified graph into the existing paper desktop plus the activity paper.
  * This is deliberately a read model: it invents no facts and writes nothing.
  */
 export function buildBrowserProjection(input: BrowserProjectionInput): BrowserProjectionResult {
   const nodes = input.context.nodes ?? [];
+  const activityEntries = projectTodayActivities(nodes, input.now);
   const actions = nodes.filter(isDomainAction);
   const outcomes = nodes.filter((node) => node.kind === "outcome");
   const claims = nodes.filter((node) => node.kind === "claim");
@@ -152,7 +158,12 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
         ],
     input.now,
   );
-  const runtimeReady = input.runtimeState === "ready";
+  const domainState = input.domainState ?? input.runtimeState;
+  const assistantState = input.agentState ?? input.runtimeState;
+  const runtimeReady = domainState === "ready";
+  const assistantReady = assistantState === "ready";
+  const assistantStarting = assistantState === "starting";
+  const rhythmBars = runtimeReady ? dueBars(openActions, input.now) : [];
 
   const projection: DesktopProjection = {
     generatedAt: input.now.toISOString(),
@@ -164,30 +175,33 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
           : "unavailable",
     header: {
       breadcrumb: "今天",
-      title: shortGoals.length > 0
-        ? `${shortGoals.length} 个短期目标正在展开`
-        : nextAction
-          ? labelOf(nextAction)
-          : "现在没有明确的短期目标",
+      title: activityEntries.length > 0
+        ? `今天已经留下 ${activityEntries.length} 条真实记录`
+        : "先记下一件已经做过的事",
       subtitle: runtimeReady
-        ? shortGoals.length > 0
-          ? `${shortGoals.map(labelOf).join(" · ")}；${openActions.length} 个关联行动在进行，${due.length} 个结果窗口已到。`
-          : `${openActions.length} 个行动在进行 · ${due.length} 个结果窗口已到 · ${openCandidates.length} 个共创候选 · ${claims.length} 条可追溯认知`
-        : "本地服务未就绪；当前不把未知显示成空白。",
+        ? activityEntries.length > 0
+          ? `这些是你自己记下的；秘书提出的观察会另标为待确认。${openCandidates.length ? ` · ${openCandidates.length} 个共创候选` : ""}`
+          : `不必完整，一句话就够；积累几条后，再一起看什么在反复出现。${openCandidates.length ? ` · ${openCandidates.length} 个共创候选` : ""}`
+        : "本地记录服务还没连上；当前不把未知显示成空白。",
     },
     secretary: {
+      connectionState: assistantReady ? "ready" : assistantStarting ? "starting" : "unavailable",
       eyebrow: "YOUR SECRETARY",
-      state: runtimeReady ? (due.length ? "presenting" : "ready") : "thinking",
-      gesture: runtimeReady ? (due.length ? "reminding" : "organizing") : "comparing",
-      stateCn: runtimeReady ? (due.length ? "等你回收结果" : "在岗") : "连接中",
-      headline: runtimeReady
+      state: assistantReady ? (due.length ? "presenting" : "ready") : "ready",
+      gesture: assistantReady ? (due.length ? "reminding" : "organizing") : "idle",
+      stateCn: assistantReady
+        ? (due.length ? "有结果待看" : "在岗")
+        : assistantStarting
+          ? "正在连接"
+          : "未连接",
+      headline: assistantReady
         ? due.length
-          ? `有 ${due.length} 个行动到了结果窗口。`
+          ? `有 ${due.length} 个行动该看结果了。`
           : "今天想先做什么？"
-        : "本地服务还没连上。",
-      note: runtimeReady
-        ? ""
-        : "连接恢复后再试。",
+        : assistantStarting
+          ? "秘书正在连接。"
+          : "秘书暂时没连上。",
+      note: assistantReady ? "" : "连接状态会显示恢复进展。",
       stageLabel: relationship.hasTypedSource ? "已连接" : "等待连接",
       stageProgress: 0,
       stageNote: "",
@@ -198,15 +212,31 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
         kind: "feed",
         items: feedItems,
         emptyHint: runtimeReady
-          ? "还没有与当前张力足够相关、且有真实来源的资讯。"
-          : "本地助手连上后，这里会显示相关资讯。",
+          ? "维度AI还没有找到值得主动递给你的新资讯。"
+          : "暂时看不到已保存的资讯。",
       },
       "desktop.schedule": {
         kind: "anchors",
         rows: deskRows,
         emptyHint: runtimeReady
-          ? "现在没有未闭环的行动"
-          : "行动记录暂时不可用。",
+          ? "现在没有未闭环的行动。"
+          : "暂时看不到行动记录。",
+      },
+      "desktop.activity": {
+        kind: "activity",
+        entries: activityEntries,
+        emptyHint: runtimeReady
+          ? "今天还没有记录。可以从刚刚完成、推进或认真想过的一件小事开始。"
+          : "暂时看不到今天的记录。",
+        capturePlaceholder: "刚才做了什么？一句话就够",
+        canCapture: runtimeReady,
+        ...(!runtimeReady
+          ? { captureUnavailableReason: "本地记录服务还没连上" }
+          : {}),
+        canReflect: assistantReady,
+        ...(!assistantReady
+          ? { reflectUnavailableReason: "本地助手连上后，可以一起看今天" }
+          : {}),
       },
       "desktop.reviewPlan": {
         kind: "progress",
@@ -215,18 +245,25 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
             ? weeklyReviewBody(reviews[0])
             : outcomes.length > 0
               ? `已经留下 ${outcomes.length} 个真实结果；下一次周回顾会把变化而非待办数量串起来。`
-              : "有了行动结果后，这里会生成周回顾。",
+              : activityEntries.length > 0
+                ? `今天已经有 ${activityEntries.length} 条真实记录；积累到周末，再看哪些做法和处境在反复出现。`
+                : "先留下今天真实发生的事，周回顾才有东西可看。",
         ...(actions.length > 0
           ? { percent: Math.round((outcomes.length / actions.length) * 100) }
           : {}),
         leftMeta: reviews.length > 0
           ? weeklyReviewMeta(reviews[0])
-          : `${outcomes.length} 个结果 · ${due.length} 个待回收`,
+          : `${activityEntries.length} 条行动记录 · ${outcomes.length} 个结果`,
       },
       "desktop.rhythm": {
         kind: "chart",
-        bars: dueBars(openActions, input.now),
-        link: due.length ? "回收到期行动的结果" : "查看行动时间窗",
+        bars: rhythmBars,
+        emptyHint: runtimeReady
+          ? "还没有安排需要回看的行动。"
+          : "暂时看不到行动的回看安排。",
+        ...(rhythmBars.length > 0
+          ? { link: due.length ? "看看该看结果的行动" : "查看接下来的回看安排" }
+          : {}),
       },
       "desktop.flex": currentCandidate
         ? {
@@ -246,11 +283,23 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
               body: statementOf(currentClaim) || labelOf(currentClaim),
               quote: epistemicLabel(currentClaim),
             }
-          : {
-              kind: "note",
-              body: "图谱里还没有可投影的认知。",
-              quote: "先留下证据，再形成判断。",
-            },
+          : activityEntries.length >= 2
+            ? {
+                kind: "note",
+                body: `你今天已经留下 ${activityEntries.length} 条自己做过的事。`,
+                quote: "可以请秘书找一条待确认观察；它不会自动变成关于你的结论。",
+              }
+            : activityEntries.length === 1
+              ? {
+                  kind: "note",
+                  body: activityEntries[0].text,
+                  quote: "这是一条你留下的记录，还不是对你的判断。",
+                }
+              : {
+                  kind: "note",
+                  body: "图谱里还没有可投影的认知。",
+                  quote: "先留下证据，再形成判断。",
+                },
     },
     journalSpreads: {},
     clueBoard,
@@ -317,21 +366,68 @@ export function buildBrowserProjection(input: BrowserProjectionInput): BrowserPr
   };
 
   const layout = structuredClone(
-    SEED_LAYOUT_DOCUMENT,
+    BROWSER_PRODUCT_LAYOUT_DOCUMENT,
   ) as LayoutDocumentV1<NativeCardKind, CardPresentation>;
-  layout.id = "latitude-browser-live";
-  layout.revision += 1;
   for (const card of layout.cards) {
     if (!card.presentation) continue;
     if (card.binding === "desktop.reviewPlan") {
       card.presentation.title = "周回顾";
     } else if (card.binding === "desktop.rhythm") {
-      card.presentation.title = "结果回收时间窗";
+      card.presentation.title = "这些行动该看结果了";
     } else if (card.binding === "desktop.flex") {
-      card.presentation.title = currentCandidate ? "共创候选" : "当前认知张力";
+      card.presentation.title = currentCandidate ? "共创候选" : "最近值得想一想";
     }
   }
   return { projection, layout };
+}
+
+function projectTodayActivities(
+  nodes: readonly KnowledgeNode[],
+  now: Date,
+): ActivityEntry[] {
+  return nodes
+    .filter((node) =>
+      node.kind === "evidence_event" &&
+      optionalString(payloadOf(node).evidenceType) === "activity" &&
+      !isClosed(node),
+    )
+    .flatMap((node) => {
+      const occurredAt = optionalString(payloadOf(node).occurredAt) ?? node.createdAt;
+      if (!occurredAt || !isSameLocalDay(occurredAt, now)) return [];
+      const text = statementOf(node).trim();
+      if (!text) return [];
+      return [{
+        id: node.id,
+        text,
+        occurredAt,
+        timeLabel: formatActivityTime(occurredAt),
+        lineage: {
+          entityType: "evidence_event",
+          entityId: node.id,
+          label: "你在今天留下的记录",
+        },
+      } satisfies ActivityEntry];
+    })
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+    .slice(0, 8);
+}
+
+function isSameLocalDay(value: string, now: Date): boolean {
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) &&
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+}
+
+function formatActivityTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "今天";
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function payloadOf(node: KnowledgeNode): Record<string, unknown> {
@@ -931,13 +1027,18 @@ function stringArray(value: unknown): string[] | undefined {
 
 function dueBars(actions: readonly KnowledgeNode[], now: Date): number[] {
   const buckets = Array<number>(8).fill(0);
+  let scheduled = 0;
   for (const action of actions) {
-    const time = Date.parse(reviewAtOf(action));
+    const reviewAt = optionalString(action.reviewAt);
+    if (!reviewAt) continue;
+    const time = Date.parse(reviewAt);
     if (!Number.isFinite(time)) continue;
     const days = Math.floor((time - now.getTime()) / 86_400_000);
     const index = Math.min(7, Math.max(0, days));
     buckets[index] += 1;
+    scheduled += 1;
   }
+  if (scheduled === 0) return [];
   const max = Math.max(1, ...buckets);
   return buckets.map((value) => Math.round((value / max) * 100) / 100);
 }
@@ -970,6 +1071,8 @@ function projectFeed(
     return [{
       id: `web-${contentHash ?? stableHash(url)}`,
       title: result.title.trim(),
+      shortTitle: optionalString(result.shortTitle),
+      headline: optionalString(result.headline),
       why: userFacingFeedWhy(whyNow),
       source: optionalString(result.source) || safeHostname(url),
       url,

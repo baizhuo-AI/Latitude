@@ -1,0 +1,55 @@
+{
+  "id": "idle",
+  "title": "安静待机",
+  "description": "保持原来的站姿，偶尔轻轻眨眼。",
+  "frameCount": 8,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "displayWidth": 192,
+  "displayHeight": 208,
+  "frames": [
+    "安静站着",
+    "保持目光",
+    "准备眨眼",
+    "眼皮轻合",
+    "轻轻眨眼",
+    "重新睁眼",
+    "目光恢复",
+    "回到静候"
+  ],
+  "beats": [
+    {
+      "frame": 0,
+      "ms": 2500
+    },
+    {
+      "frame": 1,
+      "ms": 1500
+    },
+    {
+      "frame": 2,
+      "ms": 55
+    },
+    {
+      "frame": 3,
+      "ms": 55
+    },
+    {
+      "frame": 4,
+      "ms": 85
+    },
+    {
+      "frame": 5,
+      "ms": 65
+    },
+    {
+      "frame": 6,
+      "ms": 80
+    },
+    {
+      "frame": 7,
+      "ms": 2740
+    }
+  ],
+  "duration": 7080
+}

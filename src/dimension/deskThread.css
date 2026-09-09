@@ -6,14 +6,47 @@
   padding: 14px 16px 10px;
 }
 
+.dim-thread.dim-thread--floating {
+  position: fixed;
+  top: 58px;
+  left: 188px;
+  z-index: 180;
+  width: min(470px, calc(100vw - 204px));
+  height: min(650px, calc(100vh - 76px));
+  min-width: min(360px, calc(100vw - 204px));
+  max-width: calc(100vw - 204px);
+  min-height: min(300px, calc(100vh - 76px));
+  max-height: calc(100vh - 76px);
+  padding: 14px 16px 12px;
+  overflow: auto;
+  resize: both;
+  border-color: color-mix(in srgb, var(--dim-olive) 32%, var(--dim-line));
+  box-shadow:
+    0 26px 64px rgb(55 48 34 / 0.2),
+    0 3px 10px rgb(55 48 34 / 0.1);
+  /* 浮窗不是桌面纸片：不能继承 .dim-paper:hover 的抬起与低层级。 */
+  transition: none;
+  /* Opening and closing share the same interruptible surface transition. */
+}
+
+.dim-thread.dim-thread--floating:hover {
+  z-index: 180;
+
+}
+
 .dim-thread__header {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   flex-shrink: 0;
   gap: 10px;
   padding-bottom: 9px;
   border-bottom: 1px solid var(--dim-line-soft);
+}
+
+.dim-thread--floating .dim-thread__header,
+.dim-thread--floating .dim-thread__identity {
+  flex-wrap: wrap;
 }
 
 .dim-thread__close {
@@ -24,9 +57,22 @@
 
 .dim-thread__identity {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   min-width: 0;
   gap: 8px;
+}
+
+.dim-thread__header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.dim-thread__new {
+  color: var(--dim-olive-deep);
+  border-color: color-mix(in srgb, var(--dim-olive) 38%, var(--dim-line));
 }
 
 .dim-thread__select {
@@ -40,6 +86,44 @@
   font: 11px var(--font-sans);
 }
 
+.dim-thread__proactive {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 10px;
+  padding: 10px 12px;
+  color: var(--dim-ink);
+  background: color-mix(in srgb, var(--dim-sticky) 68%, var(--dim-paper));
+  border: 1px solid color-mix(in srgb, var(--dim-olive) 30%, var(--dim-line));
+  border-left: 3px solid var(--dim-olive);
+}
+
+.dim-thread__proactive-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dim-thread__proactive-heading .dim-btn {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
+.dim-thread__proactive p {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.65;
+}
+
+.dim-thread__proactive-action {
+  margin-top: 8px;
+  padding: 3px 8px;
+  color: var(--dim-olive-deep);
+  border-color: color-mix(in srgb, var(--dim-olive) 38%, var(--dim-line));
+}
+
 .dim-thread__scroll {
   min-height: 0;
   margin-top: 10px;
@@ -47,6 +131,10 @@
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
+}
+
+.dim-thread--floating .dim-thread__scroll {
+  flex: 1;
 }
 
 .dim-thread__scroll:focus-visible {
@@ -58,6 +146,20 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.dim-thread__empty,
+.dim-thread__history-error {
+  margin: 12px 0;
+  color: var(--dim-ink-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.dim-thread__history-error {
+  padding: 8px 10px;
+  border-left: 2px solid var(--dim-rust);
+  background: rgb(195 94 74 / 7%);
 }
 
 .dim-thread__message {
@@ -81,6 +183,46 @@
 
 .dim-thread__message:not([data-role="user"]) {
   align-self: flex-start;
+}
+
+.dim-thread__explanation {
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--dim-olive) 20%, transparent);
+  color: var(--dim-ink-soft);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.dim-thread__explanation summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--dim-olive-deep);
+  font-weight: 650;
+  list-style-position: outside;
+}
+
+.dim-thread__explanation summary:focus-visible {
+  outline: 1px solid var(--dim-olive);
+  outline-offset: 3px;
+}
+
+.dim-thread__explanation p {
+  margin: 7px 0 0;
+}
+
+.dim-thread__explanation ol {
+  margin: 6px 0 0;
+  padding-left: 1.5em;
+}
+
+.dim-thread__explanation li {
+  margin: 2px 0;
+}
+
+.dim-thread__uncertainty {
+  padding-left: 8px;
+  border-left: 2px solid var(--dim-amber);
 }
 
 .dim-thread__plain {
@@ -274,12 +416,101 @@
   align-self: flex-start;
 }
 
+.dim-thread__composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  flex-shrink: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--dim-line-soft);
+}
+
+.dim-thread__composer textarea {
+  width: 100%;
+  min-height: 54px;
+  max-height: 130px;
+  resize: vertical;
+  padding: 9px 10px;
+  color: var(--dim-ink);
+  background: var(--dim-page);
+  border: 1px solid var(--dim-line);
+  border-radius: 3px;
+  font: 12.5px/1.55 var(--font-sans);
+}
+
+.dim-thread__composer textarea:focus-visible {
+  outline: 2px solid var(--dim-olive);
+  outline-offset: 1px;
+}
+
+.dim-thread__composer-actions {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.dim-thread__composer-actions .dim-btn {
+  min-width: 62px;
+}
+
 @media (width <= 720px) {
   .dim-thread {
     max-height: 52%;
   }
 
+  .dim-thread.dim-thread--floating {
+    inset: 54px auto auto 8px;
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 62px);
+    min-width: min(280px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    min-height: min(300px, calc(100dvh - 62px));
+    max-height: calc(100dvh - 62px);
+  }
+
   .dim-thread__message {
     max-width: 94%;
   }
+
+  .dim-thread__composer {
+    grid-template-columns: 1fr;
+  }
+
+  .dim-thread__composer-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .dim-thread--floating {
+    animation: none;
+  }
+}
+/* The run is secondary to the answer; long process text stays in its own fold. */
+.dim-thread__progress {
+  border-left: 2px solid var(--dim-olive, #68703c);
+  padding: 8px 12px;
+  margin-block: 10px;
+  overflow-wrap: anywhere;
+}
+
+.dim-thread__progress summary,
+.dim-persona-settings summary { cursor: pointer; }
+
+.dim-thread__progress-content {
+  max-height: 40vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 0.9em;
+}
+
+.dim-thread__reasoning p { white-space: pre-wrap; }
+.dim-thread__progress-step { margin-block: 6px; }
+.dim-persona-settings { padding: 12px 14px; margin-block: 12px; }
+.dim-persona-settings label { display: grid; gap: 6px; margin-block: 12px; }
+.dim-persona-settings textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; resize: vertical; color: inherit; background: transparent; }
+.dim-persona-settings__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+
+.dim-thread[data-surface-present="false"] { pointer-events: none; }
